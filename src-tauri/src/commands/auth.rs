@@ -117,6 +117,21 @@ pub fn logout() -> Result<(), String> {
 }
 
 #[tauri::command]
+pub async fn verify_session<R: Runtime>(
+    app: AppHandle<R>,
+    user_id: i64,
+) -> Result<bool, String> {
+    let pool = db::pool(&app).await?;
+    let active: Option<(i64,)> =
+        sqlx::query_as("SELECT id FROM users WHERE id = ? AND is_active = 1")
+            .bind(user_id)
+            .fetch_optional(&pool)
+            .await
+            .map_err(|e| e.to_string())?;
+    Ok(active.is_some())
+}
+
+#[tauri::command]
 pub async fn create_user<R: Runtime>(
     app: AppHandle<R>,
     username: String,

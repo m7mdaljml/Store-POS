@@ -43,6 +43,7 @@ pub fn run() {
       commands::auth::verify_password,
       commands::auth::login,
       commands::auth::logout,
+      commands::auth::verify_session,
       commands::auth::create_user,
       commands::auth::delete_user,
       commands::auth::update_user_permissions

@@ -37,7 +37,7 @@ pub async fn seed_db(path: &std::path::Path) -> Result<(), Box<dyn std::error::E
             .await?;
     if has_base.is_none() {
         sqlx::query(
-            "INSERT INTO currencies (code, name, symbol, rate, is_base) VALUES ('EGP', 'Egyptian Pound', 'E\u{00a3}', 1, 1)",
+            "INSERT INTO currencies (code, name, symbol, rate, is_base) VALUES ('JOD', 'Jordanian Dinar', 'JD', 1, 1)",
         )
         .execute(&pool)
         .await?;

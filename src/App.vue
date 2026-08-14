@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from "vue";
-import { RouterLink, RouterView, useRoute } from "vue-router";
+import { onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { RouterLink, RouterView, useRoute, useRouter } from "vue-router";
 import { useAuthStore } from "./stores/auth";
 import { useSettingsStore } from "./stores/settings";
 import { useCatalogStore } from "./stores/catalog";
@@ -8,6 +8,7 @@ import { useThemeStore } from "./stores/theme";
 import { seedIfNeeded } from "./lib/seed";
 
 const route = useRoute();
+const router = useRouter();
 const auth = useAuthStore();
 const settings = useSettingsStore();
 const catalog = useCatalogStore();
@@ -36,6 +37,7 @@ function tick() {
 onMounted(async () => {
   tick();
   timer = window.setInterval(tick, 1000);
+  await auth.verifySession();
   try {
     await seedIfNeeded();
   } catch (e) {
@@ -43,6 +45,15 @@ onMounted(async () => {
   }
   await Promise.allSettled([settings.load(), catalog.load()]);
 });
+
+watch(
+  () => auth.isAuthenticated,
+  (authenticated) => {
+    if (!authenticated && route.name !== "login") {
+      router.push({ name: "login" });
+    }
+  }
+);
 
 onBeforeUnmount(() => {
   if (timer) window.clearInterval(timer);

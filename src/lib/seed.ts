@@ -18,18 +18,18 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
 
 export async function seedIfNeeded(): Promise<void> {
   const baseCurrency = await selectOne<{ id: number }>(
-    "SELECT id FROM currencies WHERE is_base = 1 LIMIT 1"
+    "SELECT id FROM currencies WHERE is_base = 1 LIMIT 1",
   );
   if (!baseCurrency) {
     await execute(
-      "INSERT INTO currencies (code, name, symbol, rate, is_base) VALUES ('EGP', 'Egyptian Pound', 'E£', 1, 1)"
+      "INSERT INTO currencies (code, name, symbol, rate, is_base) VALUES ('JOD', 'Jordanian Dinar', 'JD', 1, 1)",
     );
   }
 
   for (const [roleName, perms] of Object.entries(ROLE_PERMISSIONS)) {
     const role = await selectOne<{ id: number }>(
       "SELECT id FROM roles WHERE name = ?",
-      [roleName]
+      [roleName],
     );
     const roleId = role
       ? role.id
@@ -38,7 +38,7 @@ export async function seedIfNeeded(): Promise<void> {
     for (const code of perms) {
       const perm = await selectOne<{ id: number }>(
         "SELECT id FROM permissions WHERE code = ?",
-        [code]
+        [code],
       );
       const permId = perm
         ? perm.id
@@ -46,29 +46,29 @@ export async function seedIfNeeded(): Promise<void> {
 
       const linked = await selectOne(
         "SELECT 1 FROM role_permissions WHERE role_id = ? AND permission_id = ?",
-        [roleId, permId]
+        [roleId, permId],
       );
       if (!linked) {
         await execute(
           "INSERT INTO role_permissions (role_id, permission_id) VALUES (?, ?)",
-          [roleId, permId]
+          [roleId, permId],
         );
       }
     }
   }
 
   const admin = await selectOne<{ id: number }>(
-    "SELECT id FROM users WHERE username = 'admin'"
+    "SELECT id FROM users WHERE username = 'admin'",
   );
   if (!admin) {
     const adminRole = await selectOne<{ id: number }>(
-      "SELECT id FROM roles WHERE name = 'Admin'"
+      "SELECT id FROM roles WHERE name = 'Admin'",
     );
     if (!adminRole) throw new Error("Admin role missing during seed");
     const hash = await invoke<string>("hash_password", { password: "admin" });
     await insert(
       "INSERT INTO users (username, password_hash, full_name, role_id) VALUES ('admin', ?, 'Administrator', ?)",
-      [hash, adminRole.id]
+      [hash, adminRole.id],
     );
   }
 }
