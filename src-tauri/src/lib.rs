@@ -52,7 +52,15 @@ pub fn run() {
       commands::auth::update_user_permissions,
       commands::auth::list_roles,
       commands::auth::list_permissions,
-      commands::auth::list_users
+      commands::auth::list_users,
+      commands::catalog::list_categories,
+      commands::catalog::create_category,
+      commands::catalog::update_category,
+      commands::catalog::delete_category,
+      commands::catalog::create_product,
+      commands::catalog::update_product,
+      commands::catalog::delete_product,
+      commands::catalog::adjust_stock
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

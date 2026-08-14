@@ -36,6 +36,8 @@ export interface CartItem {
 export interface Category {
   id: number;
   name: string;
+  parentId?: number | null;
+  productCount?: number;
 }
 
 export interface Product {
@@ -43,8 +45,20 @@ export interface Product {
   sku: string | null;
   barcode: string | null;
   name: string;
+  description: string | null;
+  category_id: number | null;
   cost_price: number;
   sell_price: number;
+  tax_profile_id: number | null;
+  unit: string;
   stock_qty: number;
-  category_id: number | null;
+  reorder_level: number;
+  image_path: string | null;
+  is_active: number;
+}
+
+export interface TaxProfile {
+  id: number;
+  name: string;
+  rate: number;
 }
