@@ -1,3 +1,268 @@
+:root {
+  /* Spacing scale (4px base unit) */
+  --pos-space-xs: 4px;
+  --pos-space-sm: 8px;
+  --pos-space-md: 12px;
+  --pos-space-lg: 16px;
+  --pos-space-xl: 24px;
+  --pos-space-2xl: 32px;
+  --pos-space-3xl: 48px;
+
+  /* Radii */
+  --pos-radius-sm: 6px;
+  --pos-radius-md: 8px;
+  --pos-radius-lg: 12px;
+
+  /* Surfaces & borders */
+  --pos-bg: #0a0f1e;
+  --pos-surface: #111830;
+  --pos-surface-2: #172041;
+  --pos-border: #1f2a4d;
+
+  /* Text */
+  --pos-text: #e2e8f0;
+  --pos-text-muted: #8a94ad;
+
+  /* Accent */
+  --pos-accent: #6366f1;
+  --pos-accent-strong: #818cf8;
+  --pos-accent-soft: rgba(99, 102, 241, 0.14);
+
+  /* Status */
+  --pos-success: #22c55e;
+  --pos-warning: #f59e0b;
+  --pos-danger: #ef4444;
+
+  /* Typography */
+  --pos-font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+
+  /* Bootstrap theme overrides (dark) */
+  --bs-body-bg: var(--pos-bg);
+  --bs-body-color: var(--pos-text);
+  --bs-primary: var(--pos-accent);
+  --bs-primary-rgb: 99, 102, 241;
+  --bs-link-color: var(--pos-accent-strong);
+  --bs-link-hover-color: #a5b4fc;
+  --bs-border-color: var(--pos-border);
+  --bs-secondary-bg: var(--pos-surface);
+  --bs-tertiary-bg: var(--pos-surface);
+  --bs-card-bg: var(--pos-surface);
+  --bs-body-font-family: var(--pos-font);
+}
+
+[data-bs-theme="dark"] {
+  --bs-body-bg: var(--pos-bg);
+  --bs-body-color: var(--pos-text);
+  --bs-primary: var(--pos-accent);
+  --bs-primary-rgb: 99, 102, 241;
+  --bs-link-color: var(--pos-accent-strong);
+  --bs-link-hover-color: #a5b4fc;
+  --bs-border-color: var(--pos-border);
+  --bs-secondary-bg: var(--pos-surface);
+  --bs-tertiary-bg: var(--pos-surface);
+  --bs-card-bg: var(--pos-surface);
+  --bs-body-font-family: var(--pos-font);
+}
+
+[data-bs-theme="light"] {
+  /* Surfaces & borders */
+  --pos-bg: #f1f5f9;
+  --pos-surface: #ffffff;
+  --pos-surface-2: #e2e8f0;
+  --pos-border: #e2e8f0;
+
+  /* Text */
+  --pos-text: #1e293b;
+  --pos-text-muted: #64748b;
+
+  /* Accent */
+  --pos-accent: #6366f1;
+  --pos-accent-strong: #4f46e5;
+  --pos-accent-soft: rgba(99, 102, 241, 0.1);
+
+  /* Bootstrap theme overrides (light) */
+  --bs-body-bg: var(--pos-bg);
+  --bs-body-color: var(--pos-text);
+  --bs-primary: var(--pos-accent);
+  --bs-primary-rgb: 99, 102, 241;
+  --bs-link-color: var(--pos-accent-strong);
+  --bs-link-hover-color: #4338ca;
+  --bs-border-color: var(--pos-border);
+  --bs-secondary-bg: var(--pos-surface);
+  --bs-tertiary-bg: var(--pos-surface);
+  --bs-card-bg: var(--pos-surface);
+  --bs-body-font-family: var(--pos-font);
+}
+
 body {
   margin: 0;
+  background-color: var(--pos-bg);
+  color: var(--pos-text);
+  font-family: var(--pos-font);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ------------------------------------------------------------------ */
+/* App shell                                                           */
+/* ------------------------------------------------------------------ */
+.app-shell {
+  display: flex;
+  min-height: 100vh;
+}
+
+.sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  width: 240px;
+  flex-shrink: 0;
+  background: var(--pos-surface);
+  border-right: 1px solid var(--pos-border);
+  transition: width 0.2s ease;
+  overflow: hidden;
+}
+
+.sidebar.collapsed {
+  width: 68px;
+}
+
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--pos-space-md);
+  height: 64px;
+  padding: 0 var(--pos-space-lg);
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--pos-border);
+  white-space: nowrap;
+}
+
+.sidebar-brand-icon {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: var(--pos-radius-sm);
+  background: linear-gradient(135deg, var(--pos-accent), #22d3ee);
+  color: #fff;
+  font-size: 1.15rem;
+}
+
+.sidebar-nav {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--pos-space-md);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sidebar-link {
+  display: flex;
+  align-items: center;
+  gap: var(--pos-space-md);
+  padding: 10px var(--pos-space-md);
+  border-radius: var(--pos-radius-md);
+  color: var(--pos-text-muted);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.sidebar-link:hover {
+  color: var(--pos-text);
+  background: var(--pos-surface-2);
+}
+
+.sidebar-link.active {
+  color: #fff;
+  background: var(--pos-accent-soft);
+}
+
+.sidebar-link.active .sidebar-link-icon {
+  color: var(--pos-accent-strong);
+}
+
+.sidebar-link-icon {
+  width: 22px;
+  flex-shrink: 0;
+  font-size: 1.05rem;
+  text-align: center;
+}
+
+.sidebar.collapsed .sidebar-link {
+  justify-content: center;
+  padding: 10px 0;
+}
+
+.sidebar.collapsed .sidebar-brand {
+  justify-content: center;
+  padding: 0;
+}
+
+.main-area {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: var(--pos-space-lg);
+  height: 64px;
+  padding: 0 var(--pos-space-xl);
+  background: color-mix(in srgb, var(--pos-bg) 85%, transparent);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--pos-border);
+}
+
+.topbar-title {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.content {
+  flex: 1;
+  padding: var(--pos-space-xl);
+  overflow-y: auto;
+}
+
+.sidebar-toggle {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--pos-border);
+  border-radius: var(--pos-radius-sm);
+  background: transparent;
+  color: var(--pos-text-muted);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.sidebar-toggle:hover {
+  background: var(--pos-surface-2);
+  color: var(--pos-text);
+}
+
+.role-badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--pos-accent-soft);
+  color: var(--pos-accent-strong);
+  white-space: nowrap;
 }
