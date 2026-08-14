@@ -3,6 +3,7 @@ use argon2::password_hash::SaltString;
 use argon2::{Argon2, PasswordHasher, PasswordHash, PasswordVerifier};
 use serde::Serialize;
 use sqlx::{Row, SqlitePool};
+use std::collections::HashMap;
 use tauri::{AppHandle, Runtime};
 
 use crate::db;
@@ -14,6 +15,25 @@ pub struct AuthUser {
     pub username: String,
     pub full_name: String,
     pub role_name: String,
+    pub permissions: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RoleRecord {
+    pub id: i64,
+    pub name: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserRecord {
+    pub id: i64,
+    pub username: String,
+    pub full_name: String,
+    pub role_id: i64,
+    pub role_name: String,
+    pub is_active: bool,
     pub permissions: Vec<String>,
 }
 
@@ -169,6 +189,146 @@ pub async fn delete_user<R: Runtime>(app: AppHandle<R>, user_id: i64) -> Result<
 }
 
 #[tauri::command]
+pub async fn set_user_active<R: Runtime>(
+    app: AppHandle<R>,
+    user_id: i64,
+    active: bool,
+) -> Result<(), String> {
+    let pool = db::pool(&app).await?;
+    let result = sqlx::query("UPDATE users SET is_active = ? WHERE id = ?")
+        .bind(i64::from(active))
+        .bind(user_id)
+        .execute(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    if result.rows_affected() == 0 {
+        return Err("User not found".into());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn remove_user<R: Runtime>(app: AppHandle<R>, user_id: i64) -> Result<(), String> {
+    let pool = db::pool(&app).await?;
+
+    let references: (i64,) = sqlx::query_as(
+        "SELECT
+            (SELECT COUNT(*) FROM sales WHERE user_id = ?) +
+            (SELECT COUNT(*) FROM sale_sessions WHERE user_id = ?)",
+    )
+    .bind(user_id)
+    .bind(user_id)
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    if references.0 > 0 {
+        return Err(
+            "This user has sales history and cannot be deleted. Deactivate them instead.".into(),
+        );
+    }
+
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+
+    let null_queries = [
+        "UPDATE sales SET voided_by = NULL WHERE voided_by = ?",
+        "UPDATE stock_movements SET user_id = NULL WHERE user_id = ?",
+        "UPDATE supplier_invoices SET user_id = NULL WHERE user_id = ?",
+        "UPDATE supplier_payments SET user_id = NULL WHERE user_id = ?",
+        "UPDATE expense_out SET user_id = NULL WHERE user_id = ?",
+        "UPDATE customer_ledger SET user_id = NULL WHERE user_id = ?",
+        "UPDATE audit_log SET user_id = NULL WHERE user_id = ?",
+    ];
+    for query in null_queries {
+        sqlx::query(query)
+            .bind(user_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+
+    let result = sqlx::query("DELETE FROM users WHERE id = ?")
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    tx.commit().await.map_err(|e| e.to_string())?;
+
+    if result.rows_affected() == 0 {
+        return Err("User not found".into());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn update_user<R: Runtime>(
+    app: AppHandle<R>,
+    user_id: i64,
+    username: String,
+    full_name: String,
+    password: Option<String>,
+    role_id: i64,
+) -> Result<(), String> {
+    let pool = db::pool(&app).await?;
+
+    let username = username.trim().to_string();
+    let full_name = full_name.trim().to_string();
+    if username.is_empty() {
+        return Err("Username is required".into());
+    }
+    if full_name.is_empty() {
+        return Err("Full name is required".into());
+    }
+
+    let taken: Option<(i64,)> =
+        sqlx::query_as("SELECT id FROM users WHERE username = ? AND id != ?")
+            .bind(&username)
+            .bind(user_id)
+            .fetch_optional(&pool)
+            .await
+            .map_err(|e| e.to_string())?;
+    if taken.is_some() {
+        return Err("Username already taken".into());
+    }
+
+    let result = match password.filter(|p| !p.is_empty()) {
+        Some(pw) => {
+            let hash = hash_password_inner(&pw)?;
+            sqlx::query(
+                "UPDATE users SET username = ?, full_name = ?, password_hash = ?, role_id = ?
+                 WHERE id = ?",
+            )
+            .bind(&username)
+            .bind(&full_name)
+            .bind(&hash)
+            .bind(role_id)
+            .bind(user_id)
+            .execute(&pool)
+            .await
+            .map_err(|e| e.to_string())?
+        }
+        None => {
+            sqlx::query(
+                "UPDATE users SET username = ?, full_name = ?, role_id = ? WHERE id = ?",
+            )
+            .bind(&username)
+            .bind(&full_name)
+            .bind(role_id)
+            .bind(user_id)
+            .execute(&pool)
+            .await
+            .map_err(|e| e.to_string())?
+        }
+    };
+
+    if result.rows_affected() == 0 {
+        return Err("User not found".into());
+    }
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn update_user_permissions<R: Runtime>(
     app: AppHandle<R>,
     user_id: i64,
@@ -224,6 +384,86 @@ pub async fn update_user_permissions<R: Runtime>(
     tx.commit().await.map_err(|e| e.to_string())?;
 
     Ok(permission_codes)
+}
+
+#[tauri::command]
+pub async fn list_roles<R: Runtime>(app: AppHandle<R>) -> Result<Vec<RoleRecord>, String> {
+    let pool = db::pool(&app).await?;
+    let rows = sqlx::query("SELECT id, name FROM roles ORDER BY name")
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    rows.into_iter()
+        .map(|row| {
+            Ok(RoleRecord {
+                id: row.try_get("id").map_err(|e| e.to_string())?,
+                name: row.try_get("name").map_err(|e| e.to_string())?,
+            })
+        })
+        .collect()
+}
+
+#[tauri::command]
+pub async fn list_permissions<R: Runtime>(app: AppHandle<R>) -> Result<Vec<String>, String> {
+    let pool = db::pool(&app).await?;
+    let rows = sqlx::query("SELECT code FROM permissions ORDER BY code")
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    rows.into_iter()
+        .map(|row| row.try_get::<String, _>("code").map_err(|e| e.to_string()))
+        .collect()
+}
+
+#[tauri::command]
+pub async fn list_users<R: Runtime>(app: AppHandle<R>) -> Result<Vec<UserRecord>, String> {
+    let pool = db::pool(&app).await?;
+
+    let user_rows = sqlx::query(
+        "SELECT u.id, u.username, u.full_name, u.role_id, u.is_active,
+                r.name AS role_name
+         FROM users u
+         JOIN roles r ON r.id = u.role_id
+         ORDER BY u.is_active DESC, u.username ASC",
+    )
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let perm_rows = sqlx::query(
+        "SELECT rp.role_id, p.code
+         FROM role_permissions rp
+         JOIN permissions p ON p.id = rp.permission_id",
+    )
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let mut perms_by_role: HashMap<i64, Vec<String>> = HashMap::new();
+    for row in perm_rows {
+        let role_id: i64 = row.try_get("role_id").map_err(|e| e.to_string())?;
+        let code: String = row.try_get("code").map_err(|e| e.to_string())?;
+        perms_by_role.entry(role_id).or_default().push(code);
+    }
+
+    user_rows
+        .into_iter()
+        .map(|row| {
+            let role_id: i64 = row.try_get("role_id").map_err(|e| e.to_string())?;
+            Ok(UserRecord {
+                id: row.try_get("id").map_err(|e| e.to_string())?,
+                username: row.try_get("username").map_err(|e| e.to_string())?,
+                full_name: row.try_get("full_name").map_err(|e| e.to_string())?,
+                role_id,
+                role_name: row.try_get("role_name").map_err(|e| e.to_string())?,
+                is_active: {
+                    let v: i64 = row.try_get("is_active").map_err(|e| e.to_string())?;
+                    v != 0
+                },
+                permissions: perms_by_role.get(&role_id).cloned().unwrap_or_default(),
+            })
+        })
+        .collect()
 }
 
 #[cfg(test)]

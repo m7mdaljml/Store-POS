@@ -46,7 +46,13 @@ pub fn run() {
       commands::auth::verify_session,
       commands::auth::create_user,
       commands::auth::delete_user,
-      commands::auth::update_user_permissions
+      commands::auth::set_user_active,
+      commands::auth::remove_user,
+      commands::auth::update_user,
+      commands::auth::update_user_permissions,
+      commands::auth::list_roles,
+      commands::auth::list_permissions,
+      commands::auth::list_users
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

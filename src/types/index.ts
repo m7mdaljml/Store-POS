@@ -6,6 +6,21 @@ export interface AuthUser {
   permissions: string[];
 }
 
+export interface Role {
+  id: number;
+  name: string;
+}
+
+export interface UserRecord {
+  id: number;
+  username: string;
+  fullName: string;
+  roleId: number;
+  roleName: string;
+  isActive: boolean;
+  permissions: string[];
+}
+
 export interface SettingsMap {
   [key: string]: string;
 }
