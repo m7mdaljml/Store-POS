@@ -1,6 +1,7 @@
 use tauri_plugin_sql::{Migration, MigrationKind};
 
 mod commands;
+mod db;
 mod seed;
 
 fn initial_migrations() -> Vec<Migration> {
@@ -39,7 +40,12 @@ pub fn run() {
     })
     .invoke_handler(tauri::generate_handler![
       commands::auth::hash_password,
-      commands::auth::verify_password
+      commands::auth::verify_password,
+      commands::auth::login,
+      commands::auth::logout,
+      commands::auth::create_user,
+      commands::auth::delete_user,
+      commands::auth::update_user_permissions
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

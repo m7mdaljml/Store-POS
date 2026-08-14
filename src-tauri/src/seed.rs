@@ -1,9 +1,9 @@
 use argon2::password_hash::rand_core::OsRng;
 use argon2::password_hash::SaltString;
 use argon2::{Argon2, PasswordHasher};
-use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions};
-use tauri::{AppHandle, Manager, Runtime};
-use std::path::Path;
+use tauri::{AppHandle, Runtime};
+
+use crate::db;
 
 const ROLE_PERMISSIONS: &[(&str, &[&str])] = &[
     (
@@ -24,17 +24,12 @@ const ROLE_PERMISSIONS: &[(&str, &[&str])] = &[
 ];
 
 pub async fn seed_app<R: Runtime>(app: &AppHandle<R>) -> Result<(), Box<dyn std::error::Error>> {
-    let db_path = app.path().app_config_dir()?.join("store.db");
+    let db_path = db::db_path(app)?;
     seed_db(&db_path).await
 }
 
-async fn connect(path: &Path) -> Result<SqlitePool, sqlx::Error> {
-    let opts = SqliteConnectOptions::new().filename(path).create_if_missing(true);
-    SqlitePoolOptions::new().connect_with(opts).await
-}
-
-pub async fn seed_db(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    let pool = connect(path).await?;
+pub async fn seed_db(path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
+    let pool = db::connect(path).await?;
 
     let has_base: Option<(i64,)> =
         sqlx::query_as("SELECT id FROM currencies WHERE is_base = 1 LIMIT 1")
@@ -129,18 +124,12 @@ pub async fn seed_db(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use argon2::{PasswordHash, PasswordVerifier};
 
-    #[tokio::test]
-    async fn seed_populates_and_is_idempotent() {
-        let path = std::env::temp_dir().join(format!(
-            "store-pos-seed-test-{}.db",
-            std::process::id()
-        ));
-
-        let pool = connect(&path).await.unwrap();
+    pub(crate) async fn create_schema(path: &std::path::Path) {
+        let pool = db::connect(path).await.unwrap();
         for sql in [
             "CREATE TABLE currencies (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT UNIQUE NOT NULL, name TEXT NOT NULL, symbol TEXT NOT NULL, rate REAL NOT NULL DEFAULT 1, is_base INTEGER NOT NULL DEFAULT 0)",
             "CREATE TABLE roles (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, description TEXT)",
@@ -151,11 +140,21 @@ mod tests {
             sqlx::query(sql).execute(&pool).await.unwrap();
         }
         pool.close().await;
+    }
+
+    #[tokio::test]
+    async fn seed_populates_and_is_idempotent() {
+        let path = std::env::temp_dir().join(format!(
+            "store-pos-seed-test-{}.db",
+            std::process::id()
+        ));
+
+        create_schema(&path).await;
 
         seed_db(&path).await.unwrap();
         seed_db(&path).await.unwrap();
 
-        let pool = connect(&path).await.unwrap();
+        let pool = db::connect(&path).await.unwrap();
         let users: i64 =
             sqlx::query_scalar("SELECT COUNT(*) FROM users").fetch_one(&pool).await.unwrap();
         assert_eq!(users, 1);

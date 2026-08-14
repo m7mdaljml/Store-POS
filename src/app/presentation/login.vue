@@ -24,7 +24,7 @@ async function submit() {
     await auth.login(username.value, password.value);
     router.push(auth.user?.roleName === "Cashier" ? "/checkout" : "/");
   } catch (e) {
-    error.value = e instanceof Error ? e.message : "Login failed";
+    error.value = e instanceof Error ? e.message : String(e);
   } finally {
     submitting.value = false;
   }
