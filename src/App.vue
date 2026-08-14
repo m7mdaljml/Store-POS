@@ -5,6 +5,7 @@ import { useAuthStore } from "./stores/auth";
 import { useSettingsStore } from "./stores/settings";
 import { useCatalogStore } from "./stores/catalog";
 import { useThemeStore } from "./stores/theme";
+import { seedIfNeeded } from "./lib/seed";
 
 const route = useRoute();
 const auth = useAuthStore();
@@ -35,7 +36,7 @@ function tick() {
 onMounted(async () => {
   tick();
   timer = window.setInterval(tick, 1000);
-  await Promise.allSettled([settings.load(), catalog.load()]);
+  await Promise.allSettled([settings.load(), catalog.load(), seedIfNeeded()]);
 });
 
 onBeforeUnmount(() => {
