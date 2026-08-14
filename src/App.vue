@@ -36,7 +36,12 @@ function tick() {
 onMounted(async () => {
   tick();
   timer = window.setInterval(tick, 1000);
-  await Promise.allSettled([settings.load(), catalog.load(), seedIfNeeded()]);
+  try {
+    await seedIfNeeded();
+  } catch (e) {
+    console.error("Seeding failed:", e);
+  }
+  await Promise.allSettled([settings.load(), catalog.load()]);
 });
 
 onBeforeUnmount(() => {
@@ -46,7 +51,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="app-shell">
-    <aside v-if="auth.isAuthenticated" class="sidebar" :class="{ collapsed }">
+    <aside class="sidebar" :class="{ collapsed }">
       <div class="sidebar-brand">
         <div class="sidebar-brand-icon">
           <i class="bi bi-shop"></i>
@@ -79,7 +84,12 @@ onBeforeUnmount(() => {
           aria-label="Toggle sidebar"
           @click="collapsed = !collapsed"
         >
-          <i class="bi" :class="collapsed ? 'bi-chevron-double-right' : 'bi-chevron-double-left'"></i>
+          <i
+            class="bi"
+            :class="
+              collapsed ? 'bi-chevron-double-right' : 'bi-chevron-double-left'
+            "
+          ></i>
         </button>
 
         <h1 class="topbar-title">Store POS</h1>
@@ -92,7 +102,9 @@ onBeforeUnmount(() => {
           <button
             class="btn btn-sm btn-outline-secondary"
             type="button"
-            :title="theme.isDark ? 'Switch to light theme' : 'Switch to dark theme'"
+            :title="
+              theme.isDark ? 'Switch to light theme' : 'Switch to dark theme'
+            "
             @click="theme.toggle()"
           >
             <i class="bi" :class="theme.isDark ? 'bi-sun' : 'bi-moon'"></i>
@@ -114,7 +126,11 @@ onBeforeUnmount(() => {
                 </div>
               </div>
             </div>
-            <button class="btn btn-sm btn-outline-secondary" type="button" @click="auth.logout()">
+            <button
+              class="btn btn-sm btn-outline-secondary"
+              type="button"
+              @click="auth.logout()"
+            >
               <i class="bi bi-box-arrow-right me-1"></i>Logout
             </button>
           </template>

@@ -1,6 +1,6 @@
 use argon2::password_hash::rand_core::OsRng;
 use argon2::password_hash::SaltString;
-use argon2::{Argon2, PasswordHasher};
+use argon2::{Argon2, PasswordHasher, PasswordHash, PasswordVerifier};
 
 #[tauri::command]
 pub fn hash_password(password: String) -> Result<String, String> {
@@ -9,4 +9,12 @@ pub fn hash_password(password: String) -> Result<String, String> {
         .hash_password(password.as_bytes(), &salt)
         .map(|hash| hash.to_string())
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn verify_password(password: String, hash: String) -> Result<bool, String> {
+    let parsed = PasswordHash::new(&hash).map_err(|e| e.to_string())?;
+    Ok(Argon2::default()
+        .verify_password(password.as_bytes(), &parsed)
+        .is_ok())
 }

@@ -2,14 +2,14 @@ import Database, { type QueryResult } from "@tauri-apps/plugin-sql";
 
 const DB_PATH = "sqlite:store.db";
 
-let db: Database | null = null;
+let dbPromise: Promise<Database> | null = null;
 
 /** Lazily load (and cache) the SQLite connection. Migrations run on first load. */
-export async function getDb(): Promise<Database> {
-  if (!db) {
-    db = await Database.load(DB_PATH);
+export function getDb(): Promise<Database> {
+  if (!dbPromise) {
+    dbPromise = Database.load(DB_PATH);
   }
-  return db;
+  return dbPromise;
 }
 
 /** Run a SELECT query and return all matching rows. */
@@ -37,8 +37,9 @@ export async function insert(query: string, params: unknown[] = []): Promise<num
 
 /** Close the connection pool (e.g. on app exit or restore). */
 export async function closeDb(): Promise<void> {
-  if (db) {
-    await db.close();
-    db = null;
+  const current = dbPromise;
+  dbPromise = null;
+  if (current) {
+    await current.then((client) => client.close());
   }
 }

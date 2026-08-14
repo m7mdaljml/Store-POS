@@ -30,5 +30,11 @@
     "active": true,
     "targets": "all",
     "icon": ["icons/icon.ico"]
+  },
+
+  "plugins": {
+    "sql": {
+      "preload": ["sqlite:store.db"]
+    }
   }
 }

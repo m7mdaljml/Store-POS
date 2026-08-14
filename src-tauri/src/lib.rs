@@ -1,6 +1,7 @@
 use tauri_plugin_sql::{Migration, MigrationKind};
 
 mod commands;
+mod seed;
 
 fn initial_migrations() -> Vec<Migration> {
   vec![Migration {
@@ -27,9 +28,19 @@ pub fn run() {
             .build(),
         )?;
       }
+      let handle = app.handle().clone();
+      tauri::async_runtime::spawn(async move {
+        match seed::seed_app(&handle).await {
+          Ok(()) => log::info!("Seed data ready"),
+          Err(e) => log::error!("Seeding failed: {e}"),
+        }
+      });
       Ok(())
     })
-    .invoke_handler(tauri::generate_handler![commands::auth::hash_password])
+    .invoke_handler(tauri::generate_handler![
+      commands::auth::hash_password,
+      commands::auth::verify_password
+    ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
 }
