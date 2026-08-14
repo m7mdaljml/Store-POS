@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { RouterLink, RouterView, useRoute, useRouter } from "vue-router";
-import { useAuthStore } from "./stores/auth";
+import { useAuth } from "./composables/useAuth";
 import { useSettingsStore } from "./stores/settings";
 import { useCatalogStore } from "./stores/catalog";
 import { useThemeStore } from "./stores/theme";
@@ -9,7 +9,7 @@ import { seedIfNeeded } from "./lib/seed";
 
 const route = useRoute();
 const router = useRouter();
-const auth = useAuthStore();
+const auth = useAuth();
 const settings = useSettingsStore();
 const catalog = useCatalogStore();
 const theme = useThemeStore();
@@ -18,17 +18,24 @@ const collapsed = ref(false);
 const clock = ref("");
 let timer: number | undefined;
 
-const navItems = [
-  { to: "/", label: "Dashboard", icon: "bi-speedometer2" },
-  { to: "/checkout", label: "Checkout", icon: "bi-basket" },
-  { to: "/products", label: "Products", icon: "bi-box-seam" },
-  { to: "/purchases", label: "Purchases", icon: "bi-truck" },
-  { to: "/customers", label: "Customers", icon: "bi-people" },
-  { to: "/reports", label: "Reports", icon: "bi-graph-up-arrow" },
-  { to: "/expenses", label: "Expenses", icon: "bi-cash-coin" },
-  { to: "/users", label: "Users", icon: "bi-person-gear" },
-  { to: "/settings", label: "Settings", icon: "bi-gear" },
-];
+const navItems = computed(() => {
+  const items = [
+    { to: "/", label: "Dashboard", icon: "bi-speedometer2", adminOnly: true },
+    { to: "/checkout", label: "Checkout", icon: "bi-basket", permission: "sales.checkout" },
+    { to: "/products", label: "Products", icon: "bi-box-seam", permission: "inventory.view" },
+    { to: "/purchases", label: "Purchases", icon: "bi-truck", permission: "inventory.view" },
+    { to: "/customers", label: "Customers", icon: "bi-people", adminOnly: true },
+    { to: "/reports", label: "Reports", icon: "bi-graph-up-arrow", permission: "reports.view" },
+    { to: "/expenses", label: "Expenses", icon: "bi-cash-coin", permission: "expenses.manage" },
+    { to: "/users", label: "Users", icon: "bi-person-gear", permission: "users.manage" },
+    { to: "/settings", label: "Settings", icon: "bi-gear", permission: "settings.manage" },
+  ];
+  return items.filter((item) => {
+    if (item.adminOnly) return auth.role === "Admin";
+    if (item.permission) return auth.can(item.permission);
+    return true;
+  });
+});
 
 function tick() {
   clock.value = new Date().toLocaleTimeString();

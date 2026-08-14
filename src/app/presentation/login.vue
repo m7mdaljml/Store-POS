@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { ref } from "vue";
 import { useRouter } from "vue-router";
-import { useAuthStore } from "../../stores/auth";
+import { useAuth } from "../../composables/useAuth";
 import { useSettingsStore } from "../../stores/settings";
 
 const router = useRouter();
-const auth = useAuthStore();
+const auth = useAuth();
 const settings = useSettingsStore();
 
 const username = ref("");
