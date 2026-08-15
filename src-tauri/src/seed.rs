@@ -31,6 +31,16 @@ pub async fn seed_app<R: Runtime>(app: &AppHandle<R>) -> Result<(), Box<dyn std:
 pub async fn seed_db(path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
     let pool = db::connect(path).await?;
 
+    let threshold: Option<(String,)> =
+        sqlx::query_as("SELECT value FROM settings WHERE key = 'discount_threshold'")
+            .fetch_optional(&pool)
+            .await?;
+    if threshold.is_none() {
+        sqlx::query("INSERT INTO settings (key, value) VALUES ('discount_threshold', '10')")
+            .execute(&pool)
+            .await?;
+    }
+
     let has_base: Option<(i64,)> =
         sqlx::query_as("SELECT id FROM currencies WHERE is_base = 1 LIMIT 1")
             .fetch_optional(&pool)
@@ -131,6 +141,7 @@ pub(crate) mod tests {
     pub(crate) async fn create_schema(path: &std::path::Path) {
         let pool = db::connect(path).await.unwrap();
         for sql in [
+            "CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
             "CREATE TABLE currencies (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT UNIQUE NOT NULL, name TEXT NOT NULL, symbol TEXT NOT NULL, rate REAL NOT NULL DEFAULT 1, is_base INTEGER NOT NULL DEFAULT 0)",
             "CREATE TABLE roles (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, description TEXT)",
             "CREATE TABLE permissions (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT UNIQUE NOT NULL)",
@@ -181,6 +192,12 @@ pub(crate) mod tests {
             .unwrap();
         let parsed = PasswordHash::new(&hash).unwrap();
         assert!(Argon2::default().verify_password(b"admin", &parsed).is_ok());
+        let threshold: String =
+            sqlx::query_scalar("SELECT value FROM settings WHERE key = 'discount_threshold'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(threshold, "10");
         pool.close().await;
 
         std::fs::remove_file(&path).ok();

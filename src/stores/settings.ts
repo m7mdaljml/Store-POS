@@ -10,10 +10,14 @@ export const useSettingsStore = defineStore("settings", () => {
   const storeName = computed(() => values.value["store_name"] ?? "");
   const taxId = computed(() => values.value["tax_id"] ?? "");
   const currency = computed(() => values.value["currency"] ?? "");
+  const discountThreshold = computed(() => {
+    const parsed = Number(values.value["discount_threshold"]);
+    return isNaN(parsed) || parsed < 0 ? 10 : parsed;
+  });
 
   async function load() {
     const rows = await select<{ key: string; value: string }>(
-      "SELECT key, value FROM settings"
+      "SELECT key, value FROM settings",
     );
     const map: SettingsMap = {};
     for (const row of rows) map[row.key] = row.value;
@@ -21,5 +25,13 @@ export const useSettingsStore = defineStore("settings", () => {
     loaded.value = true;
   }
 
-  return { values, loaded, storeName, taxId, currency, load };
+  return {
+    values,
+    loaded,
+    storeName,
+    taxId,
+    currency,
+    discountThreshold,
+    load,
+  };
 });

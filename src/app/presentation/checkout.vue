@@ -4,12 +4,14 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { useCatalogStore } from "../../stores/catalog";
 import { useSettingsStore } from "../../stores/settings";
 import { useCartStore } from "../../stores/cart";
+import { useAuth } from "../../composables/useAuth";
 import { useScanner } from "../../composables/useScanner";
 import type { Product } from "../../types";
 
 const catalog = useCatalogStore();
 const settings = useSettingsStore();
 const cart = useCartStore();
+const auth = useAuth();
 
 const search = ref("");
 const searchBox = ref<HTMLElement | null>(null);
@@ -164,13 +166,67 @@ function bumpQty(productId: number, delta: number) {
 }
 
 function onItemDiscount(productId: number, e: Event) {
+  const item = cart.items.find((i) => i.productId === productId);
+  if (!item) return;
   const value = Number((e.target as HTMLInputElement).value);
-  cart.setDiscount(productId, isNaN(value) || value < 0 ? 0 : value);
+  if (isNaN(value) || value < 0) {
+    error.value = "Enter a valid item discount";
+    return;
+  }
+  const amount = value * item.qty;
+  if (!discountAllowed(amount)) {
+    error.value = discountError(amount);
+    return;
+  }
+  error.value = "";
+  cart.setDiscount(productId, value);
+}
+
+/** True when the user may apply a discount of `amount` (admin = unlimited). */
+function discountAllowed(amount: number): boolean {
+  if (auth.can("sales.discount")) return true;
+  return amount <= settings.discountThreshold;
+}
+
+function discountError(amount: number): string {
+  return `Discount of ${fmt(amount)} exceeds the ${fmt(settings.discountThreshold)} limit — requires sales.discount permission`;
+}
+
+const discountLimitHint = computed(() =>
+  auth.can("sales.discount")
+    ? "Unlimited discounts (admin)"
+    : `Limited to ${fmt(settings.discountThreshold)} per order`
+);
+
+function discountMax(): number {
+  if (cart.orderDiscountType === "percent") return 100;
+  return cart.subtotal;
 }
 
 function onOrderDiscount(e: Event) {
   const value = Number((e.target as HTMLInputElement).value);
-  cart.orderDiscount = isNaN(value) || value < 0 ? 0 : value;
+  if (isNaN(value) || value < 0) {
+    error.value = "Enter a valid discount";
+    return;
+  }
+  applyOrderDiscount(cart.orderDiscountType, value);
+}
+
+function setDiscountType(type: "fixed" | "percent") {
+  applyOrderDiscount(type, cart.orderDiscountValue);
+}
+
+function applyOrderDiscount(type: "fixed" | "percent", value: number) {
+  const amount =
+    type === "percent"
+      ? Math.min(cart.subtotal, (cart.subtotal * value) / 100)
+      : Math.min(cart.subtotal, value);
+  if (!discountAllowed(amount)) {
+    error.value = discountError(amount);
+    return;
+  }
+  error.value = "";
+  cart.setOrderDiscount(type, value);
 }
 
 useScanner({
@@ -372,20 +428,45 @@ onMounted(async () => {
           <label class="form-label mb-0 small text-muted" for="order-discount">
             Order discount
           </label>
-          <div class="input-group input-group-sm" style="width: 150px">
-            <span class="input-group-text">−</span>
-            <input
-              id="order-discount"
-              class="form-control text-end"
-              type="number"
-              min="0"
-              step="0.01"
-              :value="cart.orderDiscount"
-              aria-label="Order discount amount"
-              @input="onOrderDiscount"
-            />
+          <div class="btn-group btn-group-sm" role="group" aria-label="Discount type">
+            <button
+              class="btn btn-outline-secondary"
+              :class="{ active: cart.orderDiscountType === 'fixed' }"
+              type="button"
+              @click="setDiscountType('fixed')"
+            >
+              Fixed
+            </button>
+            <button
+              class="btn btn-outline-secondary"
+              :class="{ active: cart.orderDiscountType === 'percent' }"
+              type="button"
+              @click="setDiscountType('percent')"
+            >
+              %
+            </button>
           </div>
         </div>
+        <div class="input-group input-group-sm mb-1">
+          <span class="input-group-text">−</span>
+          <input
+            id="order-discount"
+            class="form-control text-end"
+            type="number"
+            :min="0"
+            :max="discountMax()"
+            step="0.01"
+            :value="cart.orderDiscountValue"
+            :aria-label="
+              cart.orderDiscountType === 'percent'
+                ? 'Order discount percentage'
+                : 'Order discount amount'
+            "
+            @input="onOrderDiscount"
+          />
+          <span v-if="cart.orderDiscountType === 'percent'" class="input-group-text">%</span>
+        </div>
+        <div class="text-muted mb-2" style="font-size: 0.72rem">{{ discountLimitHint }}</div>
 
         <div class="d-flex justify-content-between mb-1">
           <span class="text-muted">Subtotal</span>
@@ -395,9 +476,17 @@ onMounted(async () => {
           <span class="text-muted">Item discounts</span>
           <span>−{{ fmt(cart.itemDiscountTotal) }}</span>
         </div>
-        <div v-if="cart.orderDiscount" class="d-flex justify-content-between mb-1 text-danger">
+        <div
+          v-if="cart.orderDiscountAmount"
+          class="d-flex justify-content-between mb-1 text-danger"
+        >
           <span class="text-muted">Order discount</span>
-          <span>−{{ fmt(cart.orderDiscount) }}</span>
+          <span>
+            −{{ fmt(cart.orderDiscountAmount) }}
+            <span v-if="cart.orderDiscountType === 'percent'" class="text-muted">
+              ({{ cart.orderDiscountValue }}%)
+            </span>
+          </span>
         </div>
         <div class="d-flex justify-content-between align-items-center pt-2 border-top">
           <span class="fw-semibold">Total</span>

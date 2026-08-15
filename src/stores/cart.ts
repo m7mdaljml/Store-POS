@@ -4,7 +4,8 @@ import type { CartItem } from "../types";
 
 export const useCartStore = defineStore("cart", () => {
   const items = ref<CartItem[]>([]);
-  const orderDiscount = ref(0);
+  const orderDiscountType = ref<"fixed" | "percent">("fixed");
+  const orderDiscountValue = ref(0);
 
   const subtotal = computed(() =>
     items.value.reduce((sum, item) => sum + item.price * item.qty, 0)
@@ -12,8 +13,16 @@ export const useCartStore = defineStore("cart", () => {
   const itemDiscountTotal = computed(() =>
     items.value.reduce((sum, item) => sum + item.discount * item.qty, 0)
   );
+  const orderDiscountAmount = computed(() => {
+    const value = orderDiscountValue.value;
+    if (value <= 0 || !subtotal.value) return 0;
+    if (orderDiscountType.value === "percent") {
+      return Math.min(subtotal.value, (subtotal.value * value) / 100);
+    }
+    return Math.min(subtotal.value, value);
+  });
   const total = computed(() =>
-    Math.max(0, subtotal.value - itemDiscountTotal.value - orderDiscount.value)
+    Math.max(0, subtotal.value - itemDiscountTotal.value - orderDiscountAmount.value)
   );
   const itemCount = computed(() =>
     items.value.reduce((sum, item) => sum + item.qty, 0)
@@ -48,14 +57,23 @@ export const useCartStore = defineStore("cart", () => {
     return Math.max(0, item.price - item.discount) * item.qty;
   }
 
+  /** Order-level discount; type is "fixed" (currency) or "percent" of subtotal. */
+  function setOrderDiscount(type: "fixed" | "percent", value: number) {
+    orderDiscountType.value = type;
+    orderDiscountValue.value = Math.max(0, value);
+  }
+
   function clear() {
     items.value = [];
-    orderDiscount.value = 0;
+    orderDiscountType.value = "fixed";
+    orderDiscountValue.value = 0;
   }
 
   return {
     items,
-    orderDiscount,
+    orderDiscountType,
+    orderDiscountValue,
+    orderDiscountAmount,
     subtotal,
     itemDiscountTotal,
     total,
@@ -65,6 +83,7 @@ export const useCartStore = defineStore("cart", () => {
     setQty,
     setDiscount,
     lineTotal,
+    setOrderDiscount,
     clear,
   };
 });

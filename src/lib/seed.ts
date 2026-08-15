@@ -17,6 +17,13 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
 };
 
 export async function seedIfNeeded(): Promise<void> {
+  const threshold = await selectOne<{ value: string }>(
+    "SELECT value FROM settings WHERE key = 'discount_threshold'",
+  );
+  if (!threshold) {
+    await execute("INSERT INTO settings (key, value) VALUES ('discount_threshold', '10')");
+  }
+
   const baseCurrency = await selectOne<{ id: number }>(
     "SELECT id FROM currencies WHERE is_base = 1 LIMIT 1",
   );
