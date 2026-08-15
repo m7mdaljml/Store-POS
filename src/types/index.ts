@@ -110,3 +110,20 @@ export interface InvoiceLine {
   qty: number;
   costPrice: number;
 }
+
+export interface ExpenseCategory {
+  id: number;
+  name: string;
+  expenseCount: number;
+}
+
+export interface OutgoingExpense {
+  id: number;
+  category_id: number | null;
+  category_name: string | null;
+  amount: number;
+  date: string;
+  description: string | null;
+  reference_no: string | null;
+  user_name: string | null;
+}

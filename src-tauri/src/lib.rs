@@ -72,7 +72,12 @@ pub fn run() {
       commands::suppliers::update_supplier,
       commands::suppliers::delete_supplier,
       commands::purchasing::create_supplier_invoice,
-      commands::purchasing::list_supplier_invoices
+      commands::purchasing::list_supplier_invoices,
+      commands::expenses::list_expense_categories,
+      commands::expenses::create_expense_category,
+      commands::expenses::delete_expense_category,
+      commands::expenses::list_expenses_out,
+      commands::expenses::add_expense_out
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
