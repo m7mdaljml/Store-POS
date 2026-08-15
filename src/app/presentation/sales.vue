@@ -1,109 +1,3 @@
-<script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
-import { invoke } from "@tauri-apps/api/core";
-import { useSettingsStore } from "../../stores/settings";
-import { useAuth } from "../../composables/useAuth";
-import { buildReceiptHtml, printReceipt } from "../../lib/receipt";
-import type { SaleReceipt, SaleRecord } from "../../types";
-
-const settings = useSettingsStore();
-const auth = useAuth();
-
-const sales = ref<SaleRecord[]>([]);
-const loading = ref(false);
-const error = ref("");
-const notice = ref("");
-const filter = ref("");
-
-const voidTarget = ref<SaleRecord | null>(null);
-const voidReason = ref("");
-const voidError = ref("");
-const voiding = ref(false);
-const printingId = ref<number | null>(null);
-
-function fmt(n: number): string {
-  if (!settings.currency) return n.toFixed(2);
-  return new Intl.NumberFormat(undefined, {
-    style: "currency",
-    currency: settings.currency,
-    currencyDisplay: "narrowSymbol",
-  }).format(n);
-}
-
-function dateLabel(d: string): string {
-  const date = new Date(d + (d.includes("T") ? "" : "Z"));
-  if (isNaN(date.getTime())) return d;
-  return date.toLocaleString();
-}
-
-const filteredSales = computed(() =>
-  filter.value ? sales.value.filter((s) => s.status === filter.value) : sales.value
-);
-
-const openVoid = computed(() => auth.can("sales.void"));
-
-async function load() {
-  loading.value = true;
-  error.value = "";
-  try {
-    sales.value = await invoke<SaleRecord[]>("list_sales", { input: { limit: 200 } });
-  } catch (e) {
-    error.value = String(e);
-  } finally {
-    loading.value = false;
-  }
-}
-
-function openVoidModal(sale: SaleRecord) {
-  voidTarget.value = sale;
-  voidReason.value = "";
-  voidError.value = "";
-}
-
-async function reprintReceipt(sale: SaleRecord) {
-  printingId.value = sale.id;
-  error.value = "";
-  try {
-    const receipt = await invoke<SaleReceipt>("get_sale_receipt", {
-      input: { saleId: sale.id },
-    });
-    await printReceipt(buildReceiptHtml(receipt));
-  } catch (e) {
-    error.value = `Printing failed: ${String(e)}`;
-  } finally {
-    printingId.value = null;
-  }
-}
-
-async function confirmVoid() {
-  if (!voidTarget.value) return;
-  if (!voidReason.value.trim()) {
-    voidError.value = "Enter a reason for voiding this sale";
-    return;
-  }
-  voiding.value = true;
-  voidError.value = "";
-  try {
-    await invoke("void_sale", {
-      input: {
-        saleId: voidTarget.value.id,
-        reason: voidReason.value.trim(),
-        userId: auth.user?.id ?? null,
-      },
-    });
-    notice.value = `Sale ${voidTarget.value.saleNo} voided. Stock and any customer credit have been reversed.`;
-    voidTarget.value = null;
-    await load();
-  } catch (e) {
-    voidError.value = String(e);
-  } finally {
-    voiding.value = false;
-  }
-}
-
-onMounted(load);
-</script>
-
 <template>
   <div class="page-container">
     <div class="page-heading d-flex flex-wrap align-items-center gap-3">
@@ -285,3 +179,109 @@ onMounted(load);
     </div>
   </div>
 </template>
+
+<script setup lang="ts">
+import { computed, onMounted, ref } from "vue";
+import { invoke } from "@tauri-apps/api/core";
+import { useSettingsStore } from "../../stores/settings";
+import { useAuth } from "../../composables/useAuth";
+import { buildReceiptHtml, printReceipt } from "../../lib/receipt";
+import type { SaleReceipt, SaleRecord } from "../../types";
+
+const settings = useSettingsStore();
+const auth = useAuth();
+
+const sales = ref<SaleRecord[]>([]);
+const loading = ref(false);
+const error = ref("");
+const notice = ref("");
+const filter = ref("");
+
+const voidTarget = ref<SaleRecord | null>(null);
+const voidReason = ref("");
+const voidError = ref("");
+const voiding = ref(false);
+const printingId = ref<number | null>(null);
+
+function fmt(n: number): string {
+  if (!settings.currency) return n.toFixed(2);
+  return new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency: settings.currency,
+    currencyDisplay: "narrowSymbol",
+  }).format(n);
+}
+
+function dateLabel(d: string): string {
+  const date = new Date(d + (d.includes("T") ? "" : "Z"));
+  if (isNaN(date.getTime())) return d;
+  return date.toLocaleString();
+}
+
+const filteredSales = computed(() =>
+  filter.value ? sales.value.filter((s) => s.status === filter.value) : sales.value
+);
+
+const openVoid = computed(() => auth.can("sales.void"));
+
+async function load() {
+  loading.value = true;
+  error.value = "";
+  try {
+    sales.value = await invoke<SaleRecord[]>("list_sales", { input: { limit: 200 } });
+  } catch (e) {
+    error.value = String(e);
+  } finally {
+    loading.value = false;
+  }
+}
+
+function openVoidModal(sale: SaleRecord) {
+  voidTarget.value = sale;
+  voidReason.value = "";
+  voidError.value = "";
+}
+
+async function reprintReceipt(sale: SaleRecord) {
+  printingId.value = sale.id;
+  error.value = "";
+  try {
+    const receipt = await invoke<SaleReceipt>("get_sale_receipt", {
+      input: { saleId: sale.id },
+    });
+    await printReceipt(buildReceiptHtml(receipt));
+  } catch (e) {
+    error.value = `Printing failed: ${String(e)}`;
+  } finally {
+    printingId.value = null;
+  }
+}
+
+async function confirmVoid() {
+  if (!voidTarget.value) return;
+  if (!voidReason.value.trim()) {
+    voidError.value = "Enter a reason for voiding this sale";
+    return;
+  }
+  voiding.value = true;
+  voidError.value = "";
+  try {
+    await invoke("void_sale", {
+      input: {
+        saleId: voidTarget.value.id,
+        reason: voidReason.value.trim(),
+        userId: auth.user?.id ?? null,
+      },
+    });
+    notice.value = `Sale ${voidTarget.value.saleNo} voided. Stock and any customer credit have been reversed.`;
+    voidTarget.value = null;
+    await load();
+  } catch (e) {
+    voidError.value = String(e);
+  } finally {
+    voiding.value = false;
+  }
+}
+
+onMounted(load);
+</script>

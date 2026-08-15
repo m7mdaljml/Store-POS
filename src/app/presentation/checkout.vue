@@ -1,3 +1,717 @@
+<template>
+  <div class="checkout-grid">
+    <div v-if="!openSession" class="register-bar register-closed">
+      <i class="bi bi-cash-stack me-2"></i>
+      <span>Register is closed — open it before completing sales.</span>
+      <button class="btn btn-sm btn-primary ms-auto" type="button" @click="openRegister">
+        <i class="bi bi-box-arrow-in-right me-1"></i>Open Register
+      </button>
+    </div>
+    <div v-else class="register-bar register-open">
+      <i class="bi bi-cash-stack me-2"></i>
+      <span>
+        Register open since {{ dateLabel(openSession.openedAt) }} ·
+        Opening {{ fmt(openSession.openingCash) }} ·
+        {{ openSession.salesCount }} sale(s) · {{ fmt(openSession.salesTotal) }}
+      </span>
+      <button class="btn btn-sm btn-outline-secondary ms-auto" type="button" @click="closeRegister">
+        <i class="bi bi-box-arrow-right me-1"></i>Close Register
+      </button>
+    </div>
+
+    <section class="checkout-left">
+      <div class="mb-3 checkout-search" ref="searchBox">
+        <input
+          v-model="search"
+          class="form-control form-control-lg"
+          type="search"
+          placeholder="Search by product name, SKU or barcode…"
+          aria-label="Search products"
+          autocomplete="off"
+          @input="onSearchInput"
+          @focus="onSearchInput"
+          @keydown="onSearchKeydown"
+        />
+        <div v-if="searchOpen && suggestions.length" class="checkout-search-dropdown card">
+          <button
+            v-for="(s, i) in suggestions"
+            :key="s.id"
+            class="search-item"
+            :class="{ active: i === activeSuggestion }"
+            type="button"
+            @mouseenter="activeSuggestion = i"
+            @click="pickSuggestion(s)"
+          >
+            <span class="search-item-name">
+              {{ s.name }}
+              <span class="text-muted small ms-1">
+                {{ s.sku || s.barcode }}
+              </span>
+            </span>
+            <span class="ms-auto text-nowrap">
+              <span class="fw-semibold">{{ fmt(s.sell_price) }}</span>
+              <span class="text-muted small ms-2">
+                {{ s.stock_qty }} {{ s.unit }}
+              </span>
+            </span>
+          </button>
+          <div v-if="!suggestions.length" class="text-muted small p-3">
+            No matching products
+          </div>
+        </div>
+      </div>
+
+      <div class="checkout-cat-tabs mb-3">
+        <button
+          class="cat-tab"
+          :class="{ active: activeCategory == null }"
+          type="button"
+          @click="activeCategory = null"
+        >
+          All
+        </button>
+        <button
+          v-for="c in catalog.categories"
+          :key="c.id"
+          class="cat-tab"
+          :class="{ active: activeCategory === c.id }"
+          type="button"
+          @click="activeCategory = c.id"
+        >
+          {{ c.name }}
+        </button>
+      </div>
+
+      <div v-if="error" class="alert alert-warning py-1 px-2 mb-3 small" role="alert">
+        <i class="bi bi-exclamation-triangle me-1"></i>{{ error }}
+      </div>
+      <div v-if="notice" class="alert alert-success py-1 px-2 mb-3 small" role="alert">
+        <i class="bi bi-check-circle me-1"></i>{{ notice }}
+      </div>
+
+      <div class="product-grid">
+        <p v-if="!filteredProducts.length" class="text-muted py-4 text-center w-100">
+          No products found
+        </p>
+        <button
+          v-for="p in filteredProducts"
+          :key="p.id"
+          class="product-card"
+          :class="{ 'is-oos': p.stock_qty <= 0 }"
+          type="button"
+          :disabled="p.stock_qty <= 0"
+          :title="p.stock_qty > 0 ? 'Click to add to cart' : 'Out of stock'"
+          @click="addToCart(p)"
+        >
+          <div class="product-card-img">
+            <img v-if="p.image_path" :src="convertFileSrc(p.image_path)" alt="" />
+            <i v-else class="bi bi-box-seam"></i>
+            <span v-if="inCart(p.id)" class="product-card-badge">
+              <i class="bi bi-cart-plus me-1"></i>{{ inCart(p.id) }}
+            </span>
+            <span v-if="p.stock_qty <= 0" class="product-card-oos">Out of stock</span>
+          </div>
+          <div class="product-card-name">{{ p.name }}</div>
+          <div class="product-card-price">{{ fmt(p.sell_price) }}</div>
+          <div class="product-card-stock" :class="{ 'text-danger': p.stock_qty <= 0 }">
+            <i class="bi bi-box me-1"></i>{{ p.stock_qty }} {{ p.unit }}
+          </div>
+        </button>
+      </div>
+    </section>
+
+    <aside class="checkout-right card">
+      <div class="card-header d-flex align-items-center justify-content-between">
+        <span class="fw-semibold">
+          <i class="bi bi-cart3 me-2"></i>Cart
+          <span class="badge text-bg-primary ms-1">{{ cart.itemCount }}</span>
+        </span>
+        <button
+          class="btn btn-sm btn-outline-secondary"
+          type="button"
+          :disabled="!cart.items.length"
+          @click="cart.clear()"
+        >
+          <i class="bi bi-trash me-1"></i>Clear
+        </button>
+      </div>
+
+      <div class="cart-items">
+        <p v-if="!cart.items.length" class="text-muted small text-center my-5">
+          Cart is empty — click products to add them
+        </p>
+        <div v-for="item in cart.items" :key="item.productId" class="cart-item">
+          <div class="d-flex justify-content-between gap-2">
+            <div class="cart-item-name fw-semibold small">{{ item.name }}</div>
+            <button
+              class="btn btn-sm btn-link text-danger p-0 lh-1"
+              type="button"
+              title="Remove"
+              @click="cart.remove(item.productId)"
+            >
+              <i class="bi bi-x-lg"></i>
+            </button>
+          </div>
+          <div class="d-flex justify-content-between align-items-center mt-1">
+            <div class="input-group input-group-sm cart-qty">
+              <button
+                class="btn btn-outline-secondary"
+                type="button"
+                @click="bumpQty(item.productId, -1)"
+              >
+                <i class="bi bi-dash"></i>
+              </button>
+              <span class="input-group-text cart-qty-val">{{ item.qty }}</span>
+              <button
+                class="btn btn-outline-secondary"
+                type="button"
+                :disabled="item.qty >= stockFor(item.productId)"
+                @click="bumpQty(item.productId, 1)"
+              >
+                <i class="bi bi-plus"></i>
+              </button>
+            </div>
+            <div class="text-end">
+              <div class="fw-semibold fs-6">{{ fmt(cart.lineTotal(item)) }}</div>
+              <div class="text-muted text-xs">{{ fmt(item.price) }} each</div>
+            </div>
+          </div>
+          <div class="d-flex justify-content-between align-items-center mt-1">
+            <span class="text-muted text-xs">Discount / unit</span>
+            <div class="input-group input-group-sm item-discount">
+              <span class="input-group-text">−</span>
+              <input
+                class="form-control text-end"
+                type="number"
+                min="0"
+                step="0.01"
+                :max="item.price"
+                :value="item.discount"
+                :aria-label="`Discount per unit for ${item.name}`"
+                @input="onItemDiscount(item.productId, $event)"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="cart-totals card-body border-top">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <label class="form-label mb-0 small text-muted" for="order-discount">
+            Order discount
+          </label>
+          <div class="btn-group btn-group-sm" role="group" aria-label="Discount type">
+            <button
+              class="btn btn-outline-secondary"
+              :class="{ active: cart.orderDiscountType === 'fixed' }"
+              type="button"
+              @click="setDiscountType('fixed')"
+            >
+              Fixed
+            </button>
+            <button
+              class="btn btn-outline-secondary"
+              :class="{ active: cart.orderDiscountType === 'percent' }"
+              type="button"
+              @click="setDiscountType('percent')"
+            >
+              %
+            </button>
+          </div>
+        </div>
+        <div class="input-group input-group-sm mb-1">
+          <span class="input-group-text">−</span>
+          <input
+            id="order-discount"
+            class="form-control text-end"
+            type="number"
+            :min="0"
+            :max="discountMax()"
+            step="0.01"
+            :value="cart.orderDiscountValue"
+            :aria-label="
+              cart.orderDiscountType === 'percent'
+                ? 'Order discount percentage'
+                : 'Order discount amount'
+            "
+            @input="onOrderDiscount"
+          />
+          <span v-if="cart.orderDiscountType === 'percent'" class="input-group-text">%</span>
+        </div>
+        <div class="text-muted mb-2" style="font-size: 0.72rem">{{ discountLimitHint }}</div>
+
+        <div class="d-flex justify-content-between mb-1">
+          <span class="text-muted">Subtotal</span>
+          <span>{{ fmt(cart.subtotal) }}</span>
+        </div>
+        <div v-if="cart.itemDiscountTotal" class="d-flex justify-content-between mb-1 text-danger">
+          <span class="text-muted">Item discounts</span>
+          <span>−{{ fmt(cart.itemDiscountTotal) }}</span>
+        </div>
+        <div
+          v-if="cart.orderDiscountAmount"
+          class="d-flex justify-content-between mb-1 text-danger"
+        >
+          <span class="text-muted">Order discount</span>
+          <span>
+            −{{ fmt(cart.orderDiscountAmount) }}
+            <span v-if="cart.orderDiscountType === 'percent'" class="text-muted">
+              ({{ cart.orderDiscountValue }}%)
+            </span>
+          </span>
+        </div>
+        <div class="d-flex justify-content-between align-items-center pt-2 border-top">
+          <span class="fw-semibold">Total</span>
+          <span class="fs-4 fw-bold">{{ fmt(cart.total) }}</span>
+        </div>
+      </div>
+
+      <div class="checkout-payment card-body border-top">
+        <div class="fw-semibold small mb-2">
+          <i class="bi bi-cash-coin me-1"></i>Payment
+        </div>
+
+        <div class="mb-2">
+          <label class="form-label mb-1 small text-muted" for="cash-received">Cash received</label>
+          <div class="input-group input-group-sm">
+            <span class="input-group-text">{{ settings.currency || "amt" }}</span>
+            <input
+              id="cash-received"
+              class="form-control text-end"
+              type="number"
+              min="0"
+              step="0.01"
+              :value="cart.cashReceived"
+              aria-label="Cash received"
+              @input="onCashReceived"
+            />
+            <button
+              class="btn btn-outline-secondary"
+              type="button"
+              title="Set cash to the exact total"
+              @click="cart.syncCashToTotal()"
+            >
+              Exact
+            </button>
+          </div>
+        </div>
+        <div class="d-flex flex-wrap gap-1 mb-2" aria-label="Quick cash amounts">
+          <button
+            v-for="amt in quickCashAmounts"
+            :key="amt"
+            class="btn btn-sm btn-outline-secondary"
+            type="button"
+            :title="`Tender ${fmt(amt)}`"
+            @click="cart.cashReceived = amt"
+          >
+            {{ fmt(amt) }}
+          </button>
+        </div>
+
+        <div v-if="cart.splitLines.length" class="mb-2">
+          <div class="text-muted small mb-1">Split payments</div>
+          <div
+            v-for="(line, i) in cart.splitLines"
+            :key="i"
+            class="payment-line"
+          >
+            <select
+              class="form-select form-select-sm payment-line-method"
+              :value="line.method"
+              :aria-label="`Payment ${i + 1} method`"
+              @change="
+                cart.setSplitLine(i, {
+                  method: ($event.target as HTMLSelectElement).value as PaymentLine['method'],
+                })
+              "
+            >
+              <option value="card">Card</option>
+              <option value="credit">Customer credit</option>
+            </select>
+            <template v-if="line.method === 'credit'">
+              <select
+                class="form-select form-select-sm"
+                :value="line.customerId ?? ''"
+                :aria-label="`Payment ${i + 1} customer`"
+                @change="
+                  cart.setSplitLine(i, {
+                    customerId: ($event.target as HTMLSelectElement).value
+                      ? Number(($event.target as HTMLSelectElement).value)
+                      : null,
+                  })
+                "
+              >
+                <option value="" disabled>Select customer…</option>
+                <option v-for="c in customers" :key="c.id" :value="c.id">
+                  {{ customerLabel(c) }}
+                </option>
+              </select>
+            </template>
+            <template v-else>
+              <input
+                class="form-control form-control-sm"
+                type="text"
+                :value="line.reference ?? ''"
+                placeholder="Card ref (optional)"
+                :aria-label="`Payment ${i + 1} card reference`"
+                @input="
+                  cart.setSplitLine(i, {
+                    reference: ($event.target as HTMLInputElement).value,
+                  })
+                "
+              />
+            </template>
+            <div class="input-group input-group-sm">
+              <span class="input-group-text">{{ settings.currency || "amt" }}</span>
+              <input
+                class="form-control text-end"
+                type="number"
+                min="0"
+                step="0.01"
+                :value="line.amount"
+                :aria-label="`Payment ${i + 1} amount`"
+                @input="onSplitAmount(i, $event)"
+              />
+            </div>
+            <button
+              class="btn btn-sm btn-outline-danger"
+              type="button"
+              title="Remove payment"
+              @click="cart.removeSplitLine(i)"
+            >
+              <i class="bi bi-x-lg"></i>
+            </button>
+          </div>
+        </div>
+
+        <button
+          class="btn btn-sm btn-outline-secondary w-100 mb-2"
+          type="button"
+          @click="cart.addSplitLine()"
+        >
+          <i class="bi bi-plus-lg me-1"></i>Add payment method
+        </button>
+
+        <div class="d-flex justify-content-between mb-1">
+          <span class="text-muted">Split payments</span>
+          <span>{{ fmt(cart.splitTotal) }}</span>
+        </div>
+        <div class="d-flex justify-content-between mb-1">
+          <span class="text-muted">Cash tendered</span>
+          <span>{{ fmt(cart.cashReceived) }}</span>
+        </div>
+        <div
+          v-if="cart.shortfall > 0.005"
+          class="d-flex justify-content-between mb-1 text-danger fw-semibold"
+        >
+          <span>Short</span>
+          <span>−{{ fmt(cart.shortfall) }}</span>
+        </div>
+        <div
+          v-if="cart.change > 0.005"
+          class="d-flex justify-content-between mb-2 text-success fw-semibold"
+        >
+          <span>Change</span>
+          <span>{{ fmt(cart.change) }}</span>
+        </div>
+
+        <div class="form-check small mb-2">
+          <input
+            id="print-receipt"
+            v-model="printReceiptOnComplete"
+            class="form-check-input"
+            type="checkbox"
+          />
+          <label class="form-check-label" for="print-receipt">Print receipt after sale</label>
+        </div>
+
+        <div class="d-flex gap-2 mb-2">
+          <button
+            class="btn btn-outline-secondary flex-fill"
+            type="button"
+            :disabled="!cart.items.length || !openSession || holding || committing"
+            title="Save the cart to resume later"
+            @click="holdCurrentSale"
+          >
+            <span v-if="holding" class="spinner-border spinner-border-sm me-1" role="status"></span>
+            <i v-else class="bi bi-pause-circle me-1"></i>Hold
+          </button>
+          <button
+            class="btn btn-outline-secondary flex-fill"
+            type="button"
+            @click="openHeldSales"
+          >
+            <i class="bi bi-clock-history me-1"></i>Held Sales
+          </button>
+        </div>
+
+        <button
+          class="btn btn-lg btn-primary w-100"
+          type="button"
+          :disabled="!cart.items.length || !cart.paymentValid || !openSession || committing"
+          @click="completeSale"
+        >
+          <span v-if="committing" class="spinner-border spinner-border-sm me-2" role="status"></span>
+          <i v-else class="bi bi-cash-coin me-2"></i>Complete Sale
+        </button>
+      </div>
+    </aside>
+
+    <div
+      v-if="openModal"
+      class="modal fade show d-block"
+      tabindex="-1"
+      role="dialog"
+      @click.self="openModal = false"
+    >
+      <div class="modal-dialog" role="document">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">
+              <i class="bi bi-cash-stack me-2"></i>Open register
+            </h5>
+            <button
+              type="button"
+              class="btn-close"
+              aria-label="Close"
+              @click="openModal = false"
+            ></button>
+          </div>
+          <div class="modal-body">
+            <p class="small mb-3">
+              Enter the cash amount in the drawer at the start of your shift. All sales will be
+              recorded against this session until you close the register.
+            </p>
+            <label class="form-label" for="opening-cash">Opening cash</label>
+            <div class="input-group">
+              <span class="input-group-text">{{ settings.currency || "amt" }}</span>
+              <input
+                id="opening-cash"
+                v-model.number="openCash"
+                class="form-control text-end"
+                type="number"
+                min="0"
+                step="0.01"
+              />
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              :disabled="registerBusy"
+              @click="openModal = false"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              class="btn btn-primary"
+              :disabled="registerBusy"
+              @click="confirmOpenRegister"
+            >
+              <span
+                v-if="registerBusy"
+                class="spinner-border spinner-border-sm me-1"
+                role="status"
+              ></span>
+              <i v-else class="bi bi-box-arrow-in-right me-1"></i>Open register
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div
+      v-if="closeModal"
+      class="modal fade show d-block"
+      tabindex="-1"
+      role="dialog"
+      @click.self="closeModal = false"
+    >
+      <div class="modal-dialog" role="document">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">
+              <i class="bi bi-cash-stack me-2"></i>Close register
+            </h5>
+            <button
+              type="button"
+              class="btn-close"
+              aria-label="Close"
+              @click="closeModal = false"
+            ></button>
+          </div>
+          <div class="modal-body">
+            <p class="small mb-3">
+              Count the cash in the drawer and enter it below. The expected amount is
+              opening {{ fmt(openSession?.openingCash ?? 0) }} plus cash received minus change given.
+            </p>
+            <label class="form-label" for="closing-cash">Counted cash</label>
+            <div class="input-group">
+              <span class="input-group-text">{{ settings.currency || "amt" }}</span>
+              <input
+                id="closing-cash"
+                v-model.number="closeCash"
+                class="form-control text-end"
+                type="number"
+                min="0"
+                step="0.01"
+              />
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              :disabled="registerBusy"
+              @click="closeModal = false"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              class="btn btn-primary"
+              :disabled="registerBusy"
+              @click="confirmCloseRegister"
+            >
+              <span
+                v-if="registerBusy"
+                class="spinner-border spinner-border-sm me-1"
+                role="status"
+              ></span>
+              <i v-else class="bi bi-box-arrow-right me-1"></i>Close register
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div
+      v-if="closeResult"
+      class="modal fade show d-block"
+      tabindex="-1"
+      role="dialog"
+      @click.self="closeResult = null"
+    >
+      <div class="modal-dialog" role="document">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">
+              <i class="bi bi-check-circle me-2"></i>Register closed
+            </h5>
+            <button
+              type="button"
+              class="btn-close"
+              aria-label="Close"
+              @click="closeResult = null"
+            ></button>
+          </div>
+          <div class="modal-body">
+            <div class="d-flex justify-content-between mb-1">
+              <span class="text-muted">Opening cash</span>
+              <span>{{ fmt(closeResult.openingCash) }}</span>
+            </div>
+            <div class="d-flex justify-content-between mb-1">
+              <span class="text-muted">Cash received</span>
+              <span>{{ fmt(closeResult.cashPaid) }}</span>
+            </div>
+            <div class="d-flex justify-content-between mb-1">
+              <span class="text-muted">Change given</span>
+              <span>−{{ fmt(closeResult.changeGiven) }}</span>
+            </div>
+            <div class="d-flex justify-content-between mb-1">
+              <span class="text-muted">Expected cash</span>
+              <span class="fw-semibold">{{ fmt(closeResult.expectedCash ?? 0) }}</span>
+            </div>
+            <div class="d-flex justify-content-between mb-1">
+              <span class="text-muted">Counted cash</span>
+              <span class="fw-semibold">{{ fmt(closeResult.closingCash ?? 0) }}</span>
+            </div>
+            <div
+              class="d-flex justify-content-between pt-2 border-top"
+              :class="(closeResult.variance ?? 0) < -0.005 ? 'text-danger fw-bold' : (closeResult.variance ?? 0) > 0.005 ? 'text-warning fw-bold' : 'text-success fw-bold'"
+            >
+              <span>Variance</span>
+              <span>{{ fmt(closeResult.variance ?? 0) }}</span>
+            </div>
+            <p class="small text-muted mt-2 mb-0">
+              {{ closeResult.salesCount }} sale(s) worth {{ fmt(closeResult.salesTotal) }} were
+              recorded in this session.
+            </p>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-primary" @click="closeResult = null">Done</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div
+      v-if="heldSalesOpen"
+      class="modal fade show d-block"
+      tabindex="-1"
+      role="dialog"
+      @click.self="heldSalesOpen = false"
+    >
+      <div class="modal-dialog" role="document">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">
+              <i class="bi bi-clock-history me-2"></i>Held sales
+            </h5>
+            <button
+              type="button"
+              class="btn-close"
+              aria-label="Close"
+              @click="heldSalesOpen = false"
+            ></button>
+          </div>
+          <div class="modal-body">
+            <div v-if="heldError" class="alert alert-warning py-1 px-2 small" role="alert">
+              {{ heldError }}
+            </div>
+            <p v-if="!heldSales.length && !heldError" class="text-muted small text-center my-4">
+              No held sales
+            </p>
+            <div
+              v-for="sale in heldSales"
+              :key="sale.id"
+              class="d-flex justify-content-between align-items-center border-bottom py-2"
+            >
+              <div>
+                <div class="fw-semibold small">{{ sale.saleNo }}</div>
+                <div class="text-muted" style="font-size: 0.72rem">
+                  {{ sale.itemCount }} item(s) · {{ fmt(sale.total) }} ·
+                  {{ dateLabel(sale.createdAt) }}
+                </div>
+              </div>
+              <div class="d-flex gap-2">
+                <button
+                  class="btn btn-sm btn-primary"
+                  type="button"
+                  :disabled="resumingHeld"
+                  @click="resumeHeldSale(sale)"
+                >
+                  Resume
+                </button>
+                <button
+                  class="btn btn-sm btn-outline-danger"
+                  type="button"
+                  :disabled="resumingHeld"
+                  @click="cancelHeldSale(sale)"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
@@ -187,6 +901,16 @@ function onDocClick(e: MouseEvent) {
 function customerLabel(c: CustomerLite): string {
   return c.phone ? `${c.name} (${c.phone})` : c.name;
 }
+
+const quickCashAmounts = computed(() => {
+  const t = cart.total;
+  if (t <= 0) return [] as number[];
+  const amounts = new Set<number>();
+  for (const step of [5, 10, 20, 50]) {
+    amounts.add(Math.ceil(t / step) * step);
+  }
+  return [...amounts].filter((a) => a > t);
+});
 
 function onCashReceived(e: Event) {
   const value = Number((e.target as HTMLInputElement).value);
@@ -555,713 +1279,4 @@ useScanner({
     searchOpen.value = false;
   },
 });
-
-onMounted(async () => {
-  await Promise.allSettled([
-    catalog.loaded ? Promise.resolve() : catalog.load(),
-    settings.loaded ? Promise.resolve() : settings.load(),
-  ]);
-});
 </script>
-
-<template>
-  <div class="checkout-grid">
-    <div v-if="!openSession" class="register-bar register-closed">
-      <i class="bi bi-cash-stack me-2"></i>
-      <span>Register is closed — open it before completing sales.</span>
-      <button class="btn btn-sm btn-primary ms-auto" type="button" @click="openRegister">
-        <i class="bi bi-box-arrow-in-right me-1"></i>Open Register
-      </button>
-    </div>
-    <div v-else class="register-bar register-open">
-      <i class="bi bi-cash-stack me-2"></i>
-      <span>
-        Register open since {{ dateLabel(openSession.openedAt) }} ·
-        Opening {{ fmt(openSession.openingCash) }} ·
-        {{ openSession.salesCount }} sale(s) · {{ fmt(openSession.salesTotal) }}
-      </span>
-      <button class="btn btn-sm btn-outline-secondary ms-auto" type="button" @click="closeRegister">
-        <i class="bi bi-box-arrow-right me-1"></i>Close Register
-      </button>
-    </div>
-
-    <section class="checkout-left">
-      <div class="mb-3 checkout-search" ref="searchBox">
-        <input
-          v-model="search"
-          class="form-control form-control-lg"
-          type="search"
-          placeholder="Search by product name, SKU or barcode…"
-          aria-label="Search products"
-          autocomplete="off"
-          @input="onSearchInput"
-          @focus="onSearchInput"
-          @keydown="onSearchKeydown"
-        />
-        <div v-if="searchOpen && suggestions.length" class="checkout-search-dropdown card">
-          <button
-            v-for="(s, i) in suggestions"
-            :key="s.id"
-            class="search-item"
-            :class="{ active: i === activeSuggestion }"
-            type="button"
-            @mouseenter="activeSuggestion = i"
-            @click="pickSuggestion(s)"
-          >
-            <span class="search-item-name">
-              {{ s.name }}
-              <span class="text-muted small ms-1">
-                {{ s.sku || s.barcode }}
-              </span>
-            </span>
-            <span class="ms-auto text-nowrap">
-              <span class="fw-semibold">{{ fmt(s.sell_price) }}</span>
-              <span class="text-muted small ms-2">
-                {{ s.stock_qty }} {{ s.unit }}
-              </span>
-            </span>
-          </button>
-          <div v-if="!suggestions.length" class="text-muted small p-3">
-            No matching products
-          </div>
-        </div>
-      </div>
-
-      <div class="checkout-cat-tabs mb-3">
-        <button
-          class="cat-tab"
-          :class="{ active: activeCategory == null }"
-          type="button"
-          @click="activeCategory = null"
-        >
-          All
-        </button>
-        <button
-          v-for="c in catalog.categories"
-          :key="c.id"
-          class="cat-tab"
-          :class="{ active: activeCategory === c.id }"
-          type="button"
-          @click="activeCategory = c.id"
-        >
-          {{ c.name }}
-        </button>
-      </div>
-
-      <div v-if="error" class="alert alert-warning py-1 px-2 mb-3 small" role="alert">
-        <i class="bi bi-exclamation-triangle me-1"></i>{{ error }}
-      </div>
-      <div v-if="notice" class="alert alert-success py-1 px-2 mb-3 small" role="alert">
-        <i class="bi bi-check-circle me-1"></i>{{ notice }}
-      </div>
-
-      <div class="product-grid">
-        <p v-if="!filteredProducts.length" class="text-muted py-4 text-center w-100">
-          No products found
-        </p>
-        <button
-          v-for="p in filteredProducts"
-          :key="p.id"
-          class="product-card"
-          type="button"
-          :title="p.stock_qty > 0 ? 'Click to add to cart' : 'Out of stock'"
-          @click="addToCart(p)"
-        >
-          <div class="product-card-img">
-            <img v-if="p.image_path" :src="convertFileSrc(p.image_path)" alt="" />
-            <i v-else class="bi bi-box-seam"></i>
-          </div>
-          <div class="product-card-name">{{ p.name }}</div>
-          <div class="product-card-price">{{ fmt(p.sell_price) }}</div>
-          <div class="product-card-stock" :class="{ 'text-danger': p.stock_qty <= 0 }">
-            <i class="bi bi-box me-1"></i>{{ p.stock_qty }} {{ p.unit }}
-          </div>
-        </button>
-      </div>
-    </section>
-
-    <aside class="checkout-right card">
-      <div class="card-header d-flex align-items-center justify-content-between">
-        <span class="fw-semibold">
-          <i class="bi bi-cart3 me-2"></i>Cart
-          <span class="badge text-bg-primary ms-1">{{ cart.itemCount }}</span>
-        </span>
-        <button
-          class="btn btn-sm btn-outline-secondary"
-          type="button"
-          :disabled="!cart.items.length"
-          @click="cart.clear()"
-        >
-          <i class="bi bi-trash me-1"></i>Clear
-        </button>
-      </div>
-
-      <div class="cart-items">
-        <p v-if="!cart.items.length" class="text-muted small text-center my-5">
-          Cart is empty — click products to add them
-        </p>
-        <div v-for="item in cart.items" :key="item.productId" class="cart-item">
-          <div class="d-flex justify-content-between gap-2">
-            <div class="fw-semibold small">{{ item.name }}</div>
-            <button
-              class="btn btn-sm btn-link text-danger p-0 lh-1"
-              type="button"
-              title="Remove"
-              @click="cart.remove(item.productId)"
-            >
-              <i class="bi bi-x-lg"></i>
-            </button>
-          </div>
-          <div class="d-flex justify-content-between align-items-center mt-1">
-            <div class="input-group input-group-sm cart-qty">
-              <button
-                class="btn btn-outline-secondary"
-                type="button"
-                @click="bumpQty(item.productId, -1)"
-              >
-                <i class="bi bi-dash"></i>
-              </button>
-              <span class="input-group-text cart-qty-val">{{ item.qty }}</span>
-              <button
-                class="btn btn-outline-secondary"
-                type="button"
-                :disabled="item.qty >= stockFor(item.productId)"
-                @click="bumpQty(item.productId, 1)"
-              >
-                <i class="bi bi-plus"></i>
-              </button>
-            </div>
-            <div class="text-end">
-              <div class="fw-semibold">{{ fmt(cart.lineTotal(item)) }}</div>
-              <div class="text-muted" style="font-size: 0.72rem">
-                {{ fmt(item.price) }} each
-              </div>
-            </div>
-          </div>
-          <div class="d-flex justify-content-between align-items-center mt-1">
-            <span class="text-muted" style="font-size: 0.72rem">Discount / unit</span>
-            <div class="input-group input-group-sm item-discount">
-              <span class="input-group-text">−</span>
-              <input
-                class="form-control text-end"
-                type="number"
-                min="0"
-                step="0.01"
-                :max="item.price"
-                :value="item.discount"
-                :aria-label="`Discount per unit for ${item.name}`"
-                @input="onItemDiscount(item.productId, $event)"
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="cart-totals card-body border-top">
-        <div class="d-flex justify-content-between align-items-center mb-2">
-          <label class="form-label mb-0 small text-muted" for="order-discount">
-            Order discount
-          </label>
-          <div class="btn-group btn-group-sm" role="group" aria-label="Discount type">
-            <button
-              class="btn btn-outline-secondary"
-              :class="{ active: cart.orderDiscountType === 'fixed' }"
-              type="button"
-              @click="setDiscountType('fixed')"
-            >
-              Fixed
-            </button>
-            <button
-              class="btn btn-outline-secondary"
-              :class="{ active: cart.orderDiscountType === 'percent' }"
-              type="button"
-              @click="setDiscountType('percent')"
-            >
-              %
-            </button>
-          </div>
-        </div>
-        <div class="input-group input-group-sm mb-1">
-          <span class="input-group-text">−</span>
-          <input
-            id="order-discount"
-            class="form-control text-end"
-            type="number"
-            :min="0"
-            :max="discountMax()"
-            step="0.01"
-            :value="cart.orderDiscountValue"
-            :aria-label="
-              cart.orderDiscountType === 'percent'
-                ? 'Order discount percentage'
-                : 'Order discount amount'
-            "
-            @input="onOrderDiscount"
-          />
-          <span v-if="cart.orderDiscountType === 'percent'" class="input-group-text">%</span>
-        </div>
-        <div class="text-muted mb-2" style="font-size: 0.72rem">{{ discountLimitHint }}</div>
-
-        <div class="d-flex justify-content-between mb-1">
-          <span class="text-muted">Subtotal</span>
-          <span>{{ fmt(cart.subtotal) }}</span>
-        </div>
-        <div v-if="cart.itemDiscountTotal" class="d-flex justify-content-between mb-1 text-danger">
-          <span class="text-muted">Item discounts</span>
-          <span>−{{ fmt(cart.itemDiscountTotal) }}</span>
-        </div>
-        <div
-          v-if="cart.orderDiscountAmount"
-          class="d-flex justify-content-between mb-1 text-danger"
-        >
-          <span class="text-muted">Order discount</span>
-          <span>
-            −{{ fmt(cart.orderDiscountAmount) }}
-            <span v-if="cart.orderDiscountType === 'percent'" class="text-muted">
-              ({{ cart.orderDiscountValue }}%)
-            </span>
-          </span>
-        </div>
-        <div class="d-flex justify-content-between align-items-center pt-2 border-top">
-          <span class="fw-semibold">Total</span>
-          <span class="fs-4 fw-bold">{{ fmt(cart.total) }}</span>
-        </div>
-      </div>
-
-      <div class="checkout-payment card-body border-top">
-        <div class="fw-semibold small mb-2">
-          <i class="bi bi-cash-coin me-1"></i>Payment
-        </div>
-
-        <div class="mb-2">
-          <label class="form-label mb-1 small text-muted" for="cash-received">Cash received</label>
-          <div class="input-group input-group-sm">
-            <span class="input-group-text">{{ settings.currency || "amt" }}</span>
-            <input
-              id="cash-received"
-              class="form-control text-end"
-              type="number"
-              min="0"
-              step="0.01"
-              :value="cart.cashReceived"
-              aria-label="Cash received"
-              @input="onCashReceived"
-            />
-            <button
-              class="btn btn-outline-secondary"
-              type="button"
-              title="Set cash to the exact total"
-              @click="cart.syncCashToTotal()"
-            >
-              Exact
-            </button>
-          </div>
-        </div>
-
-        <div v-if="cart.splitLines.length" class="mb-2">
-          <div class="text-muted small mb-1">Split payments</div>
-          <div
-            v-for="(line, i) in cart.splitLines"
-            :key="i"
-            class="payment-line"
-          >
-            <select
-              class="form-select form-select-sm payment-line-method"
-              :value="line.method"
-              :aria-label="`Payment ${i + 1} method`"
-              @change="
-                cart.setSplitLine(i, {
-                  method: ($event.target as HTMLSelectElement).value as PaymentLine['method'],
-                })
-              "
-            >
-              <option value="card">Card</option>
-              <option value="credit">Customer credit</option>
-            </select>
-            <template v-if="line.method === 'credit'">
-              <select
-                class="form-select form-select-sm"
-                :value="line.customerId ?? ''"
-                :aria-label="`Payment ${i + 1} customer`"
-                @change="
-                  cart.setSplitLine(i, {
-                    customerId: ($event.target as HTMLSelectElement).value
-                      ? Number(($event.target as HTMLSelectElement).value)
-                      : null,
-                  })
-                "
-              >
-                <option value="" disabled>Select customer…</option>
-                <option v-for="c in customers" :key="c.id" :value="c.id">
-                  {{ customerLabel(c) }}
-                </option>
-              </select>
-            </template>
-            <template v-else>
-              <input
-                class="form-control form-control-sm"
-                type="text"
-                :value="line.reference ?? ''"
-                placeholder="Card ref (optional)"
-                :aria-label="`Payment ${i + 1} card reference`"
-                @input="
-                  cart.setSplitLine(i, {
-                    reference: ($event.target as HTMLInputElement).value,
-                  })
-                "
-              />
-            </template>
-            <div class="input-group input-group-sm">
-              <span class="input-group-text">{{ settings.currency || "amt" }}</span>
-              <input
-                class="form-control text-end"
-                type="number"
-                min="0"
-                step="0.01"
-                :value="line.amount"
-                :aria-label="`Payment ${i + 1} amount`"
-                @input="onSplitAmount(i, $event)"
-              />
-            </div>
-            <button
-              class="btn btn-sm btn-outline-danger"
-              type="button"
-              title="Remove payment"
-              @click="cart.removeSplitLine(i)"
-            >
-              <i class="bi bi-x-lg"></i>
-            </button>
-          </div>
-        </div>
-
-        <button
-          class="btn btn-sm btn-outline-secondary w-100 mb-2"
-          type="button"
-          @click="cart.addSplitLine()"
-        >
-          <i class="bi bi-plus-lg me-1"></i>Add payment method
-        </button>
-
-        <div class="d-flex justify-content-between mb-1">
-          <span class="text-muted">Total</span>
-          <span class="fw-semibold">{{ fmt(cart.total) }}</span>
-        </div>
-        <div class="d-flex justify-content-between mb-1">
-          <span class="text-muted">Split payments</span>
-          <span>{{ fmt(cart.splitTotal) }}</span>
-        </div>
-        <div class="d-flex justify-content-between mb-1">
-          <span class="text-muted">Cash tendered</span>
-          <span>{{ fmt(cart.cashReceived) }}</span>
-        </div>
-        <div
-          v-if="cart.shortfall > 0.005"
-          class="d-flex justify-content-between mb-1 text-danger fw-semibold"
-        >
-          <span>Short</span>
-          <span>−{{ fmt(cart.shortfall) }}</span>
-        </div>
-        <div
-          v-if="cart.change > 0.005"
-          class="d-flex justify-content-between mb-2 text-success fw-semibold"
-        >
-          <span>Change</span>
-          <span>{{ fmt(cart.change) }}</span>
-        </div>
-
-        <div class="form-check small mb-2">
-          <input
-            id="print-receipt"
-            v-model="printReceiptOnComplete"
-            class="form-check-input"
-            type="checkbox"
-          />
-          <label class="form-check-label" for="print-receipt">Print receipt after sale</label>
-        </div>
-
-        <div class="d-flex gap-2 mb-2">
-          <button
-            class="btn btn-outline-secondary flex-fill"
-            type="button"
-            :disabled="!cart.items.length || !openSession || holding || committing"
-            title="Save the cart to resume later"
-            @click="holdCurrentSale"
-          >
-            <span v-if="holding" class="spinner-border spinner-border-sm me-1" role="status"></span>
-            <i v-else class="bi bi-pause-circle me-1"></i>Hold
-          </button>
-          <button
-            class="btn btn-outline-secondary flex-fill"
-            type="button"
-            @click="openHeldSales"
-          >
-            <i class="bi bi-clock-history me-1"></i>Held Sales
-          </button>
-        </div>
-
-        <button
-          class="btn btn-lg btn-primary w-100"
-          type="button"
-          :disabled="!cart.items.length || !cart.paymentValid || !openSession || committing"
-          @click="completeSale"
-        >
-          <span v-if="committing" class="spinner-border spinner-border-sm me-2" role="status"></span>
-          <i v-else class="bi bi-cash-coin me-2"></i>Complete Sale
-        </button>
-      </div>
-    </aside>
-
-    <div
-      v-if="openModal"
-      class="modal fade show d-block"
-      tabindex="-1"
-      role="dialog"
-      @click.self="openModal = false"
-    >
-      <div class="modal-dialog" role="document">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title">
-              <i class="bi bi-cash-stack me-2"></i>Open register
-            </h5>
-            <button
-              type="button"
-              class="btn-close"
-              aria-label="Close"
-              @click="openModal = false"
-            ></button>
-          </div>
-          <div class="modal-body">
-            <p class="small mb-3">
-              Enter the cash amount in the drawer at the start of your shift. All sales will be
-              recorded against this session until you close the register.
-            </p>
-            <label class="form-label" for="opening-cash">Opening cash</label>
-            <div class="input-group">
-              <span class="input-group-text">{{ settings.currency || "amt" }}</span>
-              <input
-                id="opening-cash"
-                v-model.number="openCash"
-                class="form-control text-end"
-                type="number"
-                min="0"
-                step="0.01"
-              />
-            </div>
-          </div>
-          <div class="modal-footer">
-            <button
-              type="button"
-              class="btn btn-secondary"
-              :disabled="registerBusy"
-              @click="openModal = false"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              class="btn btn-primary"
-              :disabled="registerBusy"
-              @click="confirmOpenRegister"
-            >
-              <span
-                v-if="registerBusy"
-                class="spinner-border spinner-border-sm me-1"
-                role="status"
-              ></span>
-              <i v-else class="bi bi-box-arrow-in-right me-1"></i>Open register
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div
-      v-if="closeModal"
-      class="modal fade show d-block"
-      tabindex="-1"
-      role="dialog"
-      @click.self="closeModal = false"
-    >
-      <div class="modal-dialog" role="document">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title">
-              <i class="bi bi-cash-stack me-2"></i>Close register
-            </h5>
-            <button
-              type="button"
-              class="btn-close"
-              aria-label="Close"
-              @click="closeModal = false"
-            ></button>
-          </div>
-          <div class="modal-body">
-            <p class="small mb-3">
-              Count the cash in the drawer and enter it below. The expected amount is
-              opening {{ fmt(openSession?.openingCash ?? 0) }} plus cash received minus change given.
-            </p>
-            <label class="form-label" for="closing-cash">Counted cash</label>
-            <div class="input-group">
-              <span class="input-group-text">{{ settings.currency || "amt" }}</span>
-              <input
-                id="closing-cash"
-                v-model.number="closeCash"
-                class="form-control text-end"
-                type="number"
-                min="0"
-                step="0.01"
-              />
-            </div>
-          </div>
-          <div class="modal-footer">
-            <button
-              type="button"
-              class="btn btn-secondary"
-              :disabled="registerBusy"
-              @click="closeModal = false"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              class="btn btn-primary"
-              :disabled="registerBusy"
-              @click="confirmCloseRegister"
-            >
-              <span
-                v-if="registerBusy"
-                class="spinner-border spinner-border-sm me-1"
-                role="status"
-              ></span>
-              <i v-else class="bi bi-box-arrow-right me-1"></i>Close register
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div
-      v-if="closeResult"
-      class="modal fade show d-block"
-      tabindex="-1"
-      role="dialog"
-      @click.self="closeResult = null"
-    >
-      <div class="modal-dialog" role="document">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title">
-              <i class="bi bi-check-circle me-2"></i>Register closed
-            </h5>
-            <button
-              type="button"
-              class="btn-close"
-              aria-label="Close"
-              @click="closeResult = null"
-            ></button>
-          </div>
-          <div class="modal-body">
-            <div class="d-flex justify-content-between mb-1">
-              <span class="text-muted">Opening cash</span>
-              <span>{{ fmt(closeResult.openingCash) }}</span>
-            </div>
-            <div class="d-flex justify-content-between mb-1">
-              <span class="text-muted">Cash received</span>
-              <span>{{ fmt(closeResult.cashPaid) }}</span>
-            </div>
-            <div class="d-flex justify-content-between mb-1">
-              <span class="text-muted">Change given</span>
-              <span>−{{ fmt(closeResult.changeGiven) }}</span>
-            </div>
-            <div class="d-flex justify-content-between mb-1">
-              <span class="text-muted">Expected cash</span>
-              <span class="fw-semibold">{{ fmt(closeResult.expectedCash ?? 0) }}</span>
-            </div>
-            <div class="d-flex justify-content-between mb-1">
-              <span class="text-muted">Counted cash</span>
-              <span class="fw-semibold">{{ fmt(closeResult.closingCash ?? 0) }}</span>
-            </div>
-            <div
-              class="d-flex justify-content-between pt-2 border-top"
-              :class="(closeResult.variance ?? 0) < -0.005 ? 'text-danger fw-bold' : (closeResult.variance ?? 0) > 0.005 ? 'text-warning fw-bold' : 'text-success fw-bold'"
-            >
-              <span>Variance</span>
-              <span>{{ fmt(closeResult.variance ?? 0) }}</span>
-            </div>
-            <p class="small text-muted mt-2 mb-0">
-              {{ closeResult.salesCount }} sale(s) worth {{ fmt(closeResult.salesTotal) }} were
-              recorded in this session.
-            </p>
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-primary" @click="closeResult = null">Done</button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div
-      v-if="heldSalesOpen"
-      class="modal fade show d-block"
-      tabindex="-1"
-      role="dialog"
-      @click.self="heldSalesOpen = false"
-    >
-      <div class="modal-dialog" role="document">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title">
-              <i class="bi bi-clock-history me-2"></i>Held sales
-            </h5>
-            <button
-              type="button"
-              class="btn-close"
-              aria-label="Close"
-              @click="heldSalesOpen = false"
-            ></button>
-          </div>
-          <div class="modal-body">
-            <div v-if="heldError" class="alert alert-warning py-1 px-2 small" role="alert">
-              {{ heldError }}
-            </div>
-            <p v-if="!heldSales.length && !heldError" class="text-muted small text-center my-4">
-              No held sales
-            </p>
-            <div
-              v-for="sale in heldSales"
-              :key="sale.id"
-              class="d-flex justify-content-between align-items-center border-bottom py-2"
-            >
-              <div>
-                <div class="fw-semibold small">{{ sale.saleNo }}</div>
-                <div class="text-muted" style="font-size: 0.72rem">
-                  {{ sale.itemCount }} item(s) · {{ fmt(sale.total) }} ·
-                  {{ dateLabel(sale.createdAt) }}
-                </div>
-              </div>
-              <div class="d-flex gap-2">
-                <button
-                  class="btn btn-sm btn-primary"
-                  type="button"
-                  :disabled="resumingHeld"
-                  @click="resumeHeldSale(sale)"
-                >
-                  Resume
-                </button>
-                <button
-                  class="btn btn-sm btn-outline-danger"
-                  type="button"
-                  :disabled="resumingHeld"
-                  @click="cancelHeldSale(sale)"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-</template>

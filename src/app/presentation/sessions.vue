@@ -1,52 +1,3 @@
-<script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
-import { invoke } from "@tauri-apps/api/core";
-import { useSettingsStore } from "../../stores/settings";
-import type { SaleSession } from "../../types";
-
-const settings = useSettingsStore();
-
-const sessions = ref<SaleSession[]>([]);
-const loading = ref(false);
-const error = ref("");
-const filter = ref("");
-
-function fmt(n: number): string {
-  if (!settings.currency) return n.toFixed(2);
-  return new Intl.NumberFormat(undefined, {
-    style: "currency",
-    currency: settings.currency,
-    currencyDisplay: "narrowSymbol",
-  }).format(n);
-}
-
-function dateLabel(d: string): string {
-  const date = new Date(d + (d.includes("T") ? "" : "Z"));
-  if (isNaN(date.getTime())) return d;
-  return date.toLocaleString();
-}
-
-const filteredSessions = computed(() =>
-  filter.value ? sessions.value.filter((s) => s.status === filter.value) : sessions.value
-);
-
-async function load() {
-  loading.value = true;
-  error.value = "";
-  try {
-    sessions.value = await invoke<SaleSession[]>("list_sessions", {
-      input: { status: null, limit: 200 },
-    });
-  } catch (e) {
-    error.value = String(e);
-  } finally {
-    loading.value = false;
-  }
-}
-
-onMounted(load);
-</script>
-
 <template>
   <div class="page-container">
     <div class="page-heading d-flex flex-wrap align-items-center gap-3">
@@ -153,3 +104,52 @@ onMounted(load);
     </div>
   </div>
 </template>
+
+<script setup lang="ts">
+import { computed, onMounted, ref } from "vue";
+import { invoke } from "@tauri-apps/api/core";
+import { useSettingsStore } from "../../stores/settings";
+import type { SaleSession } from "../../types";
+
+const settings = useSettingsStore();
+
+const sessions = ref<SaleSession[]>([]);
+const loading = ref(false);
+const error = ref("");
+const filter = ref("");
+
+function fmt(n: number): string {
+  if (!settings.currency) return n.toFixed(2);
+  return new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency: settings.currency,
+    currencyDisplay: "narrowSymbol",
+  }).format(n);
+}
+
+function dateLabel(d: string): string {
+  const date = new Date(d + (d.includes("T") ? "" : "Z"));
+  if (isNaN(date.getTime())) return d;
+  return date.toLocaleString();
+}
+
+const filteredSessions = computed(() =>
+  filter.value ? sessions.value.filter((s) => s.status === filter.value) : sessions.value
+);
+
+async function load() {
+  loading.value = true;
+  error.value = "";
+  try {
+    sessions.value = await invoke<SaleSession[]>("list_sessions", {
+      input: { status: null, limit: 200 },
+    });
+  } catch (e) {
+    error.value = String(e);
+  } finally {
+    loading.value = false;
+  }
+}
+
+onMounted(load);
+</script>

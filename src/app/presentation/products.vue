@@ -1,386 +1,3 @@
-<script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
-import { invoke, convertFileSrc } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
-import { useCatalogStore } from "../../stores/catalog";
-import { useSettingsStore } from "../../stores/settings";
-import { useAuth } from "../../composables/useAuth";
-import { select } from "../../lib/db";
-import type { Category, Product, TaxProfile } from "../../types";
-
-const catalog = useCatalogStore();
-const settings = useSettingsStore();
-const auth = useAuth();
-
-const categories = ref<Category[]>([]);
-const selected = ref<number | null>(null);
-const search = ref("");
-const statusFilter = ref<"all" | "active" | "inactive">("all");
-const loading = ref(false);
-const error = ref("");
-const notice = ref("");
-
-const showModal = ref(false);
-const saving = ref(false);
-const productError = ref("");
-const editingId = ref<number | null>(null);
-const pendingImage = ref<string | null>(null);
-const form = ref({
-  name: "",
-  sku: "",
-  barcode: "",
-  description: "",
-  categoryId: null as number | null,
-  costPrice: 0,
-  sellPrice: 0,
-  taxProfileId: null as number | null,
-  unit: "store item",
-  reorderLevel: 0,
-  isActive: true,
-  imagePath: null as string | null,
-});
-
-const showCatModal = ref(false);
-const catSaving = ref(false);
-const categoryError = ref("");
-const catEditingId = ref<number | null>(null);
-const catForm = ref({ name: "", parentId: null as number | null });
-
-const adjustTarget = ref<Product | null>(null);
-const adjustNew = ref(0);
-const adjustNotes = ref("");
-const adjustSaving = ref(false);
-const adjustError = ref("");
-
-const taxProfiles = ref<TaxProfile[]>([]);
-
-const csvImporting = ref(false);
-const csvResult = ref<{ imported: number; errors: { row: number; message: string }[] } | null>(
-  null,
-);
-
-async function importCsv() {
-  const filePath = await open({
-    multiple: false,
-    filters: [{ name: "CSV", extensions: ["csv"] }],
-  });
-  if (typeof filePath !== "string") return;
-  csvImporting.value = true;
-  csvResult.value = null;
-  error.value = "";
-  try {
-    csvResult.value = await invoke("import_products_csv", { sourcePath: filePath });
-    await Promise.all([loadCategories(), catalog.load()]);
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e);
-  } finally {
-    csvImporting.value = false;
-  }
-}
-
-function fmt(n: number): string {
-  if (!settings.currency) return n.toFixed(2);
-  return new Intl.NumberFormat(undefined, {
-    style: "currency",
-    currency: settings.currency,
-    currencyDisplay: "narrowSymbol",
-  }).format(n);
-}
-
-const filteredProducts = computed(() => {
-  const q = search.value.trim().toLowerCase();
-  return catalog.products.filter((p) => {
-    if (selected.value != null && p.category_id !== selected.value) return false;
-    if (statusFilter.value === "active" && p.is_active !== 1) return false;
-    if (statusFilter.value === "inactive" && p.is_active === 1) return false;
-    if (!q) return true;
-    return (
-      p.name.toLowerCase().includes(q) ||
-      (p.sku?.toLowerCase().includes(q) ?? false) ||
-      (p.barcode?.toLowerCase().includes(q) ?? false)
-    );
-  });
-});
-
-async function toggleActive(p: Product) {
-  const next = p.is_active === 1 ? 0 : 1;
-  try {
-    await invoke("set_product_active", { productId: p.id, isActive: next === 1 });
-    p.is_active = next;
-    notice.value = next === 1 ? `"${p.name}" activated` : `"${p.name}" deactivated`;
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e);
-  }
-}
-
-const categoryName = (id: number | null) =>
-  categories.value.find((c) => c.id === id)?.name ?? "—";
-
-async function loadCategories() {
-  loading.value = true;
-  error.value = "";
-  try {
-    categories.value = await invoke<Category[]>("list_categories");
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e);
-  } finally {
-    loading.value = false;
-  }
-}
-
-/* ----- Categories ----- */
-
-function openAddCategory() {
-  categoryError.value = "";
-  catEditingId.value = null;
-  catForm.value = { name: "", parentId: null };
-  showCatModal.value = true;
-}
-
-function openEditCategory(c: Category) {
-  categoryError.value = "";
-  catEditingId.value = c.id;
-  catForm.value = { name: c.name, parentId: c.parentId ?? null };
-  showCatModal.value = true;
-}
-
-async function saveCategory() {
-  categoryError.value = "";
-  if (!catForm.value.name.trim()) {
-    categoryError.value = "Category name is required";
-    return;
-  }
-  catSaving.value = true;
-  try {
-    if (catEditingId.value == null) {
-      await invoke<number>("create_category", {
-        name: catForm.value.name,
-        parentId: catForm.value.parentId,
-      });
-      notice.value = "Category added";
-    } else {
-      await invoke("update_category", {
-        categoryId: catEditingId.value,
-        name: catForm.value.name,
-        parentId: catForm.value.parentId,
-      });
-      notice.value = "Category updated";
-    }
-    showCatModal.value = false;
-    await Promise.all([loadCategories(), catalog.load()]);
-  } catch (e) {
-    categoryError.value = e instanceof Error ? e.message : String(e);
-  } finally {
-    catSaving.value = false;
-  }
-}
-
-async function removeCategory(c: Category) {
-  error.value = "";
-  if (!window.confirm(`Delete category "${c.name}"?`)) return;
-  try {
-    await invoke("delete_category", { categoryId: c.id });
-    notice.value = `"${c.name}" deleted`;
-    if (selected.value === c.id) selected.value = null;
-    await Promise.all([loadCategories(), catalog.load()]);
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e);
-  }
-}
-
-/* ----- Products ----- */
-
-function openAddProduct() {
-  productError.value = "";
-  editingId.value = null;
-  pendingImage.value = null;
-  form.value = {
-    name: "",
-    sku: "",
-    barcode: "",
-    description: "",
-    categoryId: selected.value,
-    costPrice: 0,
-    sellPrice: 0,
-    taxProfileId: null,
-    unit: "store item",
-    reorderLevel: 0,
-    isActive: true,
-    imagePath: null,
-  };
-  showModal.value = true;
-}
-
-function openEditProduct(p: Product) {
-  productError.value = "";
-  editingId.value = p.id;
-  pendingImage.value = null;
-  form.value = {
-    name: p.name,
-    sku: p.sku ?? "",
-    barcode: p.barcode ?? "",
-    description: p.description ?? "",
-    categoryId: p.category_id,
-    costPrice: p.cost_price,
-    sellPrice: p.sell_price,
-    taxProfileId: p.tax_profile_id,
-    unit: p.unit,
-    reorderLevel: p.reorder_level,
-    isActive: p.is_active === 1,
-    imagePath: p.image_path,
-  };
-  showModal.value = true;
-}
-
-function clearImage() {
-  form.value.imagePath = null;
-  pendingImage.value = null;
-}
-
-async function pickImage() {
-  productError.value = "";
-  const selectedPath = await open({
-    multiple: false,
-    filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "gif", "webp", "bmp"] }],
-  });
-  if (typeof selectedPath !== "string") return;
-  if (editingId.value != null) {
-    try {
-      form.value.imagePath = await invoke<string>("import_product_image", {
-        productId: editingId.value,
-        sourcePath: selectedPath,
-      });
-      pendingImage.value = null;
-    } catch (e) {
-      productError.value = e instanceof Error ? e.message : String(e);
-    }
-  } else {
-    pendingImage.value = selectedPath;
-    form.value.imagePath = null;
-  }
-}
-
-function validateProduct(): string {
-  if (!form.value.name.trim()) return "Product name is required";
-  if (!form.value.barcode.trim()) return "Barcode is required";
-  const cost = form.value.costPrice;
-  if (typeof cost !== "number" || isNaN(cost) || cost < 0)
-    return "Enter a valid cost price (0 or more)";
-  const sell = form.value.sellPrice;
-  if (typeof sell !== "number" || isNaN(sell) || sell < 0)
-    return "Enter a valid sell price (0 or more)";
-  if (sell <= cost) return "Sell price must be more than cost price";
-  if (!form.value.unit.trim()) return "Unit is required";
-  const reorder = form.value.reorderLevel;
-  if (typeof reorder !== "number" || isNaN(reorder) || reorder < 0)
-    return "Enter a valid reorder level (0 or more)";
-  return "";
-}
-
-function productPayload() {
-  return {
-    name: form.value.name,
-    sku: form.value.sku || null,
-    barcode: form.value.barcode || null,
-    description: form.value.description || null,
-    categoryId: form.value.categoryId,
-    costPrice: form.value.costPrice,
-    sellPrice: form.value.sellPrice,
-    taxProfileId: form.value.taxProfileId,
-    unit: form.value.unit,
-    reorderLevel: form.value.reorderLevel,
-    imagePath: form.value.imagePath,
-    isActive: form.value.isActive,
-  };
-}
-
-async function saveProduct() {
-  productError.value = "";
-  const err = validateProduct();
-  if (err) {
-    productError.value = err;
-    return;
-  }
-  saving.value = true;
-  try {
-    let id = editingId.value;
-    if (id == null) {
-      id = await invoke<number>("create_product", { input: productPayload() });
-      notice.value = "Product added";
-    } else {
-      await invoke("update_product", { productId: id, input: productPayload() });
-      notice.value = "Product updated";
-    }
-    if (pendingImage.value) {
-      await invoke<string>("import_product_image", {
-        productId: id,
-        sourcePath: pendingImage.value,
-      });
-      pendingImage.value = null;
-    }
-    showModal.value = false;
-    await Promise.all([loadCategories(), catalog.load()]);
-  } catch (e) {
-    productError.value = e instanceof Error ? e.message : String(e);
-  } finally {
-    saving.value = false;
-  }
-}
-
-async function removeProduct(p: Product) {
-  productError.value = "";
-  if (!window.confirm(`Delete "${p.name}" permanently? This cannot be undone.`)) return;
-  try {
-    await invoke("delete_product", { productId: p.id });
-    notice.value = `"${p.name}" deleted`;
-    await Promise.all([loadCategories(), catalog.load()]);
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e);
-  }
-}
-
-function openAdjust(p: Product) {
-  adjustError.value = "";
-  adjustTarget.value = p;
-  adjustNew.value = p.stock_qty;
-  adjustNotes.value = "";
-}
-
-async function saveAdjust() {
-  const target = adjustTarget.value;
-  if (!target) return;
-  adjustError.value = "";
-  const delta = adjustNew.value - target.stock_qty;
-  if (delta === 0) {
-    adjustTarget.value = null;
-    return;
-  }
-  adjustSaving.value = true;
-  try {
-    await invoke("adjust_stock", {
-      productId: target.id,
-      qty: delta,
-      notes: adjustNotes.value || null,
-      userId: auth.user?.id ?? null,
-    });
-    adjustTarget.value = null;
-    notice.value = `Stock updated: ${target.stock_qty} → ${adjustNew.value} ${target.unit}`;
-    await Promise.all([loadCategories(), catalog.load()]);
-  } catch (e) {
-    adjustError.value = e instanceof Error ? e.message : String(e);
-  } finally {
-    adjustSaving.value = false;
-  }
-}
-
-onMounted(async () => {
-  taxProfiles.value = await select<TaxProfile>("SELECT id, name, rate FROM tax_profiles ORDER BY name").catch(
-    () => []
-  );
-  await Promise.allSettled([loadCategories(), catalog.load(), settings.load()]);
-});
-</script>
-
 <template>
   <div>
     <div class="d-flex align-items-center justify-content-between mb-3">
@@ -850,3 +467,386 @@ onMounted(async () => {
     </div>
   </div>
 </template>
+
+<script setup lang="ts">
+import { computed, onMounted, ref } from "vue";
+import { invoke, convertFileSrc } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
+import { useCatalogStore } from "../../stores/catalog";
+import { useSettingsStore } from "../../stores/settings";
+import { useAuth } from "../../composables/useAuth";
+import { select } from "../../lib/db";
+import type { Category, Product, TaxProfile } from "../../types";
+
+const catalog = useCatalogStore();
+const settings = useSettingsStore();
+const auth = useAuth();
+
+const categories = ref<Category[]>([]);
+const selected = ref<number | null>(null);
+const search = ref("");
+const statusFilter = ref<"all" | "active" | "inactive">("all");
+const loading = ref(false);
+const error = ref("");
+const notice = ref("");
+
+const showModal = ref(false);
+const saving = ref(false);
+const productError = ref("");
+const editingId = ref<number | null>(null);
+const pendingImage = ref<string | null>(null);
+const form = ref({
+  name: "",
+  sku: "",
+  barcode: "",
+  description: "",
+  categoryId: null as number | null,
+  costPrice: 0,
+  sellPrice: 0,
+  taxProfileId: null as number | null,
+  unit: "store item",
+  reorderLevel: 0,
+  isActive: true,
+  imagePath: null as string | null,
+});
+
+const showCatModal = ref(false);
+const catSaving = ref(false);
+const categoryError = ref("");
+const catEditingId = ref<number | null>(null);
+const catForm = ref({ name: "", parentId: null as number | null });
+
+const adjustTarget = ref<Product | null>(null);
+const adjustNew = ref(0);
+const adjustNotes = ref("");
+const adjustSaving = ref(false);
+const adjustError = ref("");
+
+const taxProfiles = ref<TaxProfile[]>([]);
+
+const csvImporting = ref(false);
+const csvResult = ref<{ imported: number; errors: { row: number; message: string }[] } | null>(
+  null,
+);
+
+async function importCsv() {
+  const filePath = await open({
+    multiple: false,
+    filters: [{ name: "CSV", extensions: ["csv"] }],
+  });
+  if (typeof filePath !== "string") return;
+  csvImporting.value = true;
+  csvResult.value = null;
+  error.value = "";
+  try {
+    csvResult.value = await invoke("import_products_csv", { sourcePath: filePath });
+    await Promise.all([loadCategories(), catalog.load()]);
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    csvImporting.value = false;
+  }
+}
+
+function fmt(n: number): string {
+  if (!settings.currency) return n.toFixed(2);
+  return new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency: settings.currency,
+    currencyDisplay: "narrowSymbol",
+  }).format(n);
+}
+
+const filteredProducts = computed(() => {
+  const q = search.value.trim().toLowerCase();
+  return catalog.products.filter((p) => {
+    if (selected.value != null && p.category_id !== selected.value) return false;
+    if (statusFilter.value === "active" && p.is_active !== 1) return false;
+    if (statusFilter.value === "inactive" && p.is_active === 1) return false;
+    if (!q) return true;
+    return (
+      p.name.toLowerCase().includes(q) ||
+      (p.sku?.toLowerCase().includes(q) ?? false) ||
+      (p.barcode?.toLowerCase().includes(q) ?? false)
+    );
+  });
+});
+
+async function toggleActive(p: Product) {
+  const next = p.is_active === 1 ? 0 : 1;
+  try {
+    await invoke("set_product_active", { productId: p.id, isActive: next === 1 });
+    p.is_active = next;
+    notice.value = next === 1 ? `"${p.name}" activated` : `"${p.name}" deactivated`;
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e);
+  }
+}
+
+const categoryName = (id: number | null) =>
+  categories.value.find((c) => c.id === id)?.name ?? "—";
+
+async function loadCategories() {
+  loading.value = true;
+  error.value = "";
+  try {
+    categories.value = await invoke<Category[]>("list_categories");
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    loading.value = false;
+  }
+}
+
+/* ----- Categories ----- */
+
+function openAddCategory() {
+  categoryError.value = "";
+  catEditingId.value = null;
+  catForm.value = { name: "", parentId: null };
+  showCatModal.value = true;
+}
+
+function openEditCategory(c: Category) {
+  categoryError.value = "";
+  catEditingId.value = c.id;
+  catForm.value = { name: c.name, parentId: c.parentId ?? null };
+  showCatModal.value = true;
+}
+
+async function saveCategory() {
+  categoryError.value = "";
+  if (!catForm.value.name.trim()) {
+    categoryError.value = "Category name is required";
+    return;
+  }
+  catSaving.value = true;
+  try {
+    if (catEditingId.value == null) {
+      await invoke<number>("create_category", {
+        name: catForm.value.name,
+        parentId: catForm.value.parentId,
+      });
+      notice.value = "Category added";
+    } else {
+      await invoke("update_category", {
+        categoryId: catEditingId.value,
+        name: catForm.value.name,
+        parentId: catForm.value.parentId,
+      });
+      notice.value = "Category updated";
+    }
+    showCatModal.value = false;
+    await Promise.all([loadCategories(), catalog.load()]);
+  } catch (e) {
+    categoryError.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    catSaving.value = false;
+  }
+}
+
+async function removeCategory(c: Category) {
+  error.value = "";
+  if (!window.confirm(`Delete category "${c.name}"?`)) return;
+  try {
+    await invoke("delete_category", { categoryId: c.id });
+    notice.value = `"${c.name}" deleted`;
+    if (selected.value === c.id) selected.value = null;
+    await Promise.all([loadCategories(), catalog.load()]);
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e);
+  }
+}
+
+/* ----- Products ----- */
+
+function openAddProduct() {
+  productError.value = "";
+  editingId.value = null;
+  pendingImage.value = null;
+  form.value = {
+    name: "",
+    sku: "",
+    barcode: "",
+    description: "",
+    categoryId: selected.value,
+    costPrice: 0,
+    sellPrice: 0,
+    taxProfileId: null,
+    unit: "store item",
+    reorderLevel: 0,
+    isActive: true,
+    imagePath: null,
+  };
+  showModal.value = true;
+}
+
+function openEditProduct(p: Product) {
+  productError.value = "";
+  editingId.value = p.id;
+  pendingImage.value = null;
+  form.value = {
+    name: p.name,
+    sku: p.sku ?? "",
+    barcode: p.barcode ?? "",
+    description: p.description ?? "",
+    categoryId: p.category_id,
+    costPrice: p.cost_price,
+    sellPrice: p.sell_price,
+    taxProfileId: p.tax_profile_id,
+    unit: p.unit,
+    reorderLevel: p.reorder_level,
+    isActive: p.is_active === 1,
+    imagePath: p.image_path,
+  };
+  showModal.value = true;
+}
+
+function clearImage() {
+  form.value.imagePath = null;
+  pendingImage.value = null;
+}
+
+async function pickImage() {
+  productError.value = "";
+  const selectedPath = await open({
+    multiple: false,
+    filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "gif", "webp", "bmp"] }],
+  });
+  if (typeof selectedPath !== "string") return;
+  if (editingId.value != null) {
+    try {
+      form.value.imagePath = await invoke<string>("import_product_image", {
+        productId: editingId.value,
+        sourcePath: selectedPath,
+      });
+      pendingImage.value = null;
+    } catch (e) {
+      productError.value = e instanceof Error ? e.message : String(e);
+    }
+  } else {
+    pendingImage.value = selectedPath;
+    form.value.imagePath = null;
+  }
+}
+
+function validateProduct(): string {
+  if (!form.value.name.trim()) return "Product name is required";
+  if (!form.value.barcode.trim()) return "Barcode is required";
+  const cost = form.value.costPrice;
+  if (typeof cost !== "number" || isNaN(cost) || cost < 0)
+    return "Enter a valid cost price (0 or more)";
+  const sell = form.value.sellPrice;
+  if (typeof sell !== "number" || isNaN(sell) || sell < 0)
+    return "Enter a valid sell price (0 or more)";
+  if (sell <= cost) return "Sell price must be more than cost price";
+  if (!form.value.unit.trim()) return "Unit is required";
+  const reorder = form.value.reorderLevel;
+  if (typeof reorder !== "number" || isNaN(reorder) || reorder < 0)
+    return "Enter a valid reorder level (0 or more)";
+  return "";
+}
+
+function productPayload() {
+  return {
+    name: form.value.name,
+    sku: form.value.sku || null,
+    barcode: form.value.barcode || null,
+    description: form.value.description || null,
+    categoryId: form.value.categoryId,
+    costPrice: form.value.costPrice,
+    sellPrice: form.value.sellPrice,
+    taxProfileId: form.value.taxProfileId,
+    unit: form.value.unit,
+    reorderLevel: form.value.reorderLevel,
+    imagePath: form.value.imagePath,
+    isActive: form.value.isActive,
+  };
+}
+
+async function saveProduct() {
+  productError.value = "";
+  const err = validateProduct();
+  if (err) {
+    productError.value = err;
+    return;
+  }
+  saving.value = true;
+  try {
+    let id = editingId.value;
+    if (id == null) {
+      id = await invoke<number>("create_product", { input: productPayload() });
+      notice.value = "Product added";
+    } else {
+      await invoke("update_product", { productId: id, input: productPayload() });
+      notice.value = "Product updated";
+    }
+    if (pendingImage.value) {
+      await invoke<string>("import_product_image", {
+        productId: id,
+        sourcePath: pendingImage.value,
+      });
+      pendingImage.value = null;
+    }
+    showModal.value = false;
+    await Promise.all([loadCategories(), catalog.load()]);
+  } catch (e) {
+    productError.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    saving.value = false;
+  }
+}
+
+async function removeProduct(p: Product) {
+  productError.value = "";
+  if (!window.confirm(`Delete "${p.name}" permanently? This cannot be undone.`)) return;
+  try {
+    await invoke("delete_product", { productId: p.id });
+    notice.value = `"${p.name}" deleted`;
+    await Promise.all([loadCategories(), catalog.load()]);
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e);
+  }
+}
+
+function openAdjust(p: Product) {
+  adjustError.value = "";
+  adjustTarget.value = p;
+  adjustNew.value = p.stock_qty;
+  adjustNotes.value = "";
+}
+
+async function saveAdjust() {
+  const target = adjustTarget.value;
+  if (!target) return;
+  adjustError.value = "";
+  const delta = adjustNew.value - target.stock_qty;
+  if (delta === 0) {
+    adjustTarget.value = null;
+    return;
+  }
+  adjustSaving.value = true;
+  try {
+    await invoke("adjust_stock", {
+      productId: target.id,
+      qty: delta,
+      notes: adjustNotes.value || null,
+      userId: auth.user?.id ?? null,
+    });
+    adjustTarget.value = null;
+    notice.value = `Stock updated: ${target.stock_qty} → ${adjustNew.value} ${target.unit}`;
+    await Promise.all([loadCategories(), catalog.load()]);
+  } catch (e) {
+    adjustError.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    adjustSaving.value = false;
+  }
+}
+
+onMounted(async () => {
+  taxProfiles.value = await select<TaxProfile>("SELECT id, name, rate FROM tax_profiles ORDER BY name").catch(
+    () => []
+  );
+  await Promise.allSettled([loadCategories(), catalog.load(), settings.load()]);
+});
+</script>

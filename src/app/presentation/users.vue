@@ -1,173 +1,3 @@
-<script setup lang="ts">
-import { onMounted, ref } from "vue";
-import { invoke } from "@tauri-apps/api/core";
-import { useAuth } from "../../composables/useAuth";
-import { permissionLabel } from "../../lib/permissions";
-import type { Role, UserRecord } from "../../types";
-
-const auth = useAuth();
-
-const users = ref<UserRecord[]>([]);
-const roles = ref<Role[]>([]);
-const permissions = ref<string[]>([]);
-const loading = ref(false);
-const error = ref("");
-const notice = ref("");
-
-const showAdd = ref(false);
-const adding = ref(false);
-const addForm = ref({ username: "", fullName: "", password: "", roleId: 0 });
-
-const editTarget = ref<UserRecord | null>(null);
-const saving = ref(false);
-const editSelection = ref<string[]>([]);
-const editForm = ref({ username: "", fullName: "", password: "", roleId: 0 });
-
-function cashierRoleId() {
-  return roles.value.find((r) => r.name === "Cashier")?.id ?? roles.value[0]?.id ?? 0;
-}
-
-async function load() {
-  loading.value = true;
-  error.value = "";
-  try {
-    const [u, r, p] = await Promise.all([
-      invoke<UserRecord[]>("list_users"),
-      invoke<Role[]>("list_roles"),
-      invoke<string[]>("list_permissions"),
-    ]);
-    users.value = u;
-    roles.value = r;
-    permissions.value = p;
-    if (!addForm.value.roleId) addForm.value.roleId = cashierRoleId();
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e);
-  } finally {
-    loading.value = false;
-  }
-}
-
-function openAdd() {
-  error.value = "";
-  addForm.value = { username: "", fullName: "", password: "", roleId: cashierRoleId() };
-  showAdd.value = true;
-}
-
-async function submitAdd() {
-  error.value = "";
-  if (!addForm.value.username || !addForm.value.password || !addForm.value.fullName) {
-    error.value = "All fields are required";
-    return;
-  }
-  adding.value = true;
-  try {
-    await invoke<number>("create_user", {
-      username: addForm.value.username.trim(),
-      password: addForm.value.password,
-      fullName: addForm.value.fullName.trim(),
-      roleId: addForm.value.roleId,
-    });
-    showAdd.value = false;
-    notice.value = "Cashier created";
-    await load();
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e);
-  } finally {
-    adding.value = false;
-  }
-}
-
-function openEdit(u: UserRecord) {
-  error.value = "";
-  editTarget.value = u;
-  editSelection.value = [...u.permissions];
-  editForm.value = {
-    username: u.username,
-    fullName: u.fullName,
-    password: "",
-    roleId: u.roleId,
-  };
-}
-
-function togglePerm(code: string, on: boolean) {
-  if (on) {
-    if (!editSelection.value.includes(code)) editSelection.value.push(code);
-  } else {
-    editSelection.value = editSelection.value.filter((c) => c !== code);
-  }
-}
-
-async function saveUser() {
-  if (!editTarget.value) return;
-  error.value = "";
-  if (!editForm.value.username || !editForm.value.fullName) {
-    error.value = "Username and full name are required";
-    return;
-  }
-  saving.value = true;
-  try {
-    await invoke("update_user", {
-      userId: editTarget.value.id,
-      username: editForm.value.username.trim(),
-      fullName: editForm.value.fullName.trim(),
-      password: editForm.value.password || null,
-      roleId: editForm.value.roleId,
-    });
-    await invoke<string[]>("update_user_permissions", {
-      userId: editTarget.value.id,
-      permissionCodes: editSelection.value,
-    });
-    editTarget.value = null;
-    notice.value = "User updated";
-    await load();
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e);
-  } finally {
-    saving.value = false;
-  }
-}
-
-async function deactivate(u: UserRecord) {
-  error.value = "";
-  if (!window.confirm(`Deactivate "${u.fullName}"? They will no longer be able to sign in.`)) return;
-  try {
-    await invoke("delete_user", { userId: u.id });
-    notice.value = `${u.fullName} deactivated`;
-    await load();
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e);
-  }
-}
-
-async function activate(u: UserRecord) {
-  error.value = "";
-  try {
-    await invoke("set_user_active", { userId: u.id, active: true });
-    notice.value = `${u.fullName} reactivated`;
-    await load();
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e);
-  }
-}
-
-async function remove(u: UserRecord) {
-  error.value = "";
-  const msg =
-    `Permanently delete "${u.fullName}" (${u.username})?\n\n` +
-    "This cannot be undone and the user will be removed from the system.";
-  if (!window.confirm(msg)) return;
-  try {
-    await invoke("remove_user", { userId: u.id });
-    notice.value = `${u.fullName} deleted`;
-    await load();
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e);
-  }
-}
-
-onMounted(load);
-</script>
-
 <template>
   <div>
     <div class="d-flex align-items-center justify-content-between mb-3">
@@ -387,3 +217,173 @@ onMounted(load);
     </div>
   </div>
 </template>
+
+<script setup lang="ts">
+import { onMounted, ref } from "vue";
+import { invoke } from "@tauri-apps/api/core";
+import { useAuth } from "../../composables/useAuth";
+import { permissionLabel } from "../../lib/permissions";
+import type { Role, UserRecord } from "../../types";
+
+const auth = useAuth();
+
+const users = ref<UserRecord[]>([]);
+const roles = ref<Role[]>([]);
+const permissions = ref<string[]>([]);
+const loading = ref(false);
+const error = ref("");
+const notice = ref("");
+
+const showAdd = ref(false);
+const adding = ref(false);
+const addForm = ref({ username: "", fullName: "", password: "", roleId: 0 });
+
+const editTarget = ref<UserRecord | null>(null);
+const saving = ref(false);
+const editSelection = ref<string[]>([]);
+const editForm = ref({ username: "", fullName: "", password: "", roleId: 0 });
+
+function cashierRoleId() {
+  return roles.value.find((r) => r.name === "Cashier")?.id ?? roles.value[0]?.id ?? 0;
+}
+
+async function load() {
+  loading.value = true;
+  error.value = "";
+  try {
+    const [u, r, p] = await Promise.all([
+      invoke<UserRecord[]>("list_users"),
+      invoke<Role[]>("list_roles"),
+      invoke<string[]>("list_permissions"),
+    ]);
+    users.value = u;
+    roles.value = r;
+    permissions.value = p;
+    if (!addForm.value.roleId) addForm.value.roleId = cashierRoleId();
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    loading.value = false;
+  }
+}
+
+function openAdd() {
+  error.value = "";
+  addForm.value = { username: "", fullName: "", password: "", roleId: cashierRoleId() };
+  showAdd.value = true;
+}
+
+async function submitAdd() {
+  error.value = "";
+  if (!addForm.value.username || !addForm.value.password || !addForm.value.fullName) {
+    error.value = "All fields are required";
+    return;
+  }
+  adding.value = true;
+  try {
+    await invoke<number>("create_user", {
+      username: addForm.value.username.trim(),
+      password: addForm.value.password,
+      fullName: addForm.value.fullName.trim(),
+      roleId: addForm.value.roleId,
+    });
+    showAdd.value = false;
+    notice.value = "Cashier created";
+    await load();
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    adding.value = false;
+  }
+}
+
+function openEdit(u: UserRecord) {
+  error.value = "";
+  editTarget.value = u;
+  editSelection.value = [...u.permissions];
+  editForm.value = {
+    username: u.username,
+    fullName: u.fullName,
+    password: "",
+    roleId: u.roleId,
+  };
+}
+
+function togglePerm(code: string, on: boolean) {
+  if (on) {
+    if (!editSelection.value.includes(code)) editSelection.value.push(code);
+  } else {
+    editSelection.value = editSelection.value.filter((c) => c !== code);
+  }
+}
+
+async function saveUser() {
+  if (!editTarget.value) return;
+  error.value = "";
+  if (!editForm.value.username || !editForm.value.fullName) {
+    error.value = "Username and full name are required";
+    return;
+  }
+  saving.value = true;
+  try {
+    await invoke("update_user", {
+      userId: editTarget.value.id,
+      username: editForm.value.username.trim(),
+      fullName: editForm.value.fullName.trim(),
+      password: editForm.value.password || null,
+      roleId: editForm.value.roleId,
+    });
+    await invoke<string[]>("update_user_permissions", {
+      userId: editTarget.value.id,
+      permissionCodes: editSelection.value,
+    });
+    editTarget.value = null;
+    notice.value = "User updated";
+    await load();
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    saving.value = false;
+  }
+}
+
+async function deactivate(u: UserRecord) {
+  error.value = "";
+  if (!window.confirm(`Deactivate "${u.fullName}"? They will no longer be able to sign in.`)) return;
+  try {
+    await invoke("delete_user", { userId: u.id });
+    notice.value = `${u.fullName} deactivated`;
+    await load();
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e);
+  }
+}
+
+async function activate(u: UserRecord) {
+  error.value = "";
+  try {
+    await invoke("set_user_active", { userId: u.id, active: true });
+    notice.value = `${u.fullName} reactivated`;
+    await load();
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e);
+  }
+}
+
+async function remove(u: UserRecord) {
+  error.value = "";
+  const msg =
+    `Permanently delete "${u.fullName}" (${u.username})?\n\n` +
+    "This cannot be undone and the user will be removed from the system.";
+  if (!window.confirm(msg)) return;
+  try {
+    await invoke("remove_user", { userId: u.id });
+    notice.value = `${u.fullName} deleted`;
+    await load();
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e);
+  }
+}
+
+onMounted(load);
+</script>

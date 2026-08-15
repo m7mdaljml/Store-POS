@@ -1,218 +1,3 @@
-<script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
-import { invoke } from "@tauri-apps/api/core";
-import { save as saveDialog } from "@tauri-apps/plugin-dialog";
-import { useSettingsStore } from "../../stores/settings";
-import { useAuth } from "../../composables/useAuth";
-import type {
-  ExpenseCategory,
-  ExpenseRecord,
-  ExpenseSummary,
-  Supplier,
-} from "../../types";
-
-const settings = useSettingsStore();
-const auth = useAuth();
-
-const suppliers = ref<Supplier[]>([]);
-const categories = ref<ExpenseCategory[]>([]);
-const expenses = ref<ExpenseRecord[]>([]);
-const summary = ref<ExpenseSummary | null>(null);
-const loading = ref(false);
-const exporting = ref(false);
-const error = ref("");
-const notice = ref("");
-
-const filters = ref({
-  kind: "all" as "all" | "in" | "out",
-  supplierId: null as number | null,
-  status: "all",
-  from: "",
-  to: "",
-});
-
-const showModal = ref(false);
-const saving = ref(false);
-const formError = ref("");
-const form = ref({
-  categoryId: null as number | null,
-  amount: 0,
-  date: new Date().toISOString().slice(0, 10),
-  description: "",
-  referenceNo: "",
-});
-
-const showCatsModal = ref(false);
-const catSaving = ref(false);
-const categoryError = ref("");
-const newCategoryName = ref("");
-
-const filteredCount = computed(() => expenses.value.length);
-
-function fmt(n: number): string {
-  if (!settings.currency) return n.toFixed(2);
-  return new Intl.NumberFormat(undefined, {
-    style: "currency",
-    currency: settings.currency,
-    currencyDisplay: "narrowSymbol",
-  }).format(n);
-}
-
-function filterParams() {
-  return {
-    kind: filters.value.kind === "all" ? null : filters.value.kind,
-    supplierId: filters.value.supplierId,
-    status: filters.value.status === "all" ? null : filters.value.status,
-    from: filters.value.from || null,
-    to: filters.value.to || null,
-  };
-}
-
-async function load() {
-  loading.value = true;
-  error.value = "";
-  try {
-    const [s, c, e, sum] = await Promise.all([
-      invoke<Supplier[]>("list_suppliers"),
-      invoke<ExpenseCategory[]>("list_expense_categories"),
-      invoke<ExpenseRecord[]>("list_expenses", filterParams()),
-      invoke<ExpenseSummary>("expense_summary", {
-        from: filters.value.from || null,
-        to: filters.value.to || null,
-      }),
-    ]);
-    suppliers.value = s;
-    categories.value = c;
-    expenses.value = e;
-    summary.value = sum;
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e);
-  } finally {
-    loading.value = false;
-  }
-}
-
-function openAdd() {
-  formError.value = "";
-  form.value = {
-    categoryId: categories.value[0]?.id ?? null,
-    amount: 0,
-    date: new Date().toISOString().slice(0, 10),
-    description: "",
-    referenceNo: "",
-  };
-  showModal.value = true;
-}
-
-function validate(): string {
-  const amount = form.value.amount;
-  if (typeof amount !== "number" || isNaN(amount) || amount <= 0)
-    return "Enter an amount greater than zero";
-  return "";
-}
-
-function payload() {
-  return {
-    categoryId: form.value.categoryId,
-    amount: form.value.amount,
-    date: form.value.date,
-    description: form.value.description || null,
-    referenceNo: form.value.referenceNo || null,
-    userId: auth.user?.id ?? null,
-  };
-}
-
-async function save() {
-  formError.value = "";
-  const err = validate();
-  if (err) {
-    formError.value = err;
-    return;
-  }
-  saving.value = true;
-  try {
-    await invoke<number>("add_expense_out", { input: payload() });
-    showModal.value = false;
-    notice.value = "Expense recorded";
-    await load();
-  } catch (e) {
-    formError.value = e instanceof Error ? e.message : String(e);
-  } finally {
-    saving.value = false;
-  }
-}
-
-async function addCategory() {
-  categoryError.value = "";
-  if (!newCategoryName.value.trim()) {
-    categoryError.value = "Category name is required";
-    return;
-  }
-  catSaving.value = true;
-  try {
-    await invoke<number>("create_expense_category", { name: newCategoryName.value });
-    newCategoryName.value = "";
-    notice.value = "Category added";
-    await load();
-  } catch (e) {
-    categoryError.value = e instanceof Error ? e.message : String(e);
-  } finally {
-    catSaving.value = false;
-  }
-}
-
-async function removeCategory(c: ExpenseCategory) {
-  categoryError.value = "";
-  if (!window.confirm(`Delete category "${c.name}"?`)) return;
-  try {
-    await invoke("delete_expense_category", { categoryId: c.id });
-    notice.value = `"${c.name}" deleted`;
-    if (form.value.categoryId === c.id) form.value.categoryId = null;
-    await load();
-  } catch (e) {
-    categoryError.value = e instanceof Error ? e.message : String(e);
-  }
-}
-
-function statusBadge(status: string) {
-  switch (status) {
-    case "paid":
-      return "text-bg-success";
-    case "partial":
-      return "text-bg-warning";
-    case "unpaid":
-      return "text-bg-danger";
-    default:
-      return "text-bg-secondary";
-  }
-}
-
-async function exportExcel() {
-  exporting.value = true;
-  error.value = "";
-  try {
-    const path = await saveDialog({
-      title: "Export expenses",
-      defaultPath: `expenses-${new Date().toISOString().slice(0, 10)}.xlsx`,
-      filters: [{ name: "Excel Workbook", extensions: ["xlsx"] }],
-    });
-    if (!path) return;
-    await invoke("export_expenses", { path, ...filterParams() });
-    notice.value = `Exported to ${path}`;
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e);
-  } finally {
-    exporting.value = false;
-  }
-}
-
-watch(filters, () => load(), { deep: true });
-
-onMounted(async () => {
-  await Promise.allSettled([load(), settings.load()]);
-});
-</script>
-
 <template>
   <div>
     <div class="d-flex align-items-center justify-content-between mb-3">
@@ -523,3 +308,218 @@ onMounted(async () => {
     </div>
   </div>
 </template>
+
+<script setup lang="ts">
+import { computed, onMounted, ref, watch } from "vue";
+import { invoke } from "@tauri-apps/api/core";
+import { save as saveDialog } from "@tauri-apps/plugin-dialog";
+import { useSettingsStore } from "../../stores/settings";
+import { useAuth } from "../../composables/useAuth";
+import type {
+  ExpenseCategory,
+  ExpenseRecord,
+  ExpenseSummary,
+  Supplier,
+} from "../../types";
+
+const settings = useSettingsStore();
+const auth = useAuth();
+
+const suppliers = ref<Supplier[]>([]);
+const categories = ref<ExpenseCategory[]>([]);
+const expenses = ref<ExpenseRecord[]>([]);
+const summary = ref<ExpenseSummary | null>(null);
+const loading = ref(false);
+const exporting = ref(false);
+const error = ref("");
+const notice = ref("");
+
+const filters = ref({
+  kind: "all" as "all" | "in" | "out",
+  supplierId: null as number | null,
+  status: "all",
+  from: "",
+  to: "",
+});
+
+const showModal = ref(false);
+const saving = ref(false);
+const formError = ref("");
+const form = ref({
+  categoryId: null as number | null,
+  amount: 0,
+  date: new Date().toISOString().slice(0, 10),
+  description: "",
+  referenceNo: "",
+});
+
+const showCatsModal = ref(false);
+const catSaving = ref(false);
+const categoryError = ref("");
+const newCategoryName = ref("");
+
+const filteredCount = computed(() => expenses.value.length);
+
+function fmt(n: number): string {
+  if (!settings.currency) return n.toFixed(2);
+  return new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency: settings.currency,
+    currencyDisplay: "narrowSymbol",
+  }).format(n);
+}
+
+function filterParams() {
+  return {
+    kind: filters.value.kind === "all" ? null : filters.value.kind,
+    supplierId: filters.value.supplierId,
+    status: filters.value.status === "all" ? null : filters.value.status,
+    from: filters.value.from || null,
+    to: filters.value.to || null,
+  };
+}
+
+async function load() {
+  loading.value = true;
+  error.value = "";
+  try {
+    const [s, c, e, sum] = await Promise.all([
+      invoke<Supplier[]>("list_suppliers"),
+      invoke<ExpenseCategory[]>("list_expense_categories"),
+      invoke<ExpenseRecord[]>("list_expenses", filterParams()),
+      invoke<ExpenseSummary>("expense_summary", {
+        from: filters.value.from || null,
+        to: filters.value.to || null,
+      }),
+    ]);
+    suppliers.value = s;
+    categories.value = c;
+    expenses.value = e;
+    summary.value = sum;
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    loading.value = false;
+  }
+}
+
+function openAdd() {
+  formError.value = "";
+  form.value = {
+    categoryId: categories.value[0]?.id ?? null,
+    amount: 0,
+    date: new Date().toISOString().slice(0, 10),
+    description: "",
+    referenceNo: "",
+  };
+  showModal.value = true;
+}
+
+function validate(): string {
+  const amount = form.value.amount;
+  if (typeof amount !== "number" || isNaN(amount) || amount <= 0)
+    return "Enter an amount greater than zero";
+  return "";
+}
+
+function payload() {
+  return {
+    categoryId: form.value.categoryId,
+    amount: form.value.amount,
+    date: form.value.date,
+    description: form.value.description || null,
+    referenceNo: form.value.referenceNo || null,
+    userId: auth.user?.id ?? null,
+  };
+}
+
+async function save() {
+  formError.value = "";
+  const err = validate();
+  if (err) {
+    formError.value = err;
+    return;
+  }
+  saving.value = true;
+  try {
+    await invoke<number>("add_expense_out", { input: payload() });
+    showModal.value = false;
+    notice.value = "Expense recorded";
+    await load();
+  } catch (e) {
+    formError.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    saving.value = false;
+  }
+}
+
+async function addCategory() {
+  categoryError.value = "";
+  if (!newCategoryName.value.trim()) {
+    categoryError.value = "Category name is required";
+    return;
+  }
+  catSaving.value = true;
+  try {
+    await invoke<number>("create_expense_category", { name: newCategoryName.value });
+    newCategoryName.value = "";
+    notice.value = "Category added";
+    await load();
+  } catch (e) {
+    categoryError.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    catSaving.value = false;
+  }
+}
+
+async function removeCategory(c: ExpenseCategory) {
+  categoryError.value = "";
+  if (!window.confirm(`Delete category "${c.name}"?`)) return;
+  try {
+    await invoke("delete_expense_category", { categoryId: c.id });
+    notice.value = `"${c.name}" deleted`;
+    if (form.value.categoryId === c.id) form.value.categoryId = null;
+    await load();
+  } catch (e) {
+    categoryError.value = e instanceof Error ? e.message : String(e);
+  }
+}
+
+function statusBadge(status: string) {
+  switch (status) {
+    case "paid":
+      return "text-bg-success";
+    case "partial":
+      return "text-bg-warning";
+    case "unpaid":
+      return "text-bg-danger";
+    default:
+      return "text-bg-secondary";
+  }
+}
+
+async function exportExcel() {
+  exporting.value = true;
+  error.value = "";
+  try {
+    const path = await saveDialog({
+      title: "Export expenses",
+      defaultPath: `expenses-${new Date().toISOString().slice(0, 10)}.xlsx`,
+      filters: [{ name: "Excel Workbook", extensions: ["xlsx"] }],
+    });
+    if (!path) return;
+    await invoke("export_expenses", { path, ...filterParams() });
+    notice.value = `Exported to ${path}`;
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    exporting.value = false;
+  }
+}
+
+watch(filters, () => load(), { deep: true });
+
+onMounted(async () => {
+  await Promise.allSettled([load(), settings.load()]);
+});
+</script>

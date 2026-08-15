@@ -1,36 +1,3 @@
-<script setup lang="ts">
-import { ref } from "vue";
-import { useRouter } from "vue-router";
-import { useAuth } from "../../composables/useAuth";
-import { useSettingsStore } from "../../stores/settings";
-
-const router = useRouter();
-const auth = useAuth();
-const settings = useSettingsStore();
-
-const username = ref("");
-const password = ref("");
-const error = ref("");
-const submitting = ref(false);
-
-async function submit() {
-  error.value = "";
-  if (!username.value || !password.value) {
-    error.value = "Enter your username and password";
-    return;
-  }
-  submitting.value = true;
-  try {
-    await auth.login(username.value, password.value);
-    router.push(auth.user?.roleName === "Cashier" ? "/checkout" : "/");
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e);
-  } finally {
-    submitting.value = false;
-  }
-}
-</script>
-
 <template>
   <div
     class="d-flex align-items-center justify-content-center"
@@ -98,3 +65,36 @@ async function submit() {
     </div>
   </div>
 </template>
+
+<script setup lang="ts">
+import { ref } from "vue";
+import { useRouter } from "vue-router";
+import { useAuth } from "../../composables/useAuth";
+import { useSettingsStore } from "../../stores/settings";
+
+const router = useRouter();
+const auth = useAuth();
+const settings = useSettingsStore();
+
+const username = ref("");
+const password = ref("");
+const error = ref("");
+const submitting = ref(false);
+
+async function submit() {
+  error.value = "";
+  if (!username.value || !password.value) {
+    error.value = "Enter your username and password";
+    return;
+  }
+  submitting.value = true;
+  try {
+    await auth.login(username.value, password.value);
+    router.push(auth.user?.roleName === "Cashier" ? "/checkout" : "/");
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    submitting.value = false;
+  }
+}
+</script>

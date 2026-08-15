@@ -1,187 +1,3 @@
-<script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
-import { invoke } from "@tauri-apps/api/core";
-import { useSettingsStore } from "../../stores/settings";
-import type { Supplier, SupplierDetail } from "../../types";
-
-const settings = useSettingsStore();
-
-const suppliers = ref<Supplier[]>([]);
-const search = ref("");
-const loading = ref(false);
-const error = ref("");
-const notice = ref("");
-
-const showModal = ref(false);
-const saving = ref(false);
-const formError = ref("");
-const editingId = ref<number | null>(null);
-const form = ref({
-  name: "",
-  contact: "",
-  phone: "",
-  email: "",
-  address: "",
-  taxId: "",
-});
-
-const detail = ref<SupplierDetail | null>(null);
-const detailLoading = ref(false);
-const detailError = ref("");
-
-function fmt(n: number): string {
-  if (!settings.currency) return n.toFixed(2);
-  return new Intl.NumberFormat(undefined, {
-    style: "currency",
-    currency: settings.currency,
-    currencyDisplay: "narrowSymbol",
-  }).format(n);
-}
-
-const filteredSuppliers = computed(() => {
-  const q = search.value.trim().toLowerCase();
-  if (!q) return suppliers.value;
-  return suppliers.value.filter((s) =>
-    [
-      s.name,
-      s.contact,
-      s.phone,
-      s.email,
-      s.address,
-      s.tax_id,
-    ]
-      .filter(Boolean)
-      .some((v) => (v as string).toLowerCase().includes(q))
-  );
-});
-
-async function load() {
-  loading.value = true;
-  error.value = "";
-  try {
-    suppliers.value = await invoke<Supplier[]>("list_suppliers");
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e);
-  } finally {
-    loading.value = false;
-  }
-}
-
-function openAdd() {
-  formError.value = "";
-  editingId.value = null;
-  form.value = {
-    name: "",
-    contact: "",
-    phone: "",
-    email: "",
-    address: "",
-    taxId: "",
-  };
-  showModal.value = true;
-}
-
-function openEdit(s: Supplier) {
-  formError.value = "";
-  editingId.value = s.id;
-  form.value = {
-    name: s.name,
-    contact: s.contact ?? "",
-    phone: s.phone ?? "",
-    email: s.email ?? "",
-    address: s.address ?? "",
-    taxId: s.tax_id ?? "",
-  };
-  showModal.value = true;
-}
-
-function validate(): string {
-  if (!form.value.name.trim()) return "Supplier name is required";
-  if (form.value.email.trim() && !form.value.email.trim().includes("@"))
-    return "Enter a valid email address";
-  return "";
-}
-
-function payload() {
-  return {
-    name: form.value.name,
-    contact: form.value.contact || null,
-    phone: form.value.phone || null,
-    email: form.value.email || null,
-    address: form.value.address || null,
-    taxId: form.value.taxId || null,
-  };
-}
-
-async function save() {
-  formError.value = "";
-  const err = validate();
-  if (err) {
-    formError.value = err;
-    return;
-  }
-  saving.value = true;
-  try {
-    if (editingId.value == null) {
-      await invoke<number>("create_supplier", { input: payload() });
-      notice.value = "Supplier added";
-    } else {
-      await invoke("update_supplier", { supplierId: editingId.value, input: payload() });
-      notice.value = "Supplier updated";
-    }
-    showModal.value = false;
-    await load();
-  } catch (e) {
-    formError.value = e instanceof Error ? e.message : String(e);
-  } finally {
-    saving.value = false;
-  }
-}
-
-async function openDetail(s: Supplier) {
-  detailError.value = "";
-  detail.value = null;
-  detailLoading.value = true;
-  try {
-    detail.value = await invoke<SupplierDetail>("get_supplier", { supplierId: s.id });
-  } catch (e) {
-    detailError.value = e instanceof Error ? e.message : String(e);
-  } finally {
-    detailLoading.value = false;
-  }
-}
-
-async function remove(s: Supplier) {
-  error.value = "";
-  const msg =
-    `Delete supplier "${s.name}"?\n\n` +
-    "This cannot be undone. Suppliers with invoices on record cannot be deleted.";
-  if (!window.confirm(msg)) return;
-  try {
-    await invoke("delete_supplier", { supplierId: s.id });
-    notice.value = `"${s.name}" deleted`;
-    await load();
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e);
-  }
-}
-
-function statusBadge(status: string) {
-  switch (status) {
-    case "paid":
-      return "text-bg-success";
-    case "partial":
-      return "text-bg-warning";
-    default:
-      return "text-bg-danger";
-  }
-}
-
-onMounted(async () => {
-  await Promise.allSettled([load(), settings.load()]);
-});
-</script>
-
 <template>
   <div>
     <div class="d-flex align-items-center justify-content-between mb-3">
@@ -451,6 +267,190 @@ onMounted(async () => {
     </div>
   </div>
 </template>
+
+<script setup lang="ts">
+import { computed, onMounted, ref } from "vue";
+import { invoke } from "@tauri-apps/api/core";
+import { useSettingsStore } from "../../stores/settings";
+import type { Supplier, SupplierDetail } from "../../types";
+
+const settings = useSettingsStore();
+
+const suppliers = ref<Supplier[]>([]);
+const search = ref("");
+const loading = ref(false);
+const error = ref("");
+const notice = ref("");
+
+const showModal = ref(false);
+const saving = ref(false);
+const formError = ref("");
+const editingId = ref<number | null>(null);
+const form = ref({
+  name: "",
+  contact: "",
+  phone: "",
+  email: "",
+  address: "",
+  taxId: "",
+});
+
+const detail = ref<SupplierDetail | null>(null);
+const detailLoading = ref(false);
+const detailError = ref("");
+
+function fmt(n: number): string {
+  if (!settings.currency) return n.toFixed(2);
+  return new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency: settings.currency,
+    currencyDisplay: "narrowSymbol",
+  }).format(n);
+}
+
+const filteredSuppliers = computed(() => {
+  const q = search.value.trim().toLowerCase();
+  if (!q) return suppliers.value;
+  return suppliers.value.filter((s) =>
+    [
+      s.name,
+      s.contact,
+      s.phone,
+      s.email,
+      s.address,
+      s.tax_id,
+    ]
+      .filter(Boolean)
+      .some((v) => (v as string).toLowerCase().includes(q))
+  );
+});
+
+async function load() {
+  loading.value = true;
+  error.value = "";
+  try {
+    suppliers.value = await invoke<Supplier[]>("list_suppliers");
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    loading.value = false;
+  }
+}
+
+function openAdd() {
+  formError.value = "";
+  editingId.value = null;
+  form.value = {
+    name: "",
+    contact: "",
+    phone: "",
+    email: "",
+    address: "",
+    taxId: "",
+  };
+  showModal.value = true;
+}
+
+function openEdit(s: Supplier) {
+  formError.value = "";
+  editingId.value = s.id;
+  form.value = {
+    name: s.name,
+    contact: s.contact ?? "",
+    phone: s.phone ?? "",
+    email: s.email ?? "",
+    address: s.address ?? "",
+    taxId: s.tax_id ?? "",
+  };
+  showModal.value = true;
+}
+
+function validate(): string {
+  if (!form.value.name.trim()) return "Supplier name is required";
+  if (form.value.email.trim() && !form.value.email.trim().includes("@"))
+    return "Enter a valid email address";
+  return "";
+}
+
+function payload() {
+  return {
+    name: form.value.name,
+    contact: form.value.contact || null,
+    phone: form.value.phone || null,
+    email: form.value.email || null,
+    address: form.value.address || null,
+    taxId: form.value.taxId || null,
+  };
+}
+
+async function save() {
+  formError.value = "";
+  const err = validate();
+  if (err) {
+    formError.value = err;
+    return;
+  }
+  saving.value = true;
+  try {
+    if (editingId.value == null) {
+      await invoke<number>("create_supplier", { input: payload() });
+      notice.value = "Supplier added";
+    } else {
+      await invoke("update_supplier", { supplierId: editingId.value, input: payload() });
+      notice.value = "Supplier updated";
+    }
+    showModal.value = false;
+    await load();
+  } catch (e) {
+    formError.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    saving.value = false;
+  }
+}
+
+async function openDetail(s: Supplier) {
+  detailError.value = "";
+  detail.value = null;
+  detailLoading.value = true;
+  try {
+    detail.value = await invoke<SupplierDetail>("get_supplier", { supplierId: s.id });
+  } catch (e) {
+    detailError.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    detailLoading.value = false;
+  }
+}
+
+async function remove(s: Supplier) {
+  error.value = "";
+  const msg =
+    `Delete supplier "${s.name}"?\n\n` +
+    "This cannot be undone. Suppliers with invoices on record cannot be deleted.";
+  if (!window.confirm(msg)) return;
+  try {
+    await invoke("delete_supplier", { supplierId: s.id });
+    notice.value = `"${s.name}" deleted`;
+    await load();
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e);
+  }
+}
+
+function statusBadge(status: string) {
+  switch (status) {
+    case "paid":
+      return "text-bg-success";
+    case "partial":
+      return "text-bg-warning";
+    default:
+      return "text-bg-danger";
+  }
+}
+
+onMounted(async () => {
+  await Promise.allSettled([load(), settings.load()]);
+});
+</script>
 
 <style scoped>
 .detail-item {

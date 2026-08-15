@@ -1,136 +1,3 @@
-<script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
-import { invoke } from "@tauri-apps/api/core";
-import { useCatalogStore } from "../../stores/catalog";
-import { useAuth } from "../../composables/useAuth";
-
-interface StockMovement {
-  id: number;
-  productId: number;
-  productName: string;
-  movementType: string;
-  qty: number;
-  notes: string | null;
-  userName: string | null;
-  createdAt: string;
-}
-
-const catalog = useCatalogStore();
-const auth = useAuth();
-
-const movements = ref<StockMovement[]>([]);
-const loading = ref(false);
-const error = ref("");
-const notice = ref("");
-
-const typeFilter = ref<"all" | string>("all");
-const productFilter = ref<number | null>(null);
-
-const TYPE_LABELS: Record<string, string> = {
-  opening: "Opening",
-  adjustment: "Adjustment",
-  purchase: "Purchase",
-  sale: "Sale",
-  return: "Return",
-  void: "Void",
-};
-
-const typeLabel = (t: string) => TYPE_LABELS[t] ?? t;
-
-const filtered = computed(() =>
-  movements.value.filter((m) => {
-    if (typeFilter.value !== "all" && m.movementType !== typeFilter.value) return false;
-    if (productFilter.value != null && m.productId !== productFilter.value) return false;
-    return true;
-  })
-);
-
-async function load() {
-  loading.value = true;
-  error.value = "";
-  try {
-    movements.value = await invoke<StockMovement[]>("list_stock_movements");
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e);
-  } finally {
-    loading.value = false;
-  }
-}
-
-const showModal = ref(false);
-const saving = ref(false);
-const adjustError = ref("");
-const selectedProductId = ref<number | null>(null);
-const adjustNew = ref(0);
-const adjustNotes = ref("");
-
-const selectedProduct = computed(() =>
-  catalog.products.find((p) => p.id === selectedProductId.value) ?? null
-);
-const currentStock = computed(() => selectedProduct.value?.stock_qty ?? 0);
-const delta = computed(() => {
-  const d = adjustNew.value - currentStock.value;
-  return Number.isNaN(d) ? 0 : d;
-});
-
-function openAdjust() {
-  adjustError.value = "";
-  adjustNew.value = 0;
-  adjustNotes.value = "";
-  if (selectedProductId.value == null || !catalog.products.some((p) => p.id === selectedProductId.value)) {
-    selectedProductId.value = catalog.products[0]?.id ?? null;
-  }
-  adjustNew.value = currentStock.value;
-  showModal.value = true;
-}
-
-async function saveAdjust() {
-  adjustError.value = "";
-  const product = selectedProduct.value;
-  if (!product) {
-    adjustError.value = "Select a product";
-    return;
-  }
-  if (typeof adjustNew.value !== "number" || isNaN(adjustNew.value) || adjustNew.value < 0) {
-    adjustError.value = "Enter a valid new stock total (0 or more)";
-    return;
-  }
-  if (delta.value === 0) {
-    adjustError.value = "New total is the same as current stock — nothing to change";
-    return;
-  }
-  saving.value = true;
-  try {
-    await invoke("adjust_stock", {
-      productId: product.id,
-      qty: delta.value,
-      notes: adjustNotes.value.trim() || null,
-      userId: auth.user?.id ?? null,
-    });
-    showModal.value = false;
-    notice.value = `Stock for "${product.name}" adjusted`;
-    await Promise.all([load(), catalog.load()]);
-  } catch (e) {
-    adjustError.value = e instanceof Error ? e.message : String(e);
-  } finally {
-    saving.value = false;
-  }
-}
-
-watch(
-  selectedProductId,
-  (id, oldId) => {
-    if (showModal.value && id !== oldId) {
-      adjustNew.value = currentStock.value;
-    }
-  }
-);
-
-onMounted(async () => {
-  await Promise.allSettled([load(), catalog.load()]);
-});
-</script>
-
 <template>
   <div>
     <div class="d-flex align-items-center justify-content-between mb-3">
@@ -187,7 +54,9 @@ onMounted(async () => {
               <td class="text-muted small text-nowrap">{{ m.createdAt }}</td>
               <td class="fw-semibold">{{ m.productName }}</td>
               <td>
-                <span class="badge text-bg-secondary">{{ typeLabel(m.movementType) }}</span>
+                <span class="badge" :class="typeBadge(m.movementType)">
+                  {{ typeLabel(m.movementType) }}
+                </span>
               </td>
               <td
                 class="text-end fw-semibold"
@@ -283,3 +152,144 @@ onMounted(async () => {
     </div>
   </div>
 </template>
+
+<script setup lang="ts">
+import { computed, onMounted, ref, watch } from "vue";
+import { invoke } from "@tauri-apps/api/core";
+import { useCatalogStore } from "../../stores/catalog";
+import { useAuth } from "../../composables/useAuth";
+
+interface StockMovement {
+  id: number;
+  productId: number;
+  productName: string;
+  movementType: string;
+  qty: number;
+  notes: string | null;
+  userName: string | null;
+  createdAt: string;
+}
+
+const catalog = useCatalogStore();
+const auth = useAuth();
+
+const movements = ref<StockMovement[]>([]);
+const loading = ref(false);
+const error = ref("");
+const notice = ref("");
+
+const typeFilter = ref<"all" | string>("all");
+const productFilter = ref<number | null>(null);
+
+const TYPE_LABELS: Record<string, string> = {
+  opening: "Opening",
+  adjustment: "Adjustment",
+  purchase_in: "Purchase",
+  sale_out: "Sale",
+  void: "Void",
+};
+
+const TYPE_BADGES: Record<string, string> = {
+  opening: "text-bg-secondary",
+  adjustment: "text-bg-info",
+  purchase_in: "text-bg-success",
+  sale_out: "text-bg-primary",
+  void: "text-bg-danger",
+};
+
+const typeLabel = (t: string) => TYPE_LABELS[t] ?? t;
+const typeBadge = (t: string) => TYPE_BADGES[t] ?? "text-bg-secondary";
+
+const filtered = computed(() =>
+  movements.value.filter((m) => {
+    if (typeFilter.value !== "all" && m.movementType !== typeFilter.value) return false;
+    if (productFilter.value != null && m.productId !== productFilter.value) return false;
+    return true;
+  })
+);
+
+async function load() {
+  loading.value = true;
+  error.value = "";
+  try {
+    movements.value = await invoke<StockMovement[]>("list_stock_movements");
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    loading.value = false;
+  }
+}
+
+const showModal = ref(false);
+const saving = ref(false);
+const adjustError = ref("");
+const selectedProductId = ref<number | null>(null);
+const adjustNew = ref(0);
+const adjustNotes = ref("");
+
+const selectedProduct = computed(() =>
+  catalog.products.find((p) => p.id === selectedProductId.value) ?? null
+);
+const currentStock = computed(() => selectedProduct.value?.stock_qty ?? 0);
+const delta = computed(() => {
+  const d = adjustNew.value - currentStock.value;
+  return Number.isNaN(d) ? 0 : d;
+});
+
+function openAdjust() {
+  adjustError.value = "";
+  adjustNew.value = 0;
+  adjustNotes.value = "";
+  if (selectedProductId.value == null || !catalog.products.some((p) => p.id === selectedProductId.value)) {
+    selectedProductId.value = catalog.products[0]?.id ?? null;
+  }
+  adjustNew.value = currentStock.value;
+  showModal.value = true;
+}
+
+async function saveAdjust() {
+  adjustError.value = "";
+  const product = selectedProduct.value;
+  if (!product) {
+    adjustError.value = "Select a product";
+    return;
+  }
+  if (typeof adjustNew.value !== "number" || isNaN(adjustNew.value) || adjustNew.value < 0) {
+    adjustError.value = "Enter a valid new stock total (0 or more)";
+    return;
+  }
+  if (delta.value === 0) {
+    adjustError.value = "New total is the same as current stock — nothing to change";
+    return;
+  }
+  saving.value = true;
+  try {
+    await invoke("adjust_stock", {
+      productId: product.id,
+      qty: delta.value,
+      notes: adjustNotes.value.trim() || null,
+      userId: auth.user?.id ?? null,
+    });
+    showModal.value = false;
+    notice.value = `Stock for "${product.name}" adjusted`;
+    await Promise.all([load(), catalog.load()]);
+  } catch (e) {
+    adjustError.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    saving.value = false;
+  }
+}
+
+watch(
+  selectedProductId,
+  (id, oldId) => {
+    if (showModal.value && id !== oldId) {
+      adjustNew.value = currentStock.value;
+    }
+  }
+);
+
+onMounted(async () => {
+  await Promise.allSettled([load(), catalog.load()]);
+});
+</script>

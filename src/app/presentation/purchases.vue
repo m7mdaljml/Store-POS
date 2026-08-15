@@ -1,215 +1,3 @@
-<script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
-import { invoke } from "@tauri-apps/api/core";
-import { useCatalogStore } from "../../stores/catalog";
-import { useSettingsStore } from "../../stores/settings";
-import { useAuth } from "../../composables/useAuth";
-import type { Supplier, SupplierInvoice, InvoiceLine, SupplierPayment } from "../../types";
-
-const catalog = useCatalogStore();
-const settings = useSettingsStore();
-const auth = useAuth();
-
-const suppliers = ref<Supplier[]>([]);
-const invoices = ref<SupplierInvoice[]>([]);
-const loading = ref(false);
-const error = ref("");
-const notice = ref("");
-
-const showModal = ref(false);
-const saving = ref(false);
-const formError = ref("");
-const form = ref({
-  supplierId: null as number | null,
-  date: new Date().toISOString().slice(0, 10),
-  notes: "",
-  lines: [] as InvoiceLine[],
-});
-
-const payTarget = ref<SupplierInvoice | null>(null);
-const payHistory = ref<SupplierPayment[]>([]);
-const paySaving = ref(false);
-const payError = ref("");
-const payForm = ref({ amount: 0, method: "cash", date: "", notes: "" });
-
-function fmt(n: number): string {
-  if (!settings.currency) return n.toFixed(2);
-  return new Intl.NumberFormat(undefined, {
-    style: "currency",
-    currency: settings.currency,
-    currencyDisplay: "narrowSymbol",
-  }).format(n);
-}
-
-function lineSubtotal(line: InvoiceLine): number {
-  return (line.qty || 0) * (line.costPrice || 0);
-}
-
-const invoiceTotal = computed(() =>
-  form.value.lines.reduce((sum, l) => sum + lineSubtotal(l), 0)
-);
-
-const activeProducts = computed(() => catalog.products.filter((p) => p.is_active === 1));
-
-async function load() {
-  loading.value = true;
-  error.value = "";
-  try {
-    const [s, i] = await Promise.all([
-      invoke<Supplier[]>("list_suppliers"),
-      invoke<SupplierInvoice[]>("list_supplier_invoices"),
-    ]);
-    suppliers.value = s;
-    invoices.value = i;
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e);
-  } finally {
-    loading.value = false;
-  }
-}
-
-function emptyLine(): InvoiceLine {
-  return { productId: null, qty: 1, costPrice: 0 };
-}
-
-function openAdd() {
-  formError.value = "";
-  form.value = {
-    supplierId: suppliers.value[0]?.id ?? null,
-    date: new Date().toISOString().slice(0, 10),
-    notes: "",
-    lines: [emptyLine()],
-  };
-  showModal.value = true;
-}
-
-function addLine() {
-  form.value.lines.push(emptyLine());
-}
-
-function removeLine(index: number) {
-  form.value.lines.splice(index, 1);
-}
-
-function onProductChange(line: InvoiceLine) {
-  const product = catalog.products.find((p) => p.id === line.productId);
-  if (product) line.costPrice = product.cost_price;
-}
-
-function validate(): string {
-  if (!form.value.supplierId) return "Select a supplier";
-  const validLines = form.value.lines.filter((l) => l.productId != null);
-  if (!validLines.length) return "Add at least one product line";
-  for (const l of validLines) {
-    if (!l.qty || l.qty <= 0) return "Quantities must be greater than zero";
-    if (typeof l.costPrice !== "number" || isNaN(l.costPrice) || l.costPrice < 0)
-      return "Enter a valid cost price (0 or more)";
-  }
-  return "";
-}
-
-function payload() {
-  return {
-    supplierId: form.value.supplierId,
-    date: form.value.date,
-    notes: form.value.notes || null,
-    items: form.value.lines
-      .filter((l) => l.productId != null)
-      .map((l) => ({ productId: l.productId, qty: l.qty, costPrice: l.costPrice })),
-    userId: auth.user?.id ?? null,
-  };
-}
-
-async function save() {
-  formError.value = "";
-  const err = validate();
-  if (err) {
-    formError.value = err;
-    return;
-  }
-  saving.value = true;
-  try {
-    await invoke<number>("create_supplier_invoice", { input: payload() });
-    showModal.value = false;
-    notice.value = "Invoice recorded — stock updated";
-    await Promise.all([load(), catalog.load()]);
-  } catch (e) {
-    formError.value = e instanceof Error ? e.message : String(e);
-  } finally {
-    saving.value = false;
-  }
-}
-
-function statusBadge(status: string) {
-  switch (status) {
-    case "paid":
-      return "text-bg-success";
-    case "partial":
-      return "text-bg-warning";
-    default:
-      return "text-bg-danger";
-  }
-}
-
-async function openPay(inv: SupplierInvoice) {
-  payError.value = "";
-  payHistory.value = [];
-  payTarget.value = inv;
-  payForm.value = {
-    amount: inv.due_amount,
-    method: "cash",
-    date: new Date().toISOString().slice(0, 10),
-    notes: "",
-  };
-  try {
-    payHistory.value = await invoke<SupplierPayment[]>("list_supplier_payments", {
-      invoiceId: inv.id,
-    });
-  } catch (e) {
-    payError.value = e instanceof Error ? e.message : String(e);
-  }
-}
-
-async function savePayment() {
-  const inv = payTarget.value;
-  if (!inv) return;
-  payError.value = "";
-  const amount = payForm.value.amount;
-  if (typeof amount !== "number" || isNaN(amount) || amount <= 0) {
-    payError.value = "Enter a payment amount greater than zero";
-    return;
-  }
-  if (amount > inv.due_amount) {
-    payError.value = `Payment exceeds the outstanding amount (${fmt(inv.due_amount)})`;
-    return;
-  }
-  paySaving.value = true;
-  try {
-    await invoke("add_supplier_payment", {
-      input: {
-        invoiceId: inv.id,
-        amount,
-        method: payForm.value.method,
-        date: payForm.value.date,
-        notes: payForm.value.notes || null,
-        userId: auth.user?.id ?? null,
-      },
-    });
-    payTarget.value = null;
-    notice.value = `Payment recorded for ${inv.invoice_no}`;
-    await load();
-  } catch (e) {
-    payError.value = e instanceof Error ? e.message : String(e);
-  } finally {
-    paySaving.value = false;
-  }
-}
-
-onMounted(async () => {
-  await Promise.allSettled([load(), catalog.load(), settings.load()]);
-});
-</script>
-
 <template>
   <div>
     <div class="d-flex align-items-center justify-content-between mb-3">
@@ -512,6 +300,218 @@ onMounted(async () => {
     </div>
   </div>
 </template>
+
+<script setup lang="ts">
+import { computed, onMounted, ref } from "vue";
+import { invoke } from "@tauri-apps/api/core";
+import { useCatalogStore } from "../../stores/catalog";
+import { useSettingsStore } from "../../stores/settings";
+import { useAuth } from "../../composables/useAuth";
+import type { Supplier, SupplierInvoice, InvoiceLine, SupplierPayment } from "../../types";
+
+const catalog = useCatalogStore();
+const settings = useSettingsStore();
+const auth = useAuth();
+
+const suppliers = ref<Supplier[]>([]);
+const invoices = ref<SupplierInvoice[]>([]);
+const loading = ref(false);
+const error = ref("");
+const notice = ref("");
+
+const showModal = ref(false);
+const saving = ref(false);
+const formError = ref("");
+const form = ref({
+  supplierId: null as number | null,
+  date: new Date().toISOString().slice(0, 10),
+  notes: "",
+  lines: [] as InvoiceLine[],
+});
+
+const payTarget = ref<SupplierInvoice | null>(null);
+const payHistory = ref<SupplierPayment[]>([]);
+const paySaving = ref(false);
+const payError = ref("");
+const payForm = ref({ amount: 0, method: "cash", date: "", notes: "" });
+
+function fmt(n: number): string {
+  if (!settings.currency) return n.toFixed(2);
+  return new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency: settings.currency,
+    currencyDisplay: "narrowSymbol",
+  }).format(n);
+}
+
+function lineSubtotal(line: InvoiceLine): number {
+  return (line.qty || 0) * (line.costPrice || 0);
+}
+
+const invoiceTotal = computed(() =>
+  form.value.lines.reduce((sum, l) => sum + lineSubtotal(l), 0)
+);
+
+const activeProducts = computed(() => catalog.products.filter((p) => p.is_active === 1));
+
+async function load() {
+  loading.value = true;
+  error.value = "";
+  try {
+    const [s, i] = await Promise.all([
+      invoke<Supplier[]>("list_suppliers"),
+      invoke<SupplierInvoice[]>("list_supplier_invoices"),
+    ]);
+    suppliers.value = s;
+    invoices.value = i;
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    loading.value = false;
+  }
+}
+
+function emptyLine(): InvoiceLine {
+  return { productId: null, qty: 1, costPrice: 0 };
+}
+
+function openAdd() {
+  formError.value = "";
+  form.value = {
+    supplierId: suppliers.value[0]?.id ?? null,
+    date: new Date().toISOString().slice(0, 10),
+    notes: "",
+    lines: [emptyLine()],
+  };
+  showModal.value = true;
+}
+
+function addLine() {
+  form.value.lines.push(emptyLine());
+}
+
+function removeLine(index: number) {
+  form.value.lines.splice(index, 1);
+}
+
+function onProductChange(line: InvoiceLine) {
+  const product = catalog.products.find((p) => p.id === line.productId);
+  if (product) line.costPrice = product.cost_price;
+}
+
+function validate(): string {
+  if (!form.value.supplierId) return "Select a supplier";
+  const validLines = form.value.lines.filter((l) => l.productId != null);
+  if (!validLines.length) return "Add at least one product line";
+  for (const l of validLines) {
+    if (!l.qty || l.qty <= 0) return "Quantities must be greater than zero";
+    if (typeof l.costPrice !== "number" || isNaN(l.costPrice) || l.costPrice < 0)
+      return "Enter a valid cost price (0 or more)";
+  }
+  return "";
+}
+
+function payload() {
+  return {
+    supplierId: form.value.supplierId,
+    date: form.value.date,
+    notes: form.value.notes || null,
+    items: form.value.lines
+      .filter((l) => l.productId != null)
+      .map((l) => ({ productId: l.productId, qty: l.qty, costPrice: l.costPrice })),
+    userId: auth.user?.id ?? null,
+  };
+}
+
+async function save() {
+  formError.value = "";
+  const err = validate();
+  if (err) {
+    formError.value = err;
+    return;
+  }
+  saving.value = true;
+  try {
+    await invoke<number>("create_supplier_invoice", { input: payload() });
+    showModal.value = false;
+    notice.value = "Invoice recorded — stock updated";
+    await Promise.all([load(), catalog.load()]);
+  } catch (e) {
+    formError.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    saving.value = false;
+  }
+}
+
+function statusBadge(status: string) {
+  switch (status) {
+    case "paid":
+      return "text-bg-success";
+    case "partial":
+      return "text-bg-warning";
+    default:
+      return "text-bg-danger";
+  }
+}
+
+async function openPay(inv: SupplierInvoice) {
+  payError.value = "";
+  payHistory.value = [];
+  payTarget.value = inv;
+  payForm.value = {
+    amount: inv.due_amount,
+    method: "cash",
+    date: new Date().toISOString().slice(0, 10),
+    notes: "",
+  };
+  try {
+    payHistory.value = await invoke<SupplierPayment[]>("list_supplier_payments", {
+      invoiceId: inv.id,
+    });
+  } catch (e) {
+    payError.value = e instanceof Error ? e.message : String(e);
+  }
+}
+
+async function savePayment() {
+  const inv = payTarget.value;
+  if (!inv) return;
+  payError.value = "";
+  const amount = payForm.value.amount;
+  if (typeof amount !== "number" || isNaN(amount) || amount <= 0) {
+    payError.value = "Enter a payment amount greater than zero";
+    return;
+  }
+  if (amount > inv.due_amount) {
+    payError.value = `Payment exceeds the outstanding amount (${fmt(inv.due_amount)})`;
+    return;
+  }
+  paySaving.value = true;
+  try {
+    await invoke("add_supplier_payment", {
+      input: {
+        invoiceId: inv.id,
+        amount,
+        method: payForm.value.method,
+        date: payForm.value.date,
+        notes: payForm.value.notes || null,
+        userId: auth.user?.id ?? null,
+      },
+    });
+    payTarget.value = null;
+    notice.value = `Payment recorded for ${inv.invoice_no}`;
+    await load();
+  } catch (e) {
+    payError.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    paySaving.value = false;
+  }
+}
+
+onMounted(async () => {
+  await Promise.allSettled([load(), catalog.load(), settings.load()]);
+});
+</script>
 
 <style scoped>
 .invoice-line {
