@@ -72,8 +72,38 @@ export interface SaleRecord {
   itemCount: number;
   total: number;
   paidAmount: number;
-  status: "completed" | "voided";
+  status: "completed" | "voided" | "held" | "cancelled";
   voidReason: string | null;
+}
+
+/** Result of holding a sale (`hold_sale` command). */
+export interface HoldSaleResult {
+  saleId: number;
+  saleNo: string;
+  total: number;
+  itemCount: number;
+}
+
+/** A single line of a resumed held sale. */
+export interface ResumeSaleItem {
+  productId: number;
+  name: string;
+  qty: number;
+  price: number;
+  costPrice: number;
+  discount: number;
+}
+
+/** Held cart returned by `resume_sale`. */
+export interface ResumeSaleRecord {
+  saleId: number;
+  saleNo: string;
+  customerId: number | null;
+  subtotal: number;
+  discount: number;
+  tax: number;
+  total: number;
+  items: ResumeSaleItem[];
 }
 
 export interface Category {

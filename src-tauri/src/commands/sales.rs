@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+﻿use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use tauri::{AppHandle, Runtime};
 
@@ -39,6 +39,69 @@ pub struct CreateSaleInput {
     pub user_id: Option<i64>,
     /// Optional customer attached to the sale (purchase history).
     pub customer_id: Option<i64>,
+    /// When resuming a held sale, pass its id so the same sale number is kept
+    /// and the held record is completed in place.
+    #[serde(default)]
+    pub held_sale_id: Option<i64>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HoldSaleInput {
+    pub items: Vec<SaleItemInput>,
+    /// Order-level discount amount.
+    pub discount: f64,
+    /// Tax amount for the order.
+    pub tax: f64,
+    pub customer_id: Option<i64>,
+    pub user_id: Option<i64>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HoldSaleResult {
+    pub sale_id: i64,
+    pub sale_no: String,
+    pub total: f64,
+    pub item_count: i64,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResumeSaleInput {
+    pub sale_id: i64,
+    pub user_id: Option<i64>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResumeSaleItem {
+    pub product_id: i64,
+    pub name: String,
+    pub qty: f64,
+    pub price: f64,
+    pub cost_price: f64,
+    pub discount: f64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResumeSaleRecord {
+    pub sale_id: i64,
+    pub sale_no: String,
+    pub customer_id: Option<i64>,
+    pub subtotal: f64,
+    pub discount: f64,
+    pub tax: f64,
+    pub total: f64,
+    pub items: Vec<ResumeSaleItem>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CancelHeldSaleInput {
+    pub sale_id: i64,
+    pub user_id: Option<i64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -88,26 +151,10 @@ fn optional_field(value: &Option<String>) -> Option<String> {
     value.as_ref().map(|v| v.trim()).filter(|v| !v.is_empty()).map(String::from)
 }
 
-/// Validates input and computes the authoritative order totals from item lines.
+/// Validates item lines and computes the authoritative order totals.
 /// Returns `(subtotal, item_discount, order_discount, tax, total)`.
 fn validate_and_totals(input: &CreateSaleInput) -> Result<(f64, f64, f64, f64, f64), String> {
-    if input.items.is_empty() {
-        return Err("Add at least one product to the cart".into());
-    }
-    if input.payments.is_empty() {
-        return Err("Add at least one payment method".into());
-    }
-    for item in &input.items {
-        if item.qty <= 0.0 {
-            return Err("Quantities must be greater than zero".into());
-        }
-        if item.price < 0.0 {
-            return Err("Sale price cannot be negative".into());
-        }
-        if item.discount < 0.0 || item.discount > item.price {
-            return Err(format!("Item discount for product {} is out of range", item.product_id));
-        }
-    }
+    validate_item_lines(&input.items)?;
 
     let mut subtotal = 0.0;
     let mut item_discount = 0.0;
@@ -119,6 +166,48 @@ fn validate_and_totals(input: &CreateSaleInput) -> Result<(f64, f64, f64, f64, f
     let tax = input.tax.max(0.0);
     let total = (subtotal - item_discount - order_discount + tax).max(0.0);
     Ok((subtotal, item_discount, order_discount, tax, total))
+}
+
+fn validate_item_lines(items: &[SaleItemInput]) -> Result<(), String> {
+    if items.is_empty() {
+        return Err("Add at least one product to the cart".into());
+    }
+    for item in items {
+        if item.qty <= 0.0 {
+            return Err("Quantities must be greater than zero".into());
+        }
+        if item.price < 0.0 {
+            return Err("Sale price cannot be negative".into());
+        }
+        if item.discount < 0.0 || item.discount > item.price {
+            return Err(format!("Item discount for product {} is out of range", item.product_id));
+        }
+    }
+    Ok(())
+}
+
+/// Checks each product exists and has enough stock for the requested quantity.
+async fn check_stock(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    items: &[SaleItemInput],
+) -> Result<(), String> {
+    for item in items {
+        let product: Option<(f64, String)> =
+            sqlx::query_as("SELECT stock_qty, name FROM products WHERE id = ?")
+                .bind(item.product_id)
+                .fetch_optional(&mut **tx)
+                .await
+                .map_err(|e| e.to_string())?;
+        let (stock, name) =
+            product.ok_or_else(|| format!("Product {} not found", item.product_id))?;
+        if stock + 0.005 < item.qty {
+            return Err(format!(
+                "Insufficient stock for \"{name}\": have {stock}, need {}",
+                item.qty
+            ));
+        }
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -135,6 +224,10 @@ pub async fn insert_sale(
     input: CreateSaleInput,
 ) -> Result<SaleResult, String> {
     let (subtotal, item_discount, order_discount, tax, total) = validate_and_totals(&input)?;
+
+    if input.payments.is_empty() {
+        return Err("Add at least one payment method".into());
+    }
 
     // Payments must cover the total (0.01 tolerance for float rounding).
     let payment_sum: f64 = input.payments.iter().map(|p| p.amount.max(0.0)).sum();
@@ -175,22 +268,7 @@ pub async fn insert_sale(
 
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
-    for item in &input.items {
-        let product: Option<(f64, String)> =
-            sqlx::query_as("SELECT stock_qty, name FROM products WHERE id = ?")
-                .bind(item.product_id)
-                .fetch_optional(&mut *tx)
-                .await
-                .map_err(|e| e.to_string())?;
-        let (stock, name) =
-            product.ok_or_else(|| format!("Product {} not found", item.product_id))?;
-        if stock + 0.005 < item.qty {
-            return Err(format!(
-                "Insufficient stock for \"{name}\": have {stock}, need {}",
-                item.qty
-            ));
-        }
-    }
+    check_stock(&mut tx, &input.items).await?;
 
     // Credit customers must exist; resolve the sale's customer.
     let mut sale_customer_id = input.customer_id;
@@ -211,31 +289,80 @@ pub async fn insert_sale(
         sale_customer_id = Some(cid);
     }
 
-    let next_no: (i64,) =
-        sqlx::query_as("SELECT COALESCE(MAX(id), 0) + 1 FROM sales")
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(|e| e.to_string())?;
-    let sale_no = format!("S-{:06}", next_no.0);
+    let (sale_id, sale_no) = match input.held_sale_id {
+        Some(held_id) => {
+            let held: Option<(String, String)> =
+                sqlx::query_as("SELECT sale_no, status FROM sales WHERE id = ?")
+                    .bind(held_id)
+                    .fetch_optional(&mut *tx)
+                    .await
+                    .map_err(|e| e.to_string())?;
+            let (held_no, held_status) =
+                held.ok_or_else(|| format!("Held sale {held_id} not found"))?;
+            if held_status != "held" {
+                return Err("Only held sales can be completed from a hold".into());
+            }
+            sqlx::query("DELETE FROM sale_items WHERE sale_id = ?")
+                .bind(held_id)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+            sqlx::query("DELETE FROM payments WHERE sale_id = ?")
+                .bind(held_id)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+            (held_id, held_no)
+        }
+        None => {
+            let next_no: (i64,) =
+                sqlx::query_as("SELECT COALESCE(MAX(id), 0) + 1 FROM sales")
+                    .fetch_one(&mut *tx)
+                    .await
+                    .map_err(|e| e.to_string())?;
+            (0, format!("S-{:06}", next_no.0))
+        }
+    };
 
-    let result = sqlx::query(
-        "INSERT INTO sales
-            (sale_no, customer_id, user_id, subtotal, discount, tax, total, paid_amount, change_given, status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed')",
-    )
-    .bind(&sale_no)
-    .bind(sale_customer_id)
-    .bind(input.user_id)
-    .bind(subtotal)
-    .bind(order_discount)
-    .bind(tax)
-    .bind(total)
-    .bind(paid_amount)
-    .bind(change_given)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| e.to_string())?;
-    let sale_id = result.last_insert_rowid();
+    let result = if sale_id == 0 {
+        sqlx::query(
+            "INSERT INTO sales
+                (sale_no, customer_id, user_id, subtotal, discount, tax, total, paid_amount, change_given, status)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed')",
+        )
+        .bind(&sale_no)
+        .bind(sale_customer_id)
+        .bind(input.user_id)
+        .bind(subtotal)
+        .bind(order_discount)
+        .bind(tax)
+        .bind(total)
+        .bind(paid_amount)
+        .bind(change_given)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?
+    } else {
+        sqlx::query(
+            "UPDATE sales
+                SET customer_id = ?, user_id = ?, subtotal = ?, discount = ?, tax = ?, total = ?,
+                    paid_amount = ?, change_given = ?, status = 'completed', void_reason = NULL
+             WHERE id = ?",
+        )
+        .bind(sale_customer_id)
+        .bind(input.user_id)
+        .bind(subtotal)
+        .bind(order_discount)
+        .bind(tax)
+        .bind(total)
+        .bind(paid_amount)
+        .bind(change_given)
+        .bind(sale_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?
+    };
+    let sale_id = if sale_id == 0 { result.last_insert_rowid() } else { sale_id };
 
     for item in &input.items {
         let item_subtotal = (item.price - item.discount) * item.qty;
@@ -350,6 +477,231 @@ pub async fn insert_sale(
         paid_amount,
         change_given,
     })
+}
+
+/// Saves the current cart as a held sale so it can be resumed later. No stock
+/// is moved and no payments are recorded.
+pub async fn insert_hold(pool: &sqlx::SqlitePool, input: HoldSaleInput) -> Result<HoldSaleResult, String> {
+    let create_input = CreateSaleInput {
+        items: input.items,
+        payments: Vec::new(),
+        discount: input.discount,
+        tax: input.tax,
+        user_id: input.user_id,
+        customer_id: input.customer_id,
+        held_sale_id: None,
+    };
+    let (subtotal, _item_discount, order_discount, tax, total) = validate_and_totals(&create_input)?;
+
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+    check_stock(&mut tx, &create_input.items).await?;
+
+    let next_no: (i64,) =
+        sqlx::query_as("SELECT COALESCE(MAX(id), 0) + 1 FROM sales")
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+    let sale_no = format!("S-{:06}", next_no.0);
+
+    let result = sqlx::query(
+        "INSERT INTO sales
+            (sale_no, customer_id, user_id, subtotal, discount, tax, total, paid_amount, change_given, status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 'held')",
+    )
+    .bind(&sale_no)
+    .bind(input.customer_id)
+    .bind(input.user_id)
+    .bind(subtotal)
+    .bind(order_discount)
+    .bind(tax)
+    .bind(total)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+    let sale_id = result.last_insert_rowid();
+
+    for item in &create_input.items {
+        let item_subtotal = (item.price - item.discount) * item.qty;
+        sqlx::query(
+            "INSERT INTO sale_items (sale_id, product_id, qty, price, cost_price, discount, tax, subtotal)
+             VALUES (?, ?, ?, ?, ?, ?, 0, ?)",
+        )
+        .bind(sale_id)
+        .bind(item.product_id)
+        .bind(item.qty)
+        .bind(item.price)
+        .bind(item.cost_price)
+        .bind(item.discount)
+        .bind(item_subtotal)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    }
+
+    sqlx::query(
+        "INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
+         VALUES (?, 'sale.hold', 'sale', ?, ?)",
+    )
+    .bind(input.user_id)
+    .bind(sale_id)
+    .bind(format!(
+        "Held sale {sale_no} for {} item(s), total {}",
+        create_input.items.len(),
+        total
+    ))
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    tx.commit().await.map_err(|e| e.to_string())?;
+
+    Ok(HoldSaleResult {
+        sale_id,
+        sale_no,
+        total,
+        item_count: create_input.items.len() as i64,
+    })
+}
+
+/// Loads a held sale's cart for resuming in the checkout. The held sale stays
+/// in 'held' status until completed or cancelled.
+pub async fn load_held_sale(
+    pool: &sqlx::SqlitePool,
+    input: ResumeSaleInput,
+) -> Result<ResumeSaleRecord, String> {
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+
+    let sale: Option<(String, Option<i64>, f64, f64, f64, f64)> = sqlx::query_as(
+        "SELECT sale_no, customer_id, subtotal, discount, tax, total FROM sales WHERE id = ?",
+    )
+    .bind(input.sale_id)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+    let (sale_no, customer_id, subtotal, discount, tax, total) =
+        sale.ok_or("Held sale not found")?;
+
+    let status: (String,) = sqlx::query_as("SELECT status FROM sales WHERE id = ?")
+        .bind(input.sale_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    if status.0 != "held" {
+        return Err(format!("Sale {sale_no} is not currently held"));
+    }
+
+    let rows = sqlx::query(
+        "SELECT si.product_id, p.name, si.qty, si.price, si.cost_price, si.discount
+         FROM sale_items si
+         JOIN products p ON p.id = si.product_id
+         WHERE si.sale_id = ?",
+    )
+    .bind(input.sale_id)
+    .fetch_all(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let mut items = Vec::with_capacity(rows.len());
+    for row in rows {
+        items.push(ResumeSaleItem {
+            product_id: row.try_get("product_id").map_err(|e| e.to_string())?,
+            name: row.try_get("name").map_err(|e| e.to_string())?,
+            qty: row.try_get("qty").map_err(|e| e.to_string())?,
+            price: row.try_get("price").map_err(|e| e.to_string())?,
+            cost_price: row.try_get("cost_price").map_err(|e| e.to_string())?,
+            discount: row.try_get("discount").map_err(|e| e.to_string())?,
+        });
+    }
+
+    sqlx::query(
+        "INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
+         VALUES (?, 'sale.resume', 'sale', ?, ?)",
+    )
+    .bind(input.user_id)
+    .bind(input.sale_id)
+    .bind(format!("Resumed held sale {sale_no}"))
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    tx.commit().await.map_err(|e| e.to_string())?;
+
+    Ok(ResumeSaleRecord {
+        sale_id: input.sale_id,
+        sale_no,
+        customer_id,
+        subtotal,
+        discount,
+        tax,
+        total,
+        items,
+    })
+}
+
+/// Drops a held sale without completing it.
+pub async fn drop_held_sale(
+    pool: &sqlx::SqlitePool,
+    input: CancelHeldSaleInput,
+) -> Result<(), String> {
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+
+    let sale: Option<(String, String)> =
+        sqlx::query_as("SELECT sale_no, status FROM sales WHERE id = ?")
+            .bind(input.sale_id)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+    let (sale_no, status) = sale.ok_or("Held sale not found")?;
+    if status != "held" {
+        return Err(format!("Sale {sale_no} is not currently held"));
+    }
+
+    sqlx::query("UPDATE sales SET status = 'cancelled' WHERE id = ?")
+        .bind(input.sale_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    sqlx::query(
+        "INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
+         VALUES (?, 'sale.cancel', 'sale', ?, ?)",
+    )
+    .bind(input.user_id)
+    .bind(input.sale_id)
+    .bind(format!("Cancelled held sale {sale_no}"))
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    tx.commit().await.map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn hold_sale<R: Runtime>(
+    app: AppHandle<R>,
+    input: HoldSaleInput,
+) -> Result<HoldSaleResult, String> {
+    let pool = db::pool(&app).await?;
+    insert_hold(&pool, input).await
+}
+
+#[tauri::command]
+pub async fn resume_sale<R: Runtime>(
+    app: AppHandle<R>,
+    input: ResumeSaleInput,
+) -> Result<ResumeSaleRecord, String> {
+    let pool = db::pool(&app).await?;
+    load_held_sale(&pool, input).await
+}
+
+#[tauri::command]
+pub async fn cancel_held_sale<R: Runtime>(
+    app: AppHandle<R>,
+    input: CancelHeldSaleInput,
+) -> Result<(), String> {
+    let pool = db::pool(&app).await?;
+    drop_held_sale(&pool, input).await
 }
 
 /// Reverses a completed sale: marks it voided, restores stock, reverses any
@@ -687,6 +1039,7 @@ mod tests {
             tax: 0.0,
             user_id: Some(1),
             customer_id: None,
+            held_sale_id: None,
         };
         let res = insert_sale(&pool, input).await.unwrap();
         assert_eq!(res.sale_no, "S-000001");
@@ -785,6 +1138,7 @@ mod tests {
             tax: 0.0,
             user_id: Some(1),
             customer_id: None,
+            held_sale_id: None,
         };
         let res = insert_sale(&pool, input).await.unwrap();
         assert!((res.total - 10.0).abs() < 0.001);
@@ -840,6 +1194,7 @@ mod tests {
             tax: 0.0,
             user_id: Some(1),
             customer_id: None,
+            held_sale_id: None,
         };
 
         // Empty cart.
@@ -900,6 +1255,7 @@ mod tests {
             tax: 0.0,
             user_id: Some(1),
             customer_id: None,
+            held_sale_id: None,
         };
 
         let first = insert_sale(&pool, input()).await.unwrap();
@@ -928,6 +1284,7 @@ mod tests {
                 tax: 0.0,
                 user_id: Some(1),
                 customer_id: None,
+                held_sale_id: None,
             },
         )
         .await
@@ -1013,6 +1370,7 @@ mod tests {
                 tax: 0.0,
                 user_id: Some(1),
                 customer_id: None,
+                held_sale_id: None,
             },
         )
         .await
@@ -1081,6 +1439,7 @@ mod tests {
                 tax: 0.0,
                 user_id: Some(1),
                 customer_id: None,
+                held_sale_id: None,
             },
         )
         .await
@@ -1115,6 +1474,266 @@ mod tests {
         .await
         .unwrap();
         assert!(completed.is_empty());
+    }
+
+    #[tokio::test]
+    async fn hold_sale_records_held_cart_without_touching_stock() {
+        let pool = mem_pool().await;
+        sample_product(&pool, 1, "Coffee", 20.0, 5.0).await;
+        sample_customer(&pool, 1, "Alice").await;
+
+        let held = insert_hold(
+            &pool,
+            HoldSaleInput {
+                items: vec![item(1, 2.0, 5.0, 0.5)],
+                discount: 1.0,
+                tax: 0.0,
+                customer_id: Some(1),
+                user_id: Some(1),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(held.sale_no, "S-000001");
+        assert_eq!(held.item_count, 1);
+        // subtotal 10 - item discount 1 - order discount 1 = 8
+        assert!((held.total - 8.0).abs() < 0.001);
+
+        let row: (String, f64) =
+            sqlx::query_as("SELECT status, total FROM sales WHERE id = ?")
+                .bind(held.sale_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(row.0, "held");
+        assert!((row.1 - 8.0).abs() < 0.001);
+
+        // Items are stored, but no payments, no stock movement, stock untouched.
+        let items: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM sale_items WHERE sale_id = ?")
+            .bind(held.sale_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(items.0, 1);
+        let pays: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM payments WHERE sale_id = ?")
+            .bind(held.sale_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(pays.0, 0);
+        let moves: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM stock_movements WHERE ref_id = ?")
+            .bind(held.sale_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(moves.0, 0);
+        assert!((stock_of(&pool, 1).await - 20.0).abs() < 0.001);
+
+        let audit: (String,) = sqlx::query_as(
+            "SELECT action FROM audit_log WHERE entity_id = ? AND action = 'sale.hold'",
+        )
+        .bind(held.sale_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(audit.0, "sale.hold");
+    }
+
+    #[tokio::test]
+    async fn resume_sale_returns_cart_and_rejects_non_held() {
+        let pool = mem_pool().await;
+        sample_product(&pool, 1, "Coffee", 20.0, 5.0).await;
+        sample_customer(&pool, 1, "Alice").await;
+
+        let held = insert_hold(
+            &pool,
+            HoldSaleInput {
+                items: vec![item(1, 2.0, 5.0, 0.5)],
+                discount: 1.0,
+                tax: 0.0,
+                customer_id: Some(1),
+                user_id: Some(1),
+            },
+        )
+        .await
+        .unwrap();
+
+        let resumed = load_held_sale(
+            &pool,
+            ResumeSaleInput {
+                sale_id: held.sale_id,
+                user_id: Some(1),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(resumed.sale_no, "S-000001");
+        assert_eq!(resumed.customer_id, Some(1));
+        assert!((resumed.discount - 1.0).abs() < 0.001);
+        assert_eq!(resumed.items.len(), 1);
+        assert_eq!(resumed.items[0].name, "Coffee");
+        assert!((resumed.items[0].qty - 2.0).abs() < 0.001);
+        assert!((resumed.items[0].discount - 0.5).abs() < 0.001);
+
+        // Still held after resume.
+        let status: (String,) = sqlx::query_as("SELECT status FROM sales WHERE id = ?")
+            .bind(held.sale_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(status.0, "held");
+
+        // A completed sale cannot be resumed.
+        let err = load_held_sale(
+            &pool,
+            ResumeSaleInput {
+                sale_id: held.sale_id + 999,
+                user_id: Some(1),
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(err.contains("not found"));
+    }
+
+    #[tokio::test]
+    async fn completing_held_sale_keeps_number_and_completes_in_place() {
+        let pool = mem_pool().await;
+        sample_product(&pool, 1, "Coffee", 20.0, 5.0).await;
+
+        let held = insert_hold(
+            &pool,
+            HoldSaleInput {
+                items: vec![item(1, 2.0, 5.0, 0.0)],
+                discount: 0.0,
+                tax: 0.0,
+                customer_id: None,
+                user_id: Some(1),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(held.sale_no, "S-000001");
+
+        // A fresh sale now gets the next number.
+        let fresh = insert_sale(
+            &pool,
+            CreateSaleInput {
+                items: vec![item(1, 1.0, 5.0, 0.0)],
+                payments: vec![SalePaymentInput {
+                    method: "cash".into(),
+                    amount: 5.0,
+                    reference: None,
+                    customer_id: None,
+                }],
+                discount: 0.0,
+                tax: 0.0,
+                user_id: Some(1),
+                customer_id: None,
+                held_sale_id: None,
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(fresh.sale_no, "S-000002");
+
+        // Complete the held sale by referencing it.
+        let completed = insert_sale(
+            &pool,
+            CreateSaleInput {
+                items: vec![item(1, 2.0, 5.0, 0.0)],
+                payments: vec![SalePaymentInput {
+                    method: "cash".into(),
+                    amount: 10.0,
+                    reference: None,
+                    customer_id: None,
+                }],
+                discount: 0.0,
+                tax: 0.0,
+                user_id: Some(1),
+                customer_id: None,
+                held_sale_id: Some(held.sale_id),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(completed.sale_id, held.sale_id);
+        assert_eq!(completed.sale_no, "S-000001");
+
+        let row: (String, f64) =
+            sqlx::query_as("SELECT status, paid_amount FROM sales WHERE id = ?")
+                .bind(held.sale_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(row.0, "completed");
+        assert!((row.1 - 10.0).abs() < 0.001);
+
+        // Stock moved exactly once (held didn't reserve any).
+        assert!((stock_of(&pool, 1).await - 17.0).abs() < 0.001);
+        let moves: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM stock_movements WHERE ref_id = ?")
+            .bind(held.sale_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(moves.0, 1);
+    }
+
+    #[tokio::test]
+    async fn cancel_held_sale_marks_cancelled() {
+        let pool = mem_pool().await;
+        sample_product(&pool, 1, "Coffee", 20.0, 5.0).await;
+
+        let held = insert_hold(
+            &pool,
+            HoldSaleInput {
+                items: vec![item(1, 1.0, 5.0, 0.0)],
+                discount: 0.0,
+                tax: 0.0,
+                customer_id: None,
+                user_id: Some(1),
+            },
+        )
+        .await
+        .unwrap();
+
+        drop_held_sale(
+            &pool,
+            CancelHeldSaleInput {
+                sale_id: held.sale_id,
+                user_id: Some(1),
+            },
+        )
+        .await
+        .unwrap();
+        let status: (String,) = sqlx::query_as("SELECT status FROM sales WHERE id = ?")
+            .bind(held.sale_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(status.0, "cancelled");
+
+        // Cannot complete a cancelled held sale.
+        let err = insert_sale(
+            &pool,
+            CreateSaleInput {
+                items: vec![item(1, 1.0, 5.0, 0.0)],
+                payments: vec![SalePaymentInput {
+                    method: "cash".into(),
+                    amount: 5.0,
+                    reference: None,
+                    customer_id: None,
+                }],
+                discount: 0.0,
+                tax: 0.0,
+                user_id: Some(1),
+                customer_id: None,
+                held_sale_id: Some(held.sale_id),
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(err.contains("Only held"));
     }
 
     async fn stock_of(pool: &sqlx::SqlitePool, product_id: i64) -> f64 {

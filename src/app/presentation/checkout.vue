@@ -7,7 +7,15 @@ import { useCartStore } from "../../stores/cart";
 import { useAuth } from "../../composables/useAuth";
 import { useScanner } from "../../composables/useScanner";
 import { select } from "../../lib/db";
-import type { CustomerLite, PaymentLine, Product, SaleResult } from "../../types";
+import type {
+  CustomerLite,
+  HoldSaleResult,
+  PaymentLine,
+  Product,
+  ResumeSaleRecord,
+  SaleRecord,
+  SaleResult,
+} from "../../types";
 
 const catalog = useCatalogStore();
 const settings = useSettingsStore();
@@ -26,6 +34,14 @@ const activeSuggestion = ref(0);
 
 const notice = ref("");
 const committing = ref(false);
+
+const heldSaleId = ref<number | null>(null);
+const heldCustomerId = ref<number | null>(null);
+const heldSales = ref<SaleRecord[]>([]);
+const heldSalesOpen = ref(false);
+const holding = ref(false);
+const resumingHeld = ref(false);
+const heldError = ref("");
 
 const suggestions = computed(() => {
   const q = search.value.trim().toLowerCase();
@@ -195,14 +211,17 @@ function completeSale() {
       ],
       discount: cart.orderDiscountAmount,
       tax: 0,
-      customerId: null,
+      customerId: heldCustomerId.value,
       userId: auth.user?.id ?? null,
+      heldSaleId: heldSaleId.value,
     },
   })
     .then((sale) => {
       const change = fmt(sale.changeGiven);
       notice.value = `Sale ${sale.saleNo} completed. Change due: ${change}.`;
       cart.clear();
+      heldSaleId.value = null;
+      heldCustomerId.value = null;
       catalog.load();
     })
     .catch((e: string) => {
@@ -210,6 +229,107 @@ function completeSale() {
     })
     .finally(() => {
       committing.value = false;
+    });
+}
+
+function holdCurrentSale() {
+  if (!cart.items.length) return;
+  error.value = "";
+  notice.value = "";
+  holding.value = true;
+  invoke<HoldSaleResult>("hold_sale", {
+    input: {
+      items: cart.items.map((i) => ({
+        productId: i.productId,
+        qty: i.qty,
+        price: i.price,
+        costPrice: i.costPrice,
+        discount: i.discount,
+      })),
+      discount: cart.orderDiscountAmount,
+      tax: 0,
+      customerId: null,
+      userId: auth.user?.id ?? null,
+    },
+  })
+    .then((held) => {
+      notice.value = `Sale ${held.saleNo} held — resume it anytime from the held sales list.`;
+      cart.clear();
+      heldSaleId.value = null;
+      heldCustomerId.value = null;
+    })
+    .catch((e: string) => {
+      error.value = String(e);
+    })
+    .finally(() => {
+      holding.value = false;
+    });
+}
+
+async function loadHeldSales() {
+  heldError.value = "";
+  try {
+    heldSales.value = await invoke<SaleRecord[]>("list_sales", {
+      input: { status: "held", limit: null },
+    });
+  } catch (e) {
+    heldError.value = String(e);
+  }
+}
+
+function openHeldSales() {
+  heldSalesOpen.value = true;
+  loadHeldSales();
+}
+
+function resumeHeldSale(sale: SaleRecord) {
+  if (cart.items.length) {
+    error.value = "Clear the current cart before resuming a held sale";
+    return;
+  }
+  resumingHeld.value = true;
+  heldError.value = "";
+  invoke<ResumeSaleRecord>("resume_sale", {
+    input: { saleId: sale.id, userId: auth.user?.id ?? null },
+  })
+    .then((record) => {
+      record.items.forEach((li) =>
+        cart.add({
+          productId: li.productId,
+          name: li.name,
+          price: li.price,
+          qty: li.qty,
+          discount: li.discount,
+          costPrice: li.costPrice,
+        })
+      );
+      cart.setOrderDiscount("fixed", record.discount);
+      heldSaleId.value = record.saleId;
+      heldCustomerId.value = record.customerId;
+      heldSalesOpen.value = false;
+      notice.value = `Held sale ${record.saleNo} loaded into the cart.`;
+      search.value = "";
+    })
+    .catch((e: string) => {
+      error.value = String(e);
+    })
+    .finally(() => {
+      resumingHeld.value = false;
+    });
+}
+
+function cancelHeldSale(sale: SaleRecord) {
+  if (!confirm(`Cancel held sale ${sale.saleNo}? This cannot be undone.`)) return;
+  resumingHeld.value = true;
+  invoke("cancel_held_sale", {
+    input: { saleId: sale.id, userId: auth.user?.id ?? null },
+  })
+    .then(() => loadHeldSales())
+    .catch((e: string) => {
+      heldError.value = String(e);
+    })
+    .finally(() => {
+      resumingHeld.value = false;
     });
 }
 
@@ -729,6 +849,26 @@ onMounted(async () => {
           <span>{{ fmt(cart.change) }}</span>
         </div>
 
+        <div class="d-flex gap-2 mb-2">
+          <button
+            class="btn btn-outline-secondary flex-fill"
+            type="button"
+            :disabled="!cart.items.length || holding || committing"
+            title="Save the cart to resume later"
+            @click="holdCurrentSale"
+          >
+            <span v-if="holding" class="spinner-border spinner-border-sm me-1" role="status"></span>
+            <i v-else class="bi bi-pause-circle me-1"></i>Hold
+          </button>
+          <button
+            class="btn btn-outline-secondary flex-fill"
+            type="button"
+            @click="openHeldSales"
+          >
+            <i class="bi bi-clock-history me-1"></i>Held Sales
+          </button>
+        </div>
+
         <button
           class="btn btn-lg btn-primary w-100"
           type="button"
@@ -740,5 +880,68 @@ onMounted(async () => {
         </button>
       </div>
     </aside>
+
+    <div
+      v-if="heldSalesOpen"
+      class="modal fade show d-block"
+      tabindex="-1"
+      role="dialog"
+      @click.self="heldSalesOpen = false"
+    >
+      <div class="modal-dialog" role="document">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">
+              <i class="bi bi-clock-history me-2"></i>Held sales
+            </h5>
+            <button
+              type="button"
+              class="btn-close"
+              aria-label="Close"
+              @click="heldSalesOpen = false"
+            ></button>
+          </div>
+          <div class="modal-body">
+            <div v-if="heldError" class="alert alert-warning py-1 px-2 small" role="alert">
+              {{ heldError }}
+            </div>
+            <p v-if="!heldSales.length && !heldError" class="text-muted small text-center my-4">
+              No held sales
+            </p>
+            <div
+              v-for="sale in heldSales"
+              :key="sale.id"
+              class="d-flex justify-content-between align-items-center border-bottom py-2"
+            >
+              <div>
+                <div class="fw-semibold small">{{ sale.saleNo }}</div>
+                <div class="text-muted" style="font-size: 0.72rem">
+                  {{ sale.itemCount }} item(s) · {{ fmt(sale.total) }} ·
+                  {{ new Date(sale.createdAt).toLocaleString() }}
+                </div>
+              </div>
+              <div class="d-flex gap-2">
+                <button
+                  class="btn btn-sm btn-primary"
+                  type="button"
+                  :disabled="resumingHeld"
+                  @click="resumeHeldSale(sale)"
+                >
+                  Resume
+                </button>
+                <button
+                  class="btn btn-sm btn-outline-danger"
+                  type="button"
+                  :disabled="resumingHeld"
+                  @click="cancelHeldSale(sale)"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
