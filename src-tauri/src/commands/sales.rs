@@ -43,6 +43,10 @@ pub struct CreateSaleInput {
     /// and the held record is completed in place.
     #[serde(default)]
     pub held_sale_id: Option<i64>,
+    /// Cash register session this sale is recorded against. If provided it
+    /// must reference an open session.
+    #[serde(default)]
+    pub session_id: Option<i64>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -341,6 +345,21 @@ pub async fn insert_sale(
         sale_customer_id = Some(cid);
     }
 
+    // The register session must exist and be open when one is supplied.
+    if let Some(sid) = input.session_id {
+        let session: Option<(String,)> =
+            sqlx::query_as("SELECT status FROM sale_sessions WHERE id = ?")
+                .bind(sid)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+        match session {
+            Some((status,)) if status == "open" => {}
+            Some(_) => return Err("The register session is not open".into()),
+            None => return Err(format!("Register session {sid} not found")),
+        }
+    }
+
     let (sale_id, sale_no) = match input.held_sale_id {
         Some(held_id) => {
             let held: Option<(String, String)> =
@@ -379,9 +398,10 @@ pub async fn insert_sale(
     let result = if sale_id == 0 {
         sqlx::query(
             "INSERT INTO sales
-                (sale_no, customer_id, user_id, subtotal, discount, tax, total, paid_amount, change_given, status)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed')",
+                (session_id, sale_no, customer_id, user_id, subtotal, discount, tax, total, paid_amount, change_given, status)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed')",
         )
+        .bind(input.session_id)
         .bind(&sale_no)
         .bind(sale_customer_id)
         .bind(input.user_id)
@@ -397,10 +417,11 @@ pub async fn insert_sale(
     } else {
         sqlx::query(
             "UPDATE sales
-                SET customer_id = ?, user_id = ?, subtotal = ?, discount = ?, tax = ?, total = ?,
+                SET session_id = ?, customer_id = ?, user_id = ?, subtotal = ?, discount = ?, tax = ?, total = ?,
                     paid_amount = ?, change_given = ?, status = 'completed', void_reason = NULL
              WHERE id = ?",
         )
+        .bind(input.session_id)
         .bind(sale_customer_id)
         .bind(input.user_id)
         .bind(subtotal)
@@ -542,6 +563,7 @@ pub async fn insert_hold(pool: &sqlx::SqlitePool, input: HoldSaleInput) -> Resul
         user_id: input.user_id,
         customer_id: input.customer_id,
         held_sale_id: None,
+        session_id: None,
     };
     let (subtotal, _item_discount, order_discount, tax, total) = validate_and_totals(&create_input)?;
 
@@ -1106,6 +1128,19 @@ mod tests {
           key TEXT PRIMARY KEY,
           value TEXT NOT NULL
         );
+        CREATE TABLE sale_sessions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL,
+          opened_at TEXT NOT NULL DEFAULT (datetime('now')),
+          closed_at TEXT,
+          opening_cash REAL NOT NULL DEFAULT 0,
+          closing_cash REAL,
+          expected_cash REAL,
+          status TEXT NOT NULL DEFAULT 'open',
+          variance REAL,
+          closed_by INTEGER,
+          notes TEXT
+        );
         CREATE TABLE customers (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           name TEXT NOT NULL,
@@ -1258,6 +1293,7 @@ mod tests {
             user_id: Some(1),
             customer_id: None,
             held_sale_id: None,
+            session_id: None,
         };
         let res = insert_sale(&pool, input).await.unwrap();
         assert_eq!(res.sale_no, "S-000001");
@@ -1357,6 +1393,7 @@ mod tests {
             user_id: Some(1),
             customer_id: None,
             held_sale_id: None,
+            session_id: None,
         };
         let res = insert_sale(&pool, input).await.unwrap();
         assert!((res.total - 10.0).abs() < 0.001);
@@ -1413,6 +1450,7 @@ mod tests {
             user_id: Some(1),
             customer_id: None,
             held_sale_id: None,
+            session_id: None,
         };
 
         // Empty cart.
@@ -1474,6 +1512,7 @@ mod tests {
             user_id: Some(1),
             customer_id: None,
             held_sale_id: None,
+            session_id: None,
         };
 
         let first = insert_sale(&pool, input()).await.unwrap();
@@ -1503,6 +1542,7 @@ mod tests {
                 user_id: Some(1),
                 customer_id: None,
                 held_sale_id: None,
+                session_id: None,
             },
         )
         .await
@@ -1589,6 +1629,7 @@ mod tests {
                 user_id: Some(1),
                 customer_id: None,
                 held_sale_id: None,
+                session_id: None,
             },
         )
         .await
@@ -1658,6 +1699,7 @@ mod tests {
                 user_id: Some(1),
                 customer_id: None,
                 held_sale_id: None,
+                session_id: None,
             },
         )
         .await
@@ -1849,6 +1891,7 @@ mod tests {
                 user_id: Some(1),
                 customer_id: None,
                 held_sale_id: None,
+                session_id: None,
             },
         )
         .await
@@ -1871,6 +1914,7 @@ mod tests {
                 user_id: Some(1),
                 customer_id: None,
                 held_sale_id: Some(held.sale_id),
+                session_id: None,
             },
         )
         .await
@@ -1947,6 +1991,7 @@ mod tests {
                 user_id: Some(1),
                 customer_id: None,
                 held_sale_id: Some(held.sale_id),
+                session_id: None,
             },
         )
         .await
@@ -1982,6 +2027,7 @@ mod tests {
                 user_id: Some(1),
                 customer_id: Some(1),
                 held_sale_id: None,
+                session_id: None,
             },
         )
         .await
@@ -2003,6 +2049,103 @@ mod tests {
         assert_eq!(r.payments[0].method, "cash");
         assert!((r.payments[0].amount - 14.0).abs() < 0.001);
         assert!(r.store_name.is_empty());
+    }
+
+    #[tokio::test]
+    async fn insert_sale_links_to_open_session_and_rejects_closed() {
+        let pool = mem_pool().await;
+        sample_product(&pool, 1, "Coffee", 20.0, 5.0).await;
+
+        let err = insert_sale(
+            &pool,
+            CreateSaleInput {
+                items: vec![item(1, 1.0, 5.0, 0.0)],
+                payments: vec![SalePaymentInput {
+                    method: "cash".into(),
+                    amount: 5.0,
+                    reference: None,
+                    customer_id: None,
+                }],
+                discount: 0.0,
+                tax: 0.0,
+                user_id: Some(1),
+                customer_id: None,
+                held_sale_id: None,
+                session_id: Some(999),
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(err.contains("not found"));
+
+        sqlx::query(
+            "INSERT INTO sale_sessions (user_id, opening_cash, status) VALUES (1, 100, 'open')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let sid: i64 =
+            sqlx::query_scalar("SELECT id FROM sale_sessions WHERE status = 'open' LIMIT 1")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+
+        let sale = insert_sale(
+            &pool,
+            CreateSaleInput {
+                items: vec![item(1, 1.0, 5.0, 0.0)],
+                payments: vec![SalePaymentInput {
+                    method: "cash".into(),
+                    amount: 5.0,
+                    reference: None,
+                    customer_id: None,
+                }],
+                discount: 0.0,
+                tax: 0.0,
+                user_id: Some(1),
+                customer_id: None,
+                held_sale_id: None,
+                session_id: Some(sid),
+            },
+        )
+        .await
+        .unwrap();
+
+        let stored: Option<i64> =
+            sqlx::query_scalar("SELECT session_id FROM sales WHERE id = ?")
+                .bind(sale.sale_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(stored, Some(sid));
+
+        // Closed sessions are rejected.
+        sqlx::query("UPDATE sale_sessions SET status = 'closed' WHERE id = ?")
+            .bind(sid)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let err = insert_sale(
+            &pool,
+            CreateSaleInput {
+                items: vec![item(1, 1.0, 5.0, 0.0)],
+                payments: vec![SalePaymentInput {
+                    method: "cash".into(),
+                    amount: 5.0,
+                    reference: None,
+                    customer_id: None,
+                }],
+                discount: 0.0,
+                tax: 0.0,
+                user_id: Some(1),
+                customer_id: None,
+                held_sale_id: None,
+                session_id: Some(sid),
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(err.contains("not open"));
     }
 
     async fn stock_of(pool: &sqlx::SqlitePool, product_id: i64) -> f64 {

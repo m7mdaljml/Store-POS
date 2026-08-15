@@ -3,4 +3,5 @@ pub mod catalog;
 pub mod expenses;
 pub mod purchasing;
 pub mod sales;
+pub mod sessions;
 pub mod suppliers;

@@ -63,6 +63,12 @@ const routes = [
     meta: { permission: "reports.view" },
   },
   {
+    path: "/sessions",
+    name: "sessions",
+    component: () => import("../app/presentation/sessions.vue"),
+    meta: { permission: "reports.view" },
+  },
+  {
     path: "/settings",
     name: "settings",
     component: () => import("../app/presentation/settings.vue"),

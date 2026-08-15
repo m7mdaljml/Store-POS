@@ -29,6 +29,7 @@ const navItems = computed(() => {
     { to: "/suppliers", label: "Suppliers", icon: "bi-person-lines-fill", permission: "expenses.manage" },
     { to: "/customers", label: "Customers", icon: "bi-people", adminOnly: true },
     { to: "/reports", label: "Reports", icon: "bi-graph-up-arrow", permission: "reports.view" },
+    { to: "/sessions", label: "Sessions", icon: "bi-cash-stack", permission: "reports.view" },
     { to: "/expenses", label: "Expenses", icon: "bi-cash-coin", permission: "expenses.manage" },
     { to: "/users", label: "Users", icon: "bi-person-gear", permission: "users.manage" },
     { to: "/settings", label: "Settings", icon: "bi-gear", permission: "settings.manage" },

@@ -6,12 +6,32 @@ mod export;
 mod seed;
 
 fn initial_migrations() -> Vec<Migration> {
-  vec![Migration {
-    version: 1,
-    description: "create_initial_tables",
-    sql: include_str!("../migrations/001_initial.sql"),
-    kind: MigrationKind::Up,
-  }]
+  vec![
+    Migration {
+      version: 1,
+      description: "create_initial_tables",
+      sql: include_str!("../migrations/001_initial.sql"),
+      kind: MigrationKind::Up,
+    },
+    Migration {
+      version: 2,
+      description: "sale_sessions_variance",
+      sql: "ALTER TABLE sale_sessions ADD COLUMN variance REAL;",
+      kind: MigrationKind::Up,
+    },
+    Migration {
+      version: 3,
+      description: "sale_sessions_closed_by",
+      sql: "ALTER TABLE sale_sessions ADD COLUMN closed_by INTEGER REFERENCES users(id);",
+      kind: MigrationKind::Up,
+    },
+    Migration {
+      version: 4,
+      description: "sale_sessions_notes",
+      sql: "ALTER TABLE sale_sessions ADD COLUMN notes TEXT;",
+      kind: MigrationKind::Up,
+    },
+  ]
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -90,7 +110,11 @@ pub fn run() {
       commands::sales::hold_sale,
       commands::sales::resume_sale,
       commands::sales::cancel_held_sale,
-      commands::sales::get_sale_receipt
+      commands::sales::get_sale_receipt,
+      commands::sessions::open_session,
+      commands::sessions::close_session,
+      commands::sessions::get_open_session,
+      commands::sessions::list_sessions
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

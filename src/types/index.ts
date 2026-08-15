@@ -76,6 +76,23 @@ export interface SaleRecord {
   voidReason: string | null;
 }
 
+/** A cash register session (shift). */
+export interface SaleSession {
+  id: number;
+  userName: string | null;
+  openedAt: string;
+  closedAt: string | null;
+  openingCash: number;
+  closingCash: number | null;
+  expectedCash: number | null;
+  variance: number | null;
+  status: "open" | "closed";
+  salesCount: number;
+  salesTotal: number;
+  cashPaid: number;
+  changeGiven: number;
+}
+
 /** Result of holding a sale (`hold_sale` command). */
 export interface HoldSaleResult {
   saleId: number;

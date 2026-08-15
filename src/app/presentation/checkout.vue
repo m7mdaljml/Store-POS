@@ -17,6 +17,7 @@ import type {
   SaleReceipt,
   SaleRecord,
   SaleResult,
+  SaleSession,
 } from "../../types";
 
 const catalog = useCatalogStore();
@@ -37,6 +38,14 @@ const activeSuggestion = ref(0);
 const notice = ref("");
 const committing = ref(false);
 const printReceiptOnComplete = ref(true);
+
+const openSession = ref<SaleSession | null>(null);
+const registerBusy = ref(false);
+const openModal = ref(false);
+const openCash = ref<number>(0);
+const closeModal = ref(false);
+const closeCash = ref<number>(0);
+const closeResult = ref<SaleSession | null>(null);
 
 const heldSaleId = ref<number | null>(null);
 const heldCustomerId = ref<number | null>(null);
@@ -195,6 +204,10 @@ function completeSale() {
     error.value = `Payment is short by ${fmt(cart.shortfall)}`;
     return;
   }
+  if (!openSession.value) {
+    error.value = "Open the register before completing a sale";
+    return;
+  }
   error.value = "";
   notice.value = "";
   committing.value = true;
@@ -223,6 +236,7 @@ function completeSale() {
       customerId: heldCustomerId.value,
       userId: auth.user?.id ?? null,
       heldSaleId: heldSaleId.value,
+      sessionId: openSession.value?.id ?? null,
     },
   })
     .then((sale) => {
@@ -232,6 +246,7 @@ function completeSale() {
       heldSaleId.value = null;
       heldCustomerId.value = null;
       catalog.load();
+      loadOpenSession();
       if (printReceiptOnComplete.value) {
         printSaleReceipt(sale.saleId).catch((e: unknown) => {
           error.value = `Sale completed, but printing failed: ${String(e)}`;
@@ -244,6 +259,70 @@ function completeSale() {
     .finally(() => {
       committing.value = false;
     });
+}
+
+async function loadOpenSession() {
+  try {
+    openSession.value = await invoke<SaleSession | null>("get_open_session");
+  } catch (e) {
+    error.value = String(e);
+  }
+}
+
+function openRegister() {
+  openCash.value = 0;
+  openModal.value = true;
+}
+
+async function confirmOpenRegister() {
+  if (isNaN(openCash.value) || openCash.value < 0) {
+    error.value = "Enter a valid opening cash amount";
+    return;
+  }
+  registerBusy.value = true;
+  error.value = "";
+  try {
+    openSession.value = await invoke<SaleSession>("open_session", {
+      input: { openingCash: openCash.value, userId: auth.user?.id ?? null },
+    });
+    openModal.value = false;
+    notice.value = "Register opened. Sales will be linked to this session.";
+  } catch (e) {
+    error.value = String(e);
+  } finally {
+    registerBusy.value = false;
+  }
+}
+
+function closeRegister() {
+  closeCash.value = 0;
+  closeResult.value = null;
+  closeModal.value = true;
+}
+
+async function confirmCloseRegister() {
+  if (!openSession.value) return;
+  if (isNaN(closeCash.value) || closeCash.value < 0) {
+    error.value = "Enter the counted drawer amount";
+    return;
+  }
+  registerBusy.value = true;
+  error.value = "";
+  try {
+    closeResult.value = await invoke<SaleSession>("close_session", {
+      input: {
+        sessionId: openSession.value.id,
+        closingCash: closeCash.value,
+        userId: auth.user?.id ?? null,
+      },
+    });
+    closeModal.value = false;
+    openSession.value = null;
+  } catch (e) {
+    error.value = String(e);
+  } finally {
+    registerBusy.value = false;
+  }
 }
 
 async function printSaleReceipt(saleId: number) {
@@ -371,6 +450,7 @@ onMounted(async () => {
   await Promise.allSettled([
     catalog.loaded ? Promise.resolve() : catalog.load(),
     settings.loaded ? Promise.resolve() : settings.load(),
+    loadOpenSession(),
     select<CustomerLite>("SELECT id, name, phone, balance FROM customers ORDER BY name").then(
       (rows) => (customers.value = rows)
     ),
@@ -486,6 +566,25 @@ onMounted(async () => {
 
 <template>
   <div class="checkout-grid">
+    <div v-if="!openSession" class="register-bar register-closed">
+      <i class="bi bi-cash-stack me-2"></i>
+      <span>Register is closed — open it before completing sales.</span>
+      <button class="btn btn-sm btn-primary ms-auto" type="button" @click="openRegister">
+        <i class="bi bi-box-arrow-in-right me-1"></i>Open Register
+      </button>
+    </div>
+    <div v-else class="register-bar register-open">
+      <i class="bi bi-cash-stack me-2"></i>
+      <span>
+        Register open since {{ dateLabel(openSession.openedAt) }} ·
+        Opening {{ fmt(openSession.openingCash) }} ·
+        {{ openSession.salesCount }} sale(s) · {{ fmt(openSession.salesTotal) }}
+      </span>
+      <button class="btn btn-sm btn-outline-secondary ms-auto" type="button" @click="closeRegister">
+        <i class="bi bi-box-arrow-right me-1"></i>Close Register
+      </button>
+    </div>
+
     <section class="checkout-left">
       <div class="mb-3 checkout-search" ref="searchBox">
         <input
@@ -884,7 +983,7 @@ onMounted(async () => {
           <button
             class="btn btn-outline-secondary flex-fill"
             type="button"
-            :disabled="!cart.items.length || holding || committing"
+            :disabled="!cart.items.length || !openSession || holding || committing"
             title="Save the cart to resume later"
             @click="holdCurrentSale"
           >
@@ -903,7 +1002,7 @@ onMounted(async () => {
         <button
           class="btn btn-lg btn-primary w-100"
           type="button"
-          :disabled="!cart.items.length || !cart.paymentValid || committing"
+          :disabled="!cart.items.length || !cart.paymentValid || !openSession || committing"
           @click="completeSale"
         >
           <span v-if="committing" class="spinner-border spinner-border-sm me-2" role="status"></span>
@@ -911,6 +1010,196 @@ onMounted(async () => {
         </button>
       </div>
     </aside>
+
+    <div
+      v-if="openModal"
+      class="modal fade show d-block"
+      tabindex="-1"
+      role="dialog"
+      @click.self="openModal = false"
+    >
+      <div class="modal-dialog" role="document">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">
+              <i class="bi bi-cash-stack me-2"></i>Open register
+            </h5>
+            <button
+              type="button"
+              class="btn-close"
+              aria-label="Close"
+              @click="openModal = false"
+            ></button>
+          </div>
+          <div class="modal-body">
+            <p class="small mb-3">
+              Enter the cash amount in the drawer at the start of your shift. All sales will be
+              recorded against this session until you close the register.
+            </p>
+            <label class="form-label" for="opening-cash">Opening cash</label>
+            <div class="input-group">
+              <span class="input-group-text">{{ settings.currency || "amt" }}</span>
+              <input
+                id="opening-cash"
+                v-model.number="openCash"
+                class="form-control text-end"
+                type="number"
+                min="0"
+                step="0.01"
+              />
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              :disabled="registerBusy"
+              @click="openModal = false"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              class="btn btn-primary"
+              :disabled="registerBusy"
+              @click="confirmOpenRegister"
+            >
+              <span
+                v-if="registerBusy"
+                class="spinner-border spinner-border-sm me-1"
+                role="status"
+              ></span>
+              <i v-else class="bi bi-box-arrow-in-right me-1"></i>Open register
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div
+      v-if="closeModal"
+      class="modal fade show d-block"
+      tabindex="-1"
+      role="dialog"
+      @click.self="closeModal = false"
+    >
+      <div class="modal-dialog" role="document">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">
+              <i class="bi bi-cash-stack me-2"></i>Close register
+            </h5>
+            <button
+              type="button"
+              class="btn-close"
+              aria-label="Close"
+              @click="closeModal = false"
+            ></button>
+          </div>
+          <div class="modal-body">
+            <p class="small mb-3">
+              Count the cash in the drawer and enter it below. The expected amount is
+              opening {{ fmt(openSession?.openingCash ?? 0) }} plus cash received minus change given.
+            </p>
+            <label class="form-label" for="closing-cash">Counted cash</label>
+            <div class="input-group">
+              <span class="input-group-text">{{ settings.currency || "amt" }}</span>
+              <input
+                id="closing-cash"
+                v-model.number="closeCash"
+                class="form-control text-end"
+                type="number"
+                min="0"
+                step="0.01"
+              />
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              :disabled="registerBusy"
+              @click="closeModal = false"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              class="btn btn-primary"
+              :disabled="registerBusy"
+              @click="confirmCloseRegister"
+            >
+              <span
+                v-if="registerBusy"
+                class="spinner-border spinner-border-sm me-1"
+                role="status"
+              ></span>
+              <i v-else class="bi bi-box-arrow-right me-1"></i>Close register
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div
+      v-if="closeResult"
+      class="modal fade show d-block"
+      tabindex="-1"
+      role="dialog"
+      @click.self="closeResult = null"
+    >
+      <div class="modal-dialog" role="document">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">
+              <i class="bi bi-check-circle me-2"></i>Register closed
+            </h5>
+            <button
+              type="button"
+              class="btn-close"
+              aria-label="Close"
+              @click="closeResult = null"
+            ></button>
+          </div>
+          <div class="modal-body">
+            <div class="d-flex justify-content-between mb-1">
+              <span class="text-muted">Opening cash</span>
+              <span>{{ fmt(closeResult.openingCash) }}</span>
+            </div>
+            <div class="d-flex justify-content-between mb-1">
+              <span class="text-muted">Cash received</span>
+              <span>{{ fmt(closeResult.cashPaid) }}</span>
+            </div>
+            <div class="d-flex justify-content-between mb-1">
+              <span class="text-muted">Change given</span>
+              <span>−{{ fmt(closeResult.changeGiven) }}</span>
+            </div>
+            <div class="d-flex justify-content-between mb-1">
+              <span class="text-muted">Expected cash</span>
+              <span class="fw-semibold">{{ fmt(closeResult.expectedCash ?? 0) }}</span>
+            </div>
+            <div class="d-flex justify-content-between mb-1">
+              <span class="text-muted">Counted cash</span>
+              <span class="fw-semibold">{{ fmt(closeResult.closingCash ?? 0) }}</span>
+            </div>
+            <div
+              class="d-flex justify-content-between pt-2 border-top"
+              :class="(closeResult.variance ?? 0) < -0.005 ? 'text-danger fw-bold' : (closeResult.variance ?? 0) > 0.005 ? 'text-warning fw-bold' : 'text-success fw-bold'"
+            >
+              <span>Variance</span>
+              <span>{{ fmt(closeResult.variance ?? 0) }}</span>
+            </div>
+            <p class="small text-muted mt-2 mb-0">
+              {{ closeResult.salesCount }} sale(s) worth {{ fmt(closeResult.salesTotal) }} were
+              recorded in this session.
+            </p>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-primary" @click="closeResult = null">Done</button>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <div
       v-if="heldSalesOpen"

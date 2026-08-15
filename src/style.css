@@ -345,11 +345,33 @@ body {
 /* ------------------------------------------------------------------ */
 /* Checkout (F4.1)                                                     */
 /* ------------------------------------------------------------------ */
+.register-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  margin-bottom: var(--pos-space-md);
+  font-size: 0.875rem;
+}
+
+.register-closed {
+  background: #fff3cd;
+  border: 1px solid #ffe08a;
+  color: #664d03;
+}
+
+.register-open {
+  background: #d1e7dd;
+  border: 1px solid #a3cfbb;
+  color: #0f5132;
+}
+
 .checkout-grid {
   display: grid;
   grid-template-columns: 1fr 380px;
   gap: var(--pos-space-lg);
-  height: calc(100vh - 64px - 48px);
+  height: calc(100vh - 64px - 48px - 52px);
   min-height: 420px;
 }
 
