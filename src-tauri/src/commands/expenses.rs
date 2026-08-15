@@ -278,6 +278,28 @@ async fn list_out_expenses(
         .collect()
 }
 
+pub async fn query_expenses(
+    pool: &sqlx::SqlitePool,
+    kind: &Option<String>,
+    supplier_id: &Option<i64>,
+    status: &Option<String>,
+    from: &Option<String>,
+    to: &Option<String>,
+) -> Result<Vec<ExpenseRecord>, String> {
+    let show_in = kind.as_deref().map_or(true, |k| k == "in");
+    let show_out = kind.as_deref().map_or(true, |k| k == "out");
+
+    let mut records = Vec::new();
+    if show_in {
+        records.extend(list_in_expenses(pool, supplier_id, status, from, to).await?);
+    }
+    if show_out {
+        records.extend(list_out_expenses(pool, from, to).await?);
+    }
+    records.sort_by(|a, b| b.date.cmp(&a.date).then(b.id.cmp(&a.id)));
+    Ok(records)
+}
+
 #[tauri::command]
 pub async fn list_expenses<R: Runtime>(
     app: AppHandle<R>,
@@ -293,19 +315,8 @@ pub async fn list_expenses<R: Runtime>(
             return Err("Kind must be 'in' or 'out'".into());
         }
     }
-    let show_in = kind.as_deref().map_or(true, |k| k == "in");
-    let show_out = kind.as_deref().map_or(true, |k| k == "out");
-
     let pool = db::pool(&app).await?;
-    let mut records = Vec::new();
-    if show_in {
-        records.extend(list_in_expenses(&pool, &supplier_id, &status, &from, &to).await?);
-    }
-    if show_out {
-        records.extend(list_out_expenses(&pool, &from, &to).await?);
-    }
-    records.sort_by(|a, b| b.date.cmp(&a.date).then(b.id.cmp(&a.id)));
-    Ok(records)
+    query_expenses(&pool, &kind, &supplier_id, &status, &from, &to).await
 }
 
 #[tauri::command]
@@ -436,6 +447,69 @@ pub async fn add_expense_out<R: Runtime>(
 ) -> Result<i64, String> {
     let pool = db::pool(&app).await?;
     create_outgoing_expense(&pool, input).await
+}
+
+const EXPORT_HEADERS: [&str; 9] = [
+    "Type", "Reference", "Supplier", "Date", "Notes", "Amount", "Paid", "Due", "Status",
+];
+
+fn expense_records_to_rows(records: &[ExpenseRecord]) -> Vec<Vec<String>> {
+    records
+        .iter()
+        .map(|r| {
+            vec![
+                if r.kind == "in" {
+                    "Incoming".into()
+                } else {
+                    "Outgoing".into()
+                },
+                r.ref_no.clone().unwrap_or_default(),
+                r.supplier_name.clone().unwrap_or_default(),
+                r.date.clone(),
+                r.notes.clone().unwrap_or_default(),
+                format!("{:.2}", r.amount),
+                if r.kind == "in" {
+                    format!("{:.2}", r.paid_amount)
+                } else {
+                    String::new()
+                },
+                if r.kind == "in" {
+                    format!("{:.2}", r.due_amount)
+                } else {
+                    String::new()
+                },
+                r.status.clone(),
+            ]
+        })
+        .collect()
+}
+
+/// Exports the filtered expense list to an `.xlsx` file at the given path.
+#[tauri::command]
+pub async fn export_expenses<R: Runtime>(
+    app: AppHandle<R>,
+    path: String,
+    kind: Option<String>,
+    supplier_id: Option<i64>,
+    status: Option<String>,
+    from: Option<String>,
+    to: Option<String>,
+) -> Result<(), String> {
+    let kind = kind.map(|k| k.to_lowercase());
+    if let Some(k) = &kind {
+        if k != "in" && k != "out" {
+            return Err("Kind must be 'in' or 'out'".into());
+        }
+    }
+    let pool = db::pool(&app).await?;
+    let records = query_expenses(&pool, &kind, &supplier_id, &status, &from, &to).await?;
+    let rows = expense_records_to_rows(&records);
+    crate::export::write_xlsx(
+        std::path::Path::new(&path),
+        "Expenses",
+        &EXPORT_HEADERS,
+        &rows,
+    )
 }
 
 #[cfg(test)]
@@ -678,6 +752,59 @@ pub(crate) mod tests {
         assert_eq!(summary.outgoing_count, 1);
         assert_eq!(summary.outstanding_due, 450.0, "150 + 300 global dues");
 
+        pool.close().await;
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[tokio::test]
+    async fn export_expenses_writes_xlsx() {
+        let path = temp_db("expense-export");
+        create_schema(&path).await;
+        let pool = db::connect(&path).await.unwrap();
+
+        let supplier_a = sqlx::query("INSERT INTO suppliers (name) VALUES ('Supplier A')")
+            .execute(&pool)
+            .await
+            .unwrap()
+            .last_insert_rowid();
+        sqlx::query(
+            "INSERT INTO supplier_invoices (invoice_no, supplier_id, date, total, paid_amount, due_amount, status)
+             VALUES ('PI-000001', ?, '2026-08-01', 100, 100, 0, 'paid')",
+        )
+        .bind(supplier_a)
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO expense_out (amount, date, description) VALUES (50, '2026-08-05', 'Rent')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let records = query_expenses(&pool, &None, &None, &None, &None, &None)
+            .await
+            .unwrap();
+        assert_eq!(records.len(), 2);
+
+        let xlsx_path = temp_db("export-file").with_extension("xlsx");
+        let rows = expense_records_to_rows(&records);
+        crate::export::write_xlsx(
+            &xlsx_path,
+            "Expenses",
+            &EXPORT_HEADERS,
+            &rows,
+        )
+        .unwrap();
+
+        let meta = std::fs::metadata(&xlsx_path).unwrap();
+        assert!(meta.len() > 0, "xlsx file should not be empty");
+        assert_eq!(rows[0].len(), EXPORT_HEADERS.len());
+        assert_eq!(rows[0][0], "Outgoing", "newer record sorts first");
+        assert_eq!(rows[1][0], "Incoming");
+        assert_eq!(rows[1][4], "", "incoming notes come from invoice notes");
+
+        std::fs::remove_file(xlsx_path).ok();
         pool.close().await;
         std::fs::remove_file(&path).ok();
     }

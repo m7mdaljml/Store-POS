@@ -2,6 +2,7 @@ use tauri_plugin_sql::{Migration, MigrationKind};
 
 mod commands;
 mod db;
+mod export;
 mod seed;
 
 fn initial_migrations() -> Vec<Migration> {
@@ -81,7 +82,8 @@ pub fn run() {
       commands::expenses::list_expenses_out,
       commands::expenses::add_expense_out,
       commands::expenses::list_expenses,
-      commands::expenses::expense_summary
+      commands::expenses::expense_summary,
+      commands::expenses::export_expenses
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
+import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { useSettingsStore } from "../../stores/settings";
 import { useAuth } from "../../composables/useAuth";
 import type {
@@ -18,6 +19,7 @@ const categories = ref<ExpenseCategory[]>([]);
 const expenses = ref<ExpenseRecord[]>([]);
 const summary = ref<ExpenseSummary | null>(null);
 const loading = ref(false);
+const exporting = ref(false);
 const error = ref("");
 const notice = ref("");
 
@@ -185,6 +187,25 @@ function statusBadge(status: string) {
   }
 }
 
+async function exportExcel() {
+  exporting.value = true;
+  error.value = "";
+  try {
+    const path = await saveDialog({
+      title: "Export expenses",
+      defaultPath: `expenses-${new Date().toISOString().slice(0, 10)}.xlsx`,
+      filters: [{ name: "Excel Workbook", extensions: ["xlsx"] }],
+    });
+    if (!path) return;
+    await invoke("export_expenses", { path, ...filterParams() });
+    notice.value = `Exported to ${path}`;
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    exporting.value = false;
+  }
+}
+
 watch(filters, () => load(), { deep: true });
 
 onMounted(async () => {
@@ -197,6 +218,10 @@ onMounted(async () => {
     <div class="d-flex align-items-center justify-content-between mb-3">
       <h1 class="h4 mb-0">Expenses</h1>
       <div class="d-flex gap-2">
+        <button v-can="'export.excel'" class="btn btn-outline-primary" type="button" :disabled="exporting" @click="exportExcel">
+          <span v-if="exporting" class="spinner-border spinner-border-sm me-1"></span>
+          <i v-else class="bi bi-file-earmark-excel me-1"></i>Export
+        </button>
         <button class="btn btn-outline-secondary" type="button" @click="showCatsModal = true">
           <i class="bi bi-tags me-1"></i>Categories
         </button>
