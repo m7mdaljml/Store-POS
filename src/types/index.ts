@@ -62,3 +62,32 @@ export interface TaxProfile {
   name: string;
   rate: number;
 }
+
+export interface Supplier {
+  id: number;
+  name: string;
+  contact: string | null;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  tax_id: string | null;
+  created_at: string;
+  invoice_count: number;
+  total_purchased: number;
+  total_due: number;
+}
+
+export interface SupplierInvoiceSummary {
+  id: number;
+  invoice_no: string;
+  date: string;
+  total: number;
+  paid_amount: number;
+  due_amount: number;
+  status: string;
+}
+
+export interface SupplierDetail {
+  supplier: Supplier;
+  invoices: SupplierInvoiceSummary[];
+}

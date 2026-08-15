@@ -65,7 +65,12 @@ pub fn run() {
       commands::catalog::adjust_stock,
       commands::catalog::import_product_image,
       commands::catalog::import_products_csv,
-      commands::catalog::list_stock_movements
+      commands::catalog::list_stock_movements,
+      commands::suppliers::list_suppliers,
+      commands::suppliers::get_supplier,
+      commands::suppliers::create_supplier,
+      commands::suppliers::update_supplier,
+      commands::suppliers::delete_supplier
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

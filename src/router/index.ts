@@ -39,6 +39,12 @@ const routes = [
     meta: { permission: "inventory.view" },
   },
   {
+    path: "/suppliers",
+    name: "suppliers",
+    component: () => import("../app/presentation/suppliers.vue"),
+    meta: { permission: "expenses.manage" },
+  },
+  {
     path: "/customers",
     name: "customers",
     component: () => import("../app/presentation/customers.vue"),
