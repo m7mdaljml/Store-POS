@@ -1,6 +1,6 @@
 import { computed, ref } from "vue";
 import { defineStore } from "pinia";
-import type { CartItem } from "../types";
+import type { CartItem, PaymentLine } from "../types";
 
 export const useCartStore = defineStore("cart", () => {
   const items = ref<CartItem[]>([]);
@@ -63,10 +63,53 @@ export const useCartStore = defineStore("cart", () => {
     orderDiscountValue.value = Math.max(0, value);
   }
 
+  /* ----------------------------- Payment ----------------------------- */
+
+  const cashReceived = ref(0);
+  const splitLines = ref<PaymentLine[]>([]);
+
+  const splitTotal = computed(() =>
+    splitLines.value.reduce(
+      (sum, line) => sum + (isNaN(line.amount) ? 0 : line.amount),
+      0
+    )
+  );
+  /** Amount that still needs to be paid after split payments. */
+  const remainder = computed(() => Math.max(0, total.value - splitTotal.value));
+  /** Cash change back to the customer. */
+  const change = computed(() => Math.max(0, cashReceived.value - remainder.value));
+  /** Amount still outstanding on the order. */
+  const shortfall = computed(() => Math.max(0, remainder.value - cashReceived.value));
+  const paymentValid = computed(() => shortfall.value <= 0.005);
+
+  function syncCashToTotal() {
+    cashReceived.value = total.value;
+  }
+
+  function addSplitLine(patch: Partial<PaymentLine> = {}) {
+    splitLines.value.push({
+      method: patch.method ?? "card",
+      amount: patch.amount ?? 0,
+      reference: patch.reference ?? null,
+      customerId: patch.customerId ?? null,
+    });
+  }
+
+  function removeSplitLine(index: number) {
+    splitLines.value.splice(index, 1);
+  }
+
+  function setSplitLine(index: number, patch: Partial<PaymentLine>) {
+    const line = splitLines.value[index];
+    if (line) Object.assign(line, patch);
+  }
+
   function clear() {
     items.value = [];
     orderDiscountType.value = "fixed";
     orderDiscountValue.value = 0;
+    cashReceived.value = 0;
+    splitLines.value = [];
   }
 
   return {
@@ -78,12 +121,23 @@ export const useCartStore = defineStore("cart", () => {
     itemDiscountTotal,
     total,
     itemCount,
+    cashReceived,
+    splitLines,
+    splitTotal,
+    remainder,
+    change,
+    shortfall,
+    paymentValid,
     add,
     remove,
     setQty,
     setDiscount,
     lineTotal,
     setOrderDiscount,
+    syncCashToTotal,
+    addSplitLine,
+    removeSplitLine,
+    setSplitLine,
     clear,
   };
 });

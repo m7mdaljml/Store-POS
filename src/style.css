@@ -546,6 +546,18 @@ body {
   width: 110px;
 }
 
+.payment-line {
+  display: grid;
+  grid-template-columns: 96px 1fr 110px 32px;
+  gap: 6px;
+  align-items: center;
+  padding: 6px;
+  border: 1px solid var(--pos-border);
+  border-radius: var(--pos-radius-sm);
+  background: var(--pos-surface-2);
+  margin-bottom: 6px;
+}
+
 .cart-totals,
 .checkout-payment {
   flex-shrink: 0;

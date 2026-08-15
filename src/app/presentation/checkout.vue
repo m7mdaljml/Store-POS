@@ -1,17 +1,20 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { useCatalogStore } from "../../stores/catalog";
 import { useSettingsStore } from "../../stores/settings";
 import { useCartStore } from "../../stores/cart";
 import { useAuth } from "../../composables/useAuth";
 import { useScanner } from "../../composables/useScanner";
-import type { Product } from "../../types";
+import { select } from "../../lib/db";
+import type { CustomerLite, PaymentLine, Product } from "../../types";
 
 const catalog = useCatalogStore();
 const settings = useSettingsStore();
 const cart = useCartStore();
 const auth = useAuth();
+
+const customers = ref<CustomerLite[]>([]);
 
 const search = ref("");
 const searchBox = ref<HTMLElement | null>(null);
@@ -20,6 +23,8 @@ const error = ref("");
 
 const searchOpen = ref(false);
 const activeSuggestion = ref(0);
+
+const notice = ref("");
 
 const suggestions = computed(() => {
   const q = search.value.trim().toLowerCase();
@@ -137,11 +142,49 @@ function onDocClick(e: MouseEvent) {
   }
 }
 
+function customerLabel(c: CustomerLite): string {
+  return c.phone ? `${c.name} (${c.phone})` : c.name;
+}
+
+function onCashReceived(e: Event) {
+  const value = Number((e.target as HTMLInputElement).value);
+  cart.cashReceived = isNaN(value) || value < 0 ? 0 : value;
+}
+
+function onSplitAmount(index: number, e: Event) {
+  const value = Number((e.target as HTMLInputElement).value);
+  cart.setSplitLine(index, { amount: isNaN(value) || value < 0 ? 0 : value });
+}
+
+function completeSale() {
+  if (!cart.items.length) return;
+  if (!cart.paymentValid) {
+    error.value = `Payment is short by ${fmt(cart.shortfall)}`;
+    return;
+  }
+  notice.value = "Payment ready — transaction commit arrives in the next step (F4.7)";
+}
+
+let lastTotal = cart.total;
+watch(
+  () => cart.total,
+  (t) => {
+    if (Math.abs(cart.cashReceived - lastTotal) < 0.005) {
+      cart.cashReceived = t;
+    }
+    lastTotal = t;
+  }
+);
+
 onMounted(async () => {
   document.addEventListener("click", onDocClick);
+  lastTotal = cart.total;
   await Promise.allSettled([
     catalog.loaded ? Promise.resolve() : catalog.load(),
     settings.loaded ? Promise.resolve() : settings.load(),
+    select<CustomerLite>("SELECT id, name, phone, balance FROM customers ORDER BY name").then(
+      (rows) => (customers.value = rows)
+    ),
   ]);
 });
 
@@ -320,6 +363,9 @@ onMounted(async () => {
       <div v-if="error" class="alert alert-warning py-1 px-2 mb-3 small" role="alert">
         <i class="bi bi-exclamation-triangle me-1"></i>{{ error }}
       </div>
+      <div v-if="notice" class="alert alert-success py-1 px-2 mb-3 small" role="alert">
+        <i class="bi bi-check-circle me-1"></i>{{ notice }}
+      </div>
 
       <div class="product-grid">
         <p v-if="!filteredProducts.length" class="text-muted py-4 text-center w-100">
@@ -495,10 +541,152 @@ onMounted(async () => {
       </div>
 
       <div class="checkout-payment card-body border-top">
-        <div class="text-muted small mb-2">
-          <i class="bi bi-credit-card me-1"></i>Payment methods arrive in the next step
+        <div class="fw-semibold small mb-2">
+          <i class="bi bi-cash-coin me-1"></i>Payment
         </div>
-        <button class="btn btn-lg btn-primary w-100" type="button" disabled>
+
+        <div class="mb-2">
+          <label class="form-label mb-1 small text-muted" for="cash-received">Cash received</label>
+          <div class="input-group input-group-sm">
+            <span class="input-group-text">{{ settings.currency || "amt" }}</span>
+            <input
+              id="cash-received"
+              class="form-control text-end"
+              type="number"
+              min="0"
+              step="0.01"
+              :value="cart.cashReceived"
+              aria-label="Cash received"
+              @input="onCashReceived"
+            />
+            <button
+              class="btn btn-outline-secondary"
+              type="button"
+              title="Set cash to the exact total"
+              @click="cart.syncCashToTotal()"
+            >
+              Exact
+            </button>
+          </div>
+        </div>
+
+        <div v-if="cart.splitLines.length" class="mb-2">
+          <div class="text-muted small mb-1">Split payments</div>
+          <div
+            v-for="(line, i) in cart.splitLines"
+            :key="i"
+            class="payment-line"
+          >
+            <select
+              class="form-select form-select-sm payment-line-method"
+              :value="line.method"
+              :aria-label="`Payment ${i + 1} method`"
+              @change="
+                cart.setSplitLine(i, {
+                  method: ($event.target as HTMLSelectElement).value as PaymentLine['method'],
+                })
+              "
+            >
+              <option value="card">Card</option>
+              <option value="credit">Customer credit</option>
+            </select>
+            <template v-if="line.method === 'credit'">
+              <select
+                class="form-select form-select-sm"
+                :value="line.customerId ?? ''"
+                :aria-label="`Payment ${i + 1} customer`"
+                @change="
+                  cart.setSplitLine(i, {
+                    customerId: ($event.target as HTMLSelectElement).value
+                      ? Number(($event.target as HTMLSelectElement).value)
+                      : null,
+                  })
+                "
+              >
+                <option value="" disabled>Select customer…</option>
+                <option v-for="c in customers" :key="c.id" :value="c.id">
+                  {{ customerLabel(c) }}
+                </option>
+              </select>
+            </template>
+            <template v-else>
+              <input
+                class="form-control form-control-sm"
+                type="text"
+                :value="line.reference ?? ''"
+                placeholder="Card ref (optional)"
+                :aria-label="`Payment ${i + 1} card reference`"
+                @input="
+                  cart.setSplitLine(i, {
+                    reference: ($event.target as HTMLInputElement).value,
+                  })
+                "
+              />
+            </template>
+            <div class="input-group input-group-sm">
+              <span class="input-group-text">{{ settings.currency || "amt" }}</span>
+              <input
+                class="form-control text-end"
+                type="number"
+                min="0"
+                step="0.01"
+                :value="line.amount"
+                :aria-label="`Payment ${i + 1} amount`"
+                @input="onSplitAmount(i, $event)"
+              />
+            </div>
+            <button
+              class="btn btn-sm btn-outline-danger"
+              type="button"
+              title="Remove payment"
+              @click="cart.removeSplitLine(i)"
+            >
+              <i class="bi bi-x-lg"></i>
+            </button>
+          </div>
+        </div>
+
+        <button
+          class="btn btn-sm btn-outline-secondary w-100 mb-2"
+          type="button"
+          @click="cart.addSplitLine()"
+        >
+          <i class="bi bi-plus-lg me-1"></i>Add payment method
+        </button>
+
+        <div class="d-flex justify-content-between mb-1">
+          <span class="text-muted">Total</span>
+          <span class="fw-semibold">{{ fmt(cart.total) }}</span>
+        </div>
+        <div class="d-flex justify-content-between mb-1">
+          <span class="text-muted">Split payments</span>
+          <span>{{ fmt(cart.splitTotal) }}</span>
+        </div>
+        <div class="d-flex justify-content-between mb-1">
+          <span class="text-muted">Cash tendered</span>
+          <span>{{ fmt(cart.cashReceived) }}</span>
+        </div>
+        <div
+          v-if="cart.shortfall > 0.005"
+          class="d-flex justify-content-between mb-1 text-danger fw-semibold"
+        >
+          <span>Short</span>
+          <span>−{{ fmt(cart.shortfall) }}</span>
+        </div>
+        <div
+          v-if="cart.change > 0.005"
+          class="d-flex justify-content-between mb-2 text-success fw-semibold"
+        >
+          <span>Change</span>
+          <span>{{ fmt(cart.change) }}</span>
+        </div>
+
+        <button
+          class="btn btn-lg btn-primary w-100"
+          type="button"
+          :disabled="!cart.items.length || !cart.paymentValid"
+          @click="completeSale"
+        >
           <i class="bi bi-cash-coin me-2"></i>Complete Sale
         </button>
       </div>

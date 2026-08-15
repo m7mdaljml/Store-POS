@@ -33,6 +33,21 @@ export interface CartItem {
   discount: number;
 }
 
+/** A non-cash payment line (card / customer credit). */
+export interface PaymentLine {
+  method: "card" | "credit";
+  amount: number;
+  reference?: string | null;
+  customerId?: number | null;
+}
+
+export interface CustomerLite {
+  id: number;
+  name: string;
+  phone: string | null;
+  balance: number;
+}
+
 export interface Category {
   id: number;
   name: string;
