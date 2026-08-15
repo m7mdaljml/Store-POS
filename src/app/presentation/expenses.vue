@@ -1,18 +1,33 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { useSettingsStore } from "../../stores/settings";
 import { useAuth } from "../../composables/useAuth";
-import type { ExpenseCategory, OutgoingExpense } from "../../types";
+import type {
+  ExpenseCategory,
+  ExpenseRecord,
+  ExpenseSummary,
+  Supplier,
+} from "../../types";
 
 const settings = useSettingsStore();
 const auth = useAuth();
 
-const expenses = ref<OutgoingExpense[]>([]);
+const suppliers = ref<Supplier[]>([]);
 const categories = ref<ExpenseCategory[]>([]);
+const expenses = ref<ExpenseRecord[]>([]);
+const summary = ref<ExpenseSummary | null>(null);
 const loading = ref(false);
 const error = ref("");
 const notice = ref("");
+
+const filters = ref({
+  kind: "all" as "all" | "in" | "out",
+  supplierId: null as number | null,
+  status: "all",
+  from: "",
+  to: "",
+});
 
 const showModal = ref(false);
 const saving = ref(false);
@@ -30,7 +45,7 @@ const catSaving = ref(false);
 const categoryError = ref("");
 const newCategoryName = ref("");
 
-const totalSpent = computed(() => expenses.value.reduce((sum, e) => sum + e.amount, 0));
+const filteredCount = computed(() => expenses.value.length);
 
 function fmt(n: number): string {
   if (!settings.currency) return n.toFixed(2);
@@ -41,16 +56,33 @@ function fmt(n: number): string {
   }).format(n);
 }
 
+function filterParams() {
+  return {
+    kind: filters.value.kind === "all" ? null : filters.value.kind,
+    supplierId: filters.value.supplierId,
+    status: filters.value.status === "all" ? null : filters.value.status,
+    from: filters.value.from || null,
+    to: filters.value.to || null,
+  };
+}
+
 async function load() {
   loading.value = true;
   error.value = "";
   try {
-    const [e, c] = await Promise.all([
-      invoke<OutgoingExpense[]>("list_expenses_out"),
+    const [s, c, e, sum] = await Promise.all([
+      invoke<Supplier[]>("list_suppliers"),
       invoke<ExpenseCategory[]>("list_expense_categories"),
+      invoke<ExpenseRecord[]>("list_expenses", filterParams()),
+      invoke<ExpenseSummary>("expense_summary", {
+        from: filters.value.from || null,
+        to: filters.value.to || null,
+      }),
     ]);
-    expenses.value = e;
+    suppliers.value = s;
     categories.value = c;
+    expenses.value = e;
+    summary.value = sum;
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e);
   } finally {
@@ -140,6 +172,21 @@ async function removeCategory(c: ExpenseCategory) {
   }
 }
 
+function statusBadge(status: string) {
+  switch (status) {
+    case "paid":
+      return "text-bg-success";
+    case "partial":
+      return "text-bg-warning";
+    case "unpaid":
+      return "text-bg-danger";
+    default:
+      return "text-bg-secondary";
+  }
+}
+
+watch(filters, () => load(), { deep: true });
+
 onMounted(async () => {
   await Promise.allSettled([load(), settings.load()]);
 });
@@ -166,10 +213,109 @@ onMounted(async () => {
       <i class="bi bi-check-circle me-1"></i>{{ notice }}
     </div>
 
+    <div class="row g-2 mb-3">
+      <div class="col">
+        <div class="card text-center p-3 h-100">
+          <div class="text-muted small text-uppercase">Outstanding supplier dues</div>
+          <div
+            class="fs-4 fw-semibold"
+            :class="(summary?.outstanding_due ?? 0) > 0 ? 'text-danger' : ''"
+          >
+            {{ fmt(summary?.outstanding_due ?? 0) }}
+          </div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="card text-center p-3 h-100">
+          <div class="text-muted small text-uppercase">Incoming (period)</div>
+          <div class="fs-4 fw-semibold">{{ fmt(summary?.total_in ?? 0) }}</div>
+          <div class="text-muted small">{{ summary?.incoming_count ?? 0 }} invoice(s)</div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="card text-center p-3 h-100">
+          <div class="text-muted small text-uppercase">Outgoing (period)</div>
+          <div class="fs-4 fw-semibold text-danger">{{ fmt(summary?.total_out ?? 0) }}</div>
+          <div class="text-muted small">{{ summary?.outgoing_count ?? 0 }} expense(s)</div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="card text-center p-3 h-100">
+          <div class="text-muted small text-uppercase">Net (period)</div>
+          <div
+            class="fs-4 fw-semibold"
+            :class="((summary?.total_in ?? 0) - (summary?.total_out ?? 0)) < 0 ? 'text-danger' : ''"
+          >
+            {{ fmt((summary?.total_in ?? 0) - (summary?.total_out ?? 0)) }}
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="card mb-3">
-      <div class="card-body d-flex justify-content-between align-items-center py-2">
-        <span class="text-muted small">Total recorded ({{ expenses.length }} expense(s))</span>
-        <span class="fs-5 fw-semibold">{{ fmt(totalSpent) }}</span>
+      <div class="p-2 d-flex flex-wrap gap-2 align-items-center">
+        <select
+          v-model="filters.kind"
+          class="form-select form-select-sm"
+          style="width: auto"
+          aria-label="Filter by type"
+        >
+          <option value="all">All types</option>
+          <option value="in">Incoming (stock-in)</option>
+          <option value="out">Outgoing (money out)</option>
+        </select>
+        <select
+          v-model="filters.supplierId"
+          class="form-select form-select-sm"
+          style="width: auto"
+          aria-label="Filter by supplier"
+        >
+          <option :value="null">All suppliers</option>
+          <option v-for="s in suppliers" :key="s.id" :value="s.id">{{ s.name }}</option>
+        </select>
+        <select
+          v-model="filters.status"
+          class="form-select form-select-sm"
+          style="width: auto"
+          aria-label="Filter by status"
+        >
+          <option value="all">All statuses</option>
+          <option value="unpaid">Unpaid</option>
+          <option value="partial">Partial</option>
+          <option value="paid">Paid</option>
+        </select>
+        <input
+          v-model="filters.from"
+          class="form-control form-control-sm"
+          type="date"
+          style="width: auto"
+          aria-label="From date"
+        />
+        <span class="text-muted small">→</span>
+        <input
+          v-model="filters.to"
+          class="form-control form-control-sm"
+          type="date"
+          style="width: auto"
+          aria-label="To date"
+        />
+        <button
+          v-if="
+            filters.kind !== 'all' ||
+            filters.supplierId != null ||
+            filters.status !== 'all' ||
+            filters.from ||
+            filters.to
+          "
+          class="btn btn-sm btn-outline-secondary"
+          type="button"
+          @click="
+            filters = { kind: 'all', supplierId: null, status: 'all', from: '', to: '' }
+          "
+        >
+          <i class="bi bi-x-lg me-1"></i>Clear
+        </button>
+        <span class="ms-auto text-muted small">{{ filteredCount }} result(s)</span>
       </div>
     </div>
 
@@ -178,35 +324,51 @@ onMounted(async () => {
         <table class="table align-middle mb-0">
           <thead>
             <tr>
+              <th>Type</th>
+              <th>Ref / Invoice</th>
+              <th>Supplier</th>
               <th>Date</th>
-              <th>Description</th>
-              <th>Category</th>
-              <th>Reference</th>
-              <th>Recorded by</th>
+              <th>Details</th>
               <th class="text-end">Amount</th>
+              <th class="text-end">Paid</th>
+              <th class="text-end">Due</th>
+              <th>Status</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="loading">
-              <td colspan="6" class="text-center text-muted py-4">Loading…</td>
+              <td colspan="9" class="text-center text-muted py-4">Loading…</td>
             </tr>
             <tr v-else-if="!expenses.length">
-              <td colspan="6" class="text-center text-muted py-4">
-                No expenses recorded yet — click "New Expense" to record money out
+              <td colspan="9" class="text-center text-muted py-4">
+                No expenses match the current filters
               </td>
             </tr>
-            <tr v-for="e in expenses" :key="e.id">
-              <td class="text-muted">{{ e.date }}</td>
-              <td class="fw-semibold">{{ e.description ?? "—" }}</td>
+            <tr v-for="e in expenses" :key="e.kind + '-' + e.id">
               <td>
-                <span v-if="e.category_name" class="badge text-bg-light border">
-                  {{ e.category_name }}
+                <span class="badge" :class="e.kind === 'in' ? 'text-bg-primary' : 'text-bg-secondary'">
+                  {{ e.kind === "in" ? "In" : "Out" }}
                 </span>
-                <span v-else class="text-muted">—</span>
               </td>
-              <td class="text-muted">{{ e.reference_no ?? "—" }}</td>
-              <td class="text-muted">{{ e.user_name ?? "—" }}</td>
-              <td class="text-end fw-semibold text-danger">{{ fmt(e.amount) }}</td>
+              <td class="fw-semibold">{{ e.ref_no ?? "—" }}</td>
+              <td>{{ e.supplier_name ?? "—" }}</td>
+              <td class="text-muted">{{ e.date }}</td>
+              <td class="text-muted">{{ e.notes ?? "—" }}</td>
+              <td class="text-end fw-semibold" :class="e.kind === 'out' ? 'text-danger' : ''">
+                {{ fmt(e.amount) }}
+              </td>
+              <td class="text-end">{{ e.kind === "in" ? fmt(e.paid_amount) : "—" }}</td>
+              <td class="text-end">
+                <span v-if="e.kind === 'in' && e.due_amount > 0" class="text-danger fw-semibold">
+                  {{ fmt(e.due_amount) }}
+                </span>
+                <span v-else>—</span>
+              </td>
+              <td>
+                <span class="badge" :class="statusBadge(e.status)">
+                  {{ e.status }}
+                </span>
+              </td>
             </tr>
           </tbody>
         </table>

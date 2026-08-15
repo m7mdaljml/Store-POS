@@ -79,7 +79,9 @@ pub fn run() {
       commands::expenses::create_expense_category,
       commands::expenses::delete_expense_category,
       commands::expenses::list_expenses_out,
-      commands::expenses::add_expense_out
+      commands::expenses::add_expense_out,
+      commands::expenses::list_expenses,
+      commands::expenses::expense_summary
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

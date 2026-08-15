@@ -475,7 +475,7 @@ pub(crate) mod tests {
         assert_eq!(item_count, 2);
 
         let movement_sum: (i64, f64) = sqlx::query_as(
-            "SELECT COUNT(*), COALESCE(SUM(qty), 0) FROM stock_movements WHERE product_id = ? AND type = 'purchase_in' AND ref_id = ?",
+            "SELECT COUNT(*), COALESCE(SUM(qty), 0.0) FROM stock_movements WHERE product_id = ? AND type = 'purchase_in' AND ref_id = ?",
         )
         .bind(product_id)
         .bind(invoice_id)

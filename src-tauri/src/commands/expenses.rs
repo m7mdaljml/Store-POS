@@ -150,6 +150,223 @@ pub async fn list_expenses_out<R: Runtime>(
         .collect()
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExpenseRecord {
+    pub kind: String, // 'in' (supplier invoice) or 'out' (outgoing expense)
+    pub id: i64,
+    pub ref_no: Option<String>,
+    pub supplier_id: Option<i64>,
+    pub supplier_name: Option<String>,
+    pub date: String,
+    pub amount: f64,
+    pub paid_amount: f64,
+    pub due_amount: f64,
+    pub status: String,
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExpenseSummary {
+    pub total_in: f64,
+    pub total_out: f64,
+    pub outstanding_due: f64,
+    pub incoming_count: i64,
+    pub outgoing_count: i64,
+}
+
+fn date_range_cond(from: &Option<String>, to: &Option<String>, column: &str) -> String {
+    let mut conditions = String::new();
+    if from.is_some() {
+        conditions.push_str(&format!(" AND date({column}) >= date(?)"));
+    }
+    if to.is_some() {
+        conditions.push_str(&format!(" AND date({column}) <= date(?)"));
+    }
+    conditions
+}
+
+async fn list_in_expenses(
+    pool: &sqlx::SqlitePool,
+    supplier_id: &Option<i64>,
+    status: &Option<String>,
+    from: &Option<String>,
+    to: &Option<String>,
+) -> Result<Vec<ExpenseRecord>, String> {
+    let range_cond = date_range_cond(from, to, "si.date");
+    let sql = format!(
+        "SELECT si.id, si.invoice_no, si.supplier_id, s.name, si.date, si.total,
+                si.paid_amount, si.due_amount, si.status, si.notes
+         FROM supplier_invoices si
+         JOIN suppliers s ON s.id = si.supplier_id
+         WHERE (? IS NULL OR si.supplier_id = ?)
+           AND (? IS NULL OR si.status = ?){range_cond}
+         ORDER BY si.date DESC, si.id DESC"
+    );
+
+    let mut query = sqlx::query(&sql)
+        .bind(supplier_id)
+        .bind(supplier_id)
+        .bind(status)
+        .bind(status);
+    if let Some(f) = from {
+        query = query.bind(f);
+    }
+    if let Some(t) = to {
+        query = query.bind(t);
+    }
+    let rows = query.fetch_all(pool).await.map_err(|e| e.to_string())?;
+
+    rows.into_iter()
+        .map(|row| {
+            Ok(ExpenseRecord {
+                kind: "in".into(),
+                id: row.try_get("id").map_err(|e| e.to_string())?,
+                ref_no: row.try_get("invoice_no").map_err(|e| e.to_string())?,
+                supplier_id: row.try_get("supplier_id").map_err(|e| e.to_string())?,
+                supplier_name: row.try_get("name").map_err(|e| e.to_string())?,
+                date: row.try_get("date").map_err(|e| e.to_string())?,
+                amount: row.try_get("total").map_err(|e| e.to_string())?,
+                paid_amount: row.try_get("paid_amount").map_err(|e| e.to_string())?,
+                due_amount: row.try_get("due_amount").map_err(|e| e.to_string())?,
+                status: row.try_get("status").map_err(|e| e.to_string())?,
+                notes: row.try_get("notes").map_err(|e| e.to_string())?,
+            })
+        })
+        .collect()
+}
+
+async fn list_out_expenses(
+    pool: &sqlx::SqlitePool,
+    from: &Option<String>,
+    to: &Option<String>,
+) -> Result<Vec<ExpenseRecord>, String> {
+    let range_cond = date_range_cond(from, to, "e.date");
+    let sql = format!(
+        "SELECT e.id, e.date, e.amount, e.description, e.reference_no
+         FROM expense_out e
+         WHERE 1=1{range_cond}
+         ORDER BY e.date DESC, e.id DESC"
+    );
+
+    let mut query = sqlx::query(&sql);
+    if let Some(f) = from {
+        query = query.bind(f);
+    }
+    if let Some(t) = to {
+        query = query.bind(t);
+    }
+    let rows = query.fetch_all(pool).await.map_err(|e| e.to_string())?;
+
+    rows.into_iter()
+        .map(|row| {
+            Ok(ExpenseRecord {
+                kind: "out".into(),
+                id: row.try_get("id").map_err(|e| e.to_string())?,
+                ref_no: row.try_get("reference_no").map_err(|e| e.to_string())?,
+                supplier_id: None,
+                supplier_name: None,
+                date: row.try_get("date").map_err(|e| e.to_string())?,
+                amount: row.try_get("amount").map_err(|e| e.to_string())?,
+                paid_amount: row.try_get("amount").map_err(|e| e.to_string())?,
+                due_amount: 0.0,
+                status: "recorded".into(),
+                notes: row.try_get("description").map_err(|e| e.to_string())?,
+            })
+        })
+        .collect()
+}
+
+#[tauri::command]
+pub async fn list_expenses<R: Runtime>(
+    app: AppHandle<R>,
+    kind: Option<String>,
+    supplier_id: Option<i64>,
+    status: Option<String>,
+    from: Option<String>,
+    to: Option<String>,
+) -> Result<Vec<ExpenseRecord>, String> {
+    let kind = kind.map(|k| k.to_lowercase());
+    if let Some(k) = &kind {
+        if k != "in" && k != "out" {
+            return Err("Kind must be 'in' or 'out'".into());
+        }
+    }
+    let show_in = kind.as_deref().map_or(true, |k| k == "in");
+    let show_out = kind.as_deref().map_or(true, |k| k == "out");
+
+    let pool = db::pool(&app).await?;
+    let mut records = Vec::new();
+    if show_in {
+        records.extend(list_in_expenses(&pool, &supplier_id, &status, &from, &to).await?);
+    }
+    if show_out {
+        records.extend(list_out_expenses(&pool, &from, &to).await?);
+    }
+    records.sort_by(|a, b| b.date.cmp(&a.date).then(b.id.cmp(&a.id)));
+    Ok(records)
+}
+
+#[tauri::command]
+pub async fn expense_summary<R: Runtime>(
+    app: AppHandle<R>,
+    from: Option<String>,
+    to: Option<String>,
+) -> Result<ExpenseSummary, String> {
+    let pool = db::pool(&app).await?;
+    compute_expense_summary(&pool, &from, &to).await
+}
+
+pub async fn compute_expense_summary(
+    pool: &sqlx::SqlitePool,
+    from: &Option<String>,
+    to: &Option<String>,
+) -> Result<ExpenseSummary, String> {
+    let in_cond = date_range_cond(from, to, "date");
+    let in_sql = format!(
+        "SELECT COUNT(*), COALESCE(SUM(total), 0.0) FROM supplier_invoices WHERE 1=1{in_cond}"
+    );
+    let mut in_query = sqlx::query_as(&in_sql);
+    if let Some(f) = from {
+        in_query = in_query.bind(f);
+    }
+    if let Some(t) = to {
+        in_query = in_query.bind(t);
+    }
+    let (incoming_count, total_in): (i64, f64) =
+        in_query.fetch_one(pool).await.map_err(|e| e.to_string())?;
+
+    let out_cond = date_range_cond(from, to, "date");
+    let out_sql = format!(
+        "SELECT COUNT(*), COALESCE(SUM(amount), 0.0) FROM expense_out WHERE 1=1{out_cond}"
+    );
+    let mut out_query = sqlx::query_as(&out_sql);
+    if let Some(f) = from {
+        out_query = out_query.bind(f);
+    }
+    if let Some(t) = to {
+        out_query = out_query.bind(t);
+    }
+    let (outgoing_count, total_out): (i64, f64) =
+        out_query.fetch_one(pool).await.map_err(|e| e.to_string())?;
+
+    let outstanding_due: f64 = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(due_amount), 0.0) FROM supplier_invoices WHERE status != 'paid'",
+    )
+    .fetch_one(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(ExpenseSummary {
+        total_in,
+        total_out,
+        outstanding_due,
+        incoming_count,
+        outgoing_count,
+    })
+}
+
 pub async fn create_outgoing_expense(
     pool: &sqlx::SqlitePool,
     input: OutgoingExpenseInput,
@@ -232,6 +449,8 @@ pub(crate) mod tests {
             "CREATE TABLE expense_categories (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL)",
             "CREATE TABLE expense_out (id INTEGER PRIMARY KEY AUTOINCREMENT, category_id INTEGER, amount REAL NOT NULL, date TEXT NOT NULL DEFAULT (datetime('now')), description TEXT, reference_no TEXT, user_id INTEGER, created_at TEXT NOT NULL DEFAULT (datetime('now')))",
             "CREATE TABLE audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, action TEXT NOT NULL, entity_type TEXT, entity_id INTEGER, details TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')))",
+            "CREATE TABLE suppliers (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, contact TEXT, phone TEXT, email TEXT, address TEXT, tax_id TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')))",
+            "CREATE TABLE supplier_invoices (id INTEGER PRIMARY KEY AUTOINCREMENT, invoice_no TEXT NOT NULL, supplier_id INTEGER NOT NULL, date TEXT NOT NULL, total REAL NOT NULL DEFAULT 0, paid_amount REAL NOT NULL DEFAULT 0, due_amount REAL NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'unpaid', notes TEXT, user_id INTEGER, created_at TEXT NOT NULL DEFAULT (datetime('now')))",
         ] {
             sqlx::query(sql).execute(&pool).await.unwrap();
         }
@@ -338,6 +557,126 @@ pub(crate) mod tests {
             .await
             .unwrap();
         assert_eq!(count, 0, "no partial expense rows after failures");
+
+        pool.close().await;
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[tokio::test]
+    async fn list_expenses_filters_and_summary() {
+        let path = temp_db("expense-filter");
+        create_schema(&path).await;
+        let pool = db::connect(&path).await.unwrap();
+
+        let empty_summary = compute_expense_summary(&pool, &None, &None).await.unwrap();
+        assert_eq!(empty_summary.total_in, 0.0);
+        assert_eq!(empty_summary.total_out, 0.0);
+        assert_eq!(empty_summary.outstanding_due, 0.0);
+
+        let supplier_a = sqlx::query("INSERT INTO suppliers (name) VALUES ('Supplier A')")
+            .execute(&pool)
+            .await
+            .unwrap()
+            .last_insert_rowid();
+        let supplier_b = sqlx::query("INSERT INTO suppliers (name) VALUES ('Supplier B')")
+            .execute(&pool)
+            .await
+            .unwrap()
+            .last_insert_rowid();
+
+        sqlx::query(
+            "INSERT INTO supplier_invoices (invoice_no, supplier_id, date, total, paid_amount, due_amount, status)
+             VALUES ('PI-000001', ?, '2026-08-01', 100, 100, 0, 'paid')",
+        )
+        .bind(supplier_a)
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO supplier_invoices (invoice_no, supplier_id, date, total, paid_amount, due_amount, status)
+             VALUES ('PI-000002', ?, '2026-08-10', 200, 50, 150, 'partial')",
+        )
+        .bind(supplier_a)
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO supplier_invoices (invoice_no, supplier_id, date, total, paid_amount, due_amount, status)
+             VALUES ('PI-000003', ?, '2026-09-01', 300, 0, 300, 'unpaid')",
+        )
+        .bind(supplier_b)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            "INSERT INTO expense_out (amount, date, description) VALUES (50, '2026-08-05', 'Rent')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO expense_out (amount, date, description) VALUES (25, '2026-09-02', 'Utilities')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let all_in = list_in_expenses(&pool, &None, &None, &None, &None).await.unwrap();
+        assert_eq!(all_in.len(), 3);
+
+        let by_supplier = list_in_expenses(
+            &pool,
+            &Some(supplier_a),
+            &None,
+            &None,
+            &None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(by_supplier.len(), 2);
+
+        let paid_only = list_in_expenses(&pool, &None, &Some("paid".into()), &None, &None)
+            .await
+            .unwrap();
+        assert_eq!(paid_only.len(), 1);
+        assert_eq!(paid_only[0].ref_no.as_deref(), Some("PI-000001"));
+
+        let august = list_in_expenses(
+            &pool,
+            &None,
+            &None,
+            &Some("2026-08-01".into()),
+            &Some("2026-08-31".into()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(august.len(), 2, "both August invoices");
+
+        let out = list_out_expenses(
+            &pool,
+            &Some("2026-08-01".into()),
+            &Some("2026-08-31".into()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].kind, "out");
+        assert_eq!(out[0].amount, 50.0);
+        assert_eq!(out[0].status, "recorded");
+
+        let summary = compute_expense_summary(
+            &pool,
+            &Some("2026-08-01".into()),
+            &Some("2026-08-31".into()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(summary.total_in, 300.0, "100 + 200 in August");
+        assert_eq!(summary.incoming_count, 2);
+        assert_eq!(summary.total_out, 50.0, "only August outgoing");
+        assert_eq!(summary.outgoing_count, 1);
+        assert_eq!(summary.outstanding_due, 450.0, "150 + 300 global dues");
 
         pool.close().await;
         std::fs::remove_file(&path).ok();

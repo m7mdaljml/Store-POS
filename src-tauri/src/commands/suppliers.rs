@@ -53,8 +53,8 @@ pub async fn list_suppliers<R: Runtime>(app: AppHandle<R>) -> Result<Vec<Supplie
     let rows = sqlx::query(
         "SELECT s.id, s.name, s.contact, s.phone, s.email, s.address, s.tax_id, s.created_at,
                 COUNT(si.id) AS invoice_count,
-                COALESCE(SUM(si.total), 0) AS total_purchased,
-                COALESCE(SUM(si.due_amount), 0) AS total_due
+                COALESCE(SUM(si.total), 0.0) AS total_purchased,
+                COALESCE(SUM(si.due_amount), 0.0) AS total_due
          FROM suppliers s
          LEFT JOIN supplier_invoices si ON si.supplier_id = s.id
          GROUP BY s.id

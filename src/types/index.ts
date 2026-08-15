@@ -144,3 +144,25 @@ export interface PaymentResult {
   due_amount: number;
   status: string;
 }
+
+export interface ExpenseRecord {
+  kind: "in" | "out";
+  id: number;
+  ref_no: string | null;
+  supplier_id: number | null;
+  supplier_name: string | null;
+  date: string;
+  amount: number;
+  paid_amount: number;
+  due_amount: number;
+  status: string;
+  notes: string | null;
+}
+
+export interface ExpenseSummary {
+  total_in: number;
+  total_out: number;
+  outstanding_due: number;
+  incoming_count: number;
+  outgoing_count: number;
+}
