@@ -4,6 +4,7 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { useCatalogStore } from "../../stores/catalog";
 import { useSettingsStore } from "../../stores/settings";
 import { useCartStore } from "../../stores/cart";
+import { useScanner } from "../../composables/useScanner";
 import type { Product } from "../../types";
 
 const catalog = useCatalogStore();
@@ -166,6 +167,21 @@ function onOrderDiscount(e: Event) {
   const value = Number((e.target as HTMLInputElement).value);
   cart.orderDiscount = isNaN(value) || value < 0 ? 0 : value;
 }
+
+useScanner({
+  onScan: (code) => {
+    const product = catalog.products.find(
+      (p) => p.is_active === 1 && (p.barcode === code || p.sku === code)
+    );
+    if (!product) {
+      error.value = `No product found for barcode "${code}"`;
+      return;
+    }
+    addToCart(product);
+    search.value = "";
+    searchOpen.value = false;
+  },
+});
 
 onMounted(async () => {
   await Promise.allSettled([
