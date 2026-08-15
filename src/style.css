@@ -542,6 +542,10 @@ body {
   justify-content: center;
 }
 
+.item-discount {
+  width: 110px;
+}
+
 .cart-totals,
 .checkout-payment {
   flex-shrink: 0;

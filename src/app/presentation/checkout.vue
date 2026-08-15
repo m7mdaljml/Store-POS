@@ -163,6 +163,11 @@ function bumpQty(productId: number, delta: number) {
   cart.setQty(productId, next);
 }
 
+function onItemDiscount(productId: number, e: Event) {
+  const value = Number((e.target as HTMLInputElement).value);
+  cart.setDiscount(productId, isNaN(value) || value < 0 ? 0 : value);
+}
+
 function onOrderDiscount(e: Event) {
   const value = Number((e.target as HTMLInputElement).value);
   cart.orderDiscount = isNaN(value) || value < 0 ? 0 : value;
@@ -337,10 +342,26 @@ onMounted(async () => {
               </button>
             </div>
             <div class="text-end">
-              <div class="fw-semibold">{{ fmt(item.price * item.qty) }}</div>
-              <div v-if="item.discount" class="text-danger small">
-                −{{ fmt(item.discount * item.qty) }}
+              <div class="fw-semibold">{{ fmt(cart.lineTotal(item)) }}</div>
+              <div class="text-muted" style="font-size: 0.72rem">
+                {{ fmt(item.price) }} each
               </div>
+            </div>
+          </div>
+          <div class="d-flex justify-content-between align-items-center mt-1">
+            <span class="text-muted" style="font-size: 0.72rem">Discount / unit</span>
+            <div class="input-group input-group-sm item-discount">
+              <span class="input-group-text">−</span>
+              <input
+                class="form-control text-end"
+                type="number"
+                min="0"
+                step="0.01"
+                :max="item.price"
+                :value="item.discount"
+                :aria-label="`Discount per unit for ${item.name}`"
+                @input="onItemDiscount(item.productId, $event)"
+              />
             </div>
           </div>
         </div>

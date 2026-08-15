@@ -36,6 +36,18 @@ export const useCartStore = defineStore("cart", () => {
     if (item) item.qty = Math.max(0, qty);
   }
 
+  /** Per-unit discount, clamped to [0, unit price]. */
+  function setDiscount(productId: number, discount: number) {
+    const item = items.value.find((i) => i.productId === productId);
+    if (!item) return;
+    item.discount = Math.min(Math.max(0, discount), item.price);
+  }
+
+  /** Line total after item discount: (price - discount) * qty, floor 0. */
+  function lineTotal(item: CartItem): number {
+    return Math.max(0, item.price - item.discount) * item.qty;
+  }
+
   function clear() {
     items.value = [];
     orderDiscount.value = 0;
@@ -51,6 +63,8 @@ export const useCartStore = defineStore("cart", () => {
     add,
     remove,
     setQty,
+    setDiscount,
+    lineTotal,
     clear,
   };
 });
