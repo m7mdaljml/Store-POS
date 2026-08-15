@@ -127,3 +127,20 @@ export interface OutgoingExpense {
   reference_no: string | null;
   user_name: string | null;
 }
+
+export interface SupplierPayment {
+  id: number;
+  invoice_id: number;
+  invoice_no: string;
+  amount: number;
+  method: string;
+  date: string;
+  notes: string | null;
+  user_name: string | null;
+}
+
+export interface PaymentResult {
+  paid_amount: number;
+  due_amount: number;
+  status: string;
+}

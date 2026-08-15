@@ -144,8 +144,12 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn seed_populates_and_is_idempotent() {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
         let path = std::env::temp_dir().join(format!(
-            "store-pos-seed-test-{}.db",
+            "store-pos-seed-test-{}-{nanos}.db",
             std::process::id()
         ));
 

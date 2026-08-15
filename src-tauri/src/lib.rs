@@ -73,6 +73,8 @@ pub fn run() {
       commands::suppliers::delete_supplier,
       commands::purchasing::create_supplier_invoice,
       commands::purchasing::list_supplier_invoices,
+      commands::purchasing::add_supplier_payment,
+      commands::purchasing::list_supplier_payments,
       commands::expenses::list_expense_categories,
       commands::expenses::create_expense_category,
       commands::expenses::delete_expense_category,

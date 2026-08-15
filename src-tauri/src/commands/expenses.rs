@@ -238,12 +238,20 @@ pub(crate) mod tests {
         pool.close().await;
     }
 
+    fn temp_db(name: &str) -> std::path::PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "store-pos-{name}-{}-{nanos}.db",
+            std::process::id()
+        ))
+    }
+
     #[tokio::test]
     async fn create_outgoing_expense_records_and_audits() {
-        let path = std::env::temp_dir().join(format!(
-            "store-pos-expense-valid-test-{}.db",
-            std::process::id()
-        ));
+        let path = temp_db("expense-valid");
         create_schema(&path).await;
         let pool = db::connect(&path).await.unwrap();
 
@@ -293,10 +301,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn create_outgoing_expense_rejects_invalid_input() {
-        let path = std::env::temp_dir().join(format!(
-            "store-pos-expense-invalid-test-{}.db",
-            std::process::id()
-        ));
+        let path = temp_db("expense-invalid");
         create_schema(&path).await;
         let pool = db::connect(&path).await.unwrap();
 

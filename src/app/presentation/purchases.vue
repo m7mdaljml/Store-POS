@@ -4,7 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useCatalogStore } from "../../stores/catalog";
 import { useSettingsStore } from "../../stores/settings";
 import { useAuth } from "../../composables/useAuth";
-import type { Supplier, SupplierInvoice, InvoiceLine } from "../../types";
+import type { Supplier, SupplierInvoice, InvoiceLine, SupplierPayment } from "../../types";
 
 const catalog = useCatalogStore();
 const settings = useSettingsStore();
@@ -25,6 +25,12 @@ const form = ref({
   notes: "",
   lines: [] as InvoiceLine[],
 });
+
+const payTarget = ref<SupplierInvoice | null>(null);
+const payHistory = ref<SupplierPayment[]>([]);
+const paySaving = ref(false);
+const payError = ref("");
+const payForm = ref({ amount: 0, method: "cash", date: "", notes: "" });
 
 function fmt(n: number): string {
   if (!settings.currency) return n.toFixed(2);
@@ -145,6 +151,60 @@ function statusBadge(status: string) {
   }
 }
 
+async function openPay(inv: SupplierInvoice) {
+  payError.value = "";
+  payHistory.value = [];
+  payTarget.value = inv;
+  payForm.value = {
+    amount: inv.due_amount,
+    method: "cash",
+    date: new Date().toISOString().slice(0, 10),
+    notes: "",
+  };
+  try {
+    payHistory.value = await invoke<SupplierPayment[]>("list_supplier_payments", {
+      invoiceId: inv.id,
+    });
+  } catch (e) {
+    payError.value = e instanceof Error ? e.message : String(e);
+  }
+}
+
+async function savePayment() {
+  const inv = payTarget.value;
+  if (!inv) return;
+  payError.value = "";
+  const amount = payForm.value.amount;
+  if (typeof amount !== "number" || isNaN(amount) || amount <= 0) {
+    payError.value = "Enter a payment amount greater than zero";
+    return;
+  }
+  if (amount > inv.due_amount) {
+    payError.value = `Payment exceeds the outstanding amount (${fmt(inv.due_amount)})`;
+    return;
+  }
+  paySaving.value = true;
+  try {
+    await invoke("add_supplier_payment", {
+      input: {
+        invoiceId: inv.id,
+        amount,
+        method: payForm.value.method,
+        date: payForm.value.date,
+        notes: payForm.value.notes || null,
+        userId: auth.user?.id ?? null,
+      },
+    });
+    payTarget.value = null;
+    notice.value = `Payment recorded for ${inv.invoice_no}`;
+    await load();
+  } catch (e) {
+    payError.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    paySaving.value = false;
+  }
+}
+
 onMounted(async () => {
   await Promise.allSettled([load(), catalog.load(), settings.load()]);
 });
@@ -178,14 +238,15 @@ onMounted(async () => {
               <th class="text-end">Paid</th>
               <th class="text-end">Due</th>
               <th>Status</th>
+              <th class="text-end">Actions</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="loading">
-              <td colspan="7" class="text-center text-muted py-4">Loading…</td>
+              <td colspan="8" class="text-center text-muted py-4">Loading…</td>
             </tr>
             <tr v-else-if="!invoices.length">
-              <td colspan="7" class="text-center text-muted py-4">
+              <td colspan="8" class="text-center text-muted py-4">
                 No incoming invoices yet — click "New Invoice" to record stock-in from a supplier
               </td>
             </tr>
@@ -205,6 +266,18 @@ onMounted(async () => {
                 <span class="badge" :class="statusBadge(inv.status)">
                   {{ inv.status }}
                 </span>
+              </td>
+              <td class="text-end text-nowrap">
+                <button
+                  v-if="inv.due_amount > 0"
+                  class="btn btn-sm btn-outline-success"
+                  type="button"
+                  title="Record payment"
+                  @click="openPay(inv)"
+                >
+                  <i class="bi bi-cash-coin me-1"></i>Pay
+                </button>
+                <span v-else class="text-muted small fst-italic">Settled</span>
               </td>
             </tr>
           </tbody>
@@ -330,6 +403,107 @@ onMounted(async () => {
               </button>
               <button type="submit" class="btn btn-primary" :disabled="saving">
                 <span v-if="saving" class="spinner-border spinner-border-sm me-2"></span>Save Invoice
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="payTarget" class="modal-backdrop show"></div>
+    <div v-if="payTarget" class="modal d-block" tabindex="-1">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <form @submit.prevent="savePayment">
+            <div class="modal-header">
+              <h5 class="modal-title">Record Payment — {{ payTarget.invoice_no }}</h5>
+              <button type="button" class="btn-close" @click="payTarget = null"></button>
+            </div>
+            <div class="modal-body">
+              <div v-if="payError" class="alert alert-danger py-2 small" role="alert">
+                <i class="bi bi-exclamation-triangle me-1"></i>{{ payError }}
+              </div>
+              <div class="d-flex gap-3 mb-3">
+                <div class="flex-grow-1 card text-center p-2">
+                  <div class="text-muted small text-uppercase">Total</div>
+                  <div class="fw-semibold">{{ fmt(payTarget.total) }}</div>
+                </div>
+                <div class="flex-grow-1 card text-center p-2">
+                  <div class="text-muted small text-uppercase">Paid</div>
+                  <div class="fw-semibold">{{ fmt(payTarget.paid_amount) }}</div>
+                </div>
+                <div class="flex-grow-1 card text-center p-2">
+                  <div class="text-muted small text-uppercase">Outstanding</div>
+                  <div class="fw-semibold text-danger">{{ fmt(payTarget.due_amount) }}</div>
+                </div>
+              </div>
+              <div class="row g-3">
+                <div class="col-md-6">
+                  <label class="form-label" for="pay-amount">Amount *</label>
+                  <input
+                    id="pay-amount"
+                    v-model.number="payForm.amount"
+                    class="form-control"
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    :max="payTarget.due_amount"
+                    autofocus
+                  />
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label" for="pay-method">Method</label>
+                  <select id="pay-method" v-model="payForm.method" class="form-select">
+                    <option value="cash">Cash</option>
+                    <option value="card">Card</option>
+                    <option value="bank">Bank</option>
+                  </select>
+                </div>
+              </div>
+              <div class="mt-3">
+                <label class="form-label" for="pay-date">Date</label>
+                <input id="pay-date" v-model="payForm.date" class="form-control" type="date" />
+              </div>
+              <div class="mt-3 mb-0">
+                <label class="form-label" for="pay-notes">Notes</label>
+                <input
+                  id="pay-notes"
+                  v-model="payForm.notes"
+                  class="form-control"
+                  type="text"
+                  placeholder="Optional reference…"
+                />
+              </div>
+
+              <div v-if="payHistory.length" class="mt-4">
+                <div class="fw-semibold small text-muted text-uppercase mb-2">Payment history</div>
+                <table class="table table-sm align-middle mb-0">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Method</th>
+                      <th>Notes</th>
+                      <th class="text-end">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="p in payHistory" :key="p.id">
+                      <td class="text-muted">{{ p.date }}</td>
+                      <td class="text-capitalize">{{ p.method }}</td>
+                      <td class="text-muted">{{ p.notes ?? "—" }}</td>
+                      <td class="text-end fw-semibold">{{ fmt(p.amount) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-outline-secondary" @click="payTarget = null">
+                Close
+              </button>
+              <button type="submit" class="btn btn-success" :disabled="paySaving">
+                <span v-if="paySaving" class="spinner-border spinner-border-sm me-2"></span>
+                Record Payment
               </button>
             </div>
           </form>

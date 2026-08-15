@@ -211,6 +211,174 @@ pub async fn list_supplier_invoices<R: Runtime>(
         .collect()
 }
 
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SupplierPaymentInput {
+    pub invoice_id: i64,
+    pub amount: f64,
+    pub method: Option<String>,
+    pub date: Option<String>,
+    pub notes: Option<String>,
+    pub user_id: Option<i64>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SupplierPaymentRecord {
+    pub id: i64,
+    pub invoice_id: i64,
+    pub invoice_no: String,
+    pub amount: f64,
+    pub method: String,
+    pub date: String,
+    pub notes: Option<String>,
+    pub user_name: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PaymentResult {
+    pub paid_amount: f64,
+    pub due_amount: f64,
+    pub status: String,
+}
+
+pub async fn record_supplier_payment(
+    pool: &sqlx::SqlitePool,
+    input: SupplierPaymentInput,
+) -> Result<PaymentResult, String> {
+    if input.amount <= 0.0 {
+        return Err("Payment amount must be greater than zero".into());
+    }
+    let method = optional_field(&input.method).unwrap_or_else(|| "cash".into());
+    if !matches!(method.as_str(), "cash" | "card" | "bank") {
+        return Err("Payment method must be cash, card or bank".into());
+    }
+
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+
+    let invoice: Option<(String, f64, f64, f64)> = sqlx::query_as(
+        "SELECT invoice_no, total, paid_amount, due_amount FROM supplier_invoices WHERE id = ?",
+    )
+    .bind(input.invoice_id)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+    let (invoice_no, total, paid, due) = match invoice {
+        Some(v) => v,
+        None => return Err("Invoice not found".into()),
+    };
+
+    if input.amount > due + 0.005 {
+        return Err(format!(
+            "Payment exceeds the outstanding amount ({due:.2} remaining)"
+        ));
+    }
+
+    let date = match optional_field(&input.date) {
+        Some(d) => d,
+        None => {
+            let d: (String,) = sqlx::query_as("SELECT date('now')")
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+            d.0
+        }
+    };
+
+    sqlx::query(
+        "INSERT INTO supplier_payments (invoice_id, amount, method, date, notes, user_id)
+         VALUES (?, ?, ?, ?, ?, ?)",
+    )
+    .bind(input.invoice_id)
+    .bind(input.amount)
+    .bind(&method)
+    .bind(&date)
+    .bind(optional_field(&input.notes))
+    .bind(input.user_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let new_paid = paid + input.amount;
+    let new_due = (total - new_paid).max(0.0);
+    let status = if new_due <= 0.005 { "paid" } else { "partial" };
+
+    sqlx::query(
+        "UPDATE supplier_invoices SET paid_amount = ?, due_amount = ?, status = ? WHERE id = ?",
+    )
+    .bind(new_paid)
+    .bind(new_due)
+    .bind(status)
+    .bind(input.invoice_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    sqlx::query(
+        "INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
+         VALUES (?, 'expense.payment', 'supplier_invoice', ?, ?)",
+    )
+    .bind(input.user_id)
+    .bind(input.invoice_id)
+    .bind(format!("Payment of {:.2} ({}) on invoice {}", input.amount, method, invoice_no))
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    tx.commit().await.map_err(|e| e.to_string())?;
+
+    Ok(PaymentResult {
+        paid_amount: new_paid,
+        due_amount: new_due,
+        status: status.into(),
+    })
+}
+
+#[tauri::command]
+pub async fn add_supplier_payment<R: Runtime>(
+    app: AppHandle<R>,
+    input: SupplierPaymentInput,
+) -> Result<PaymentResult, String> {
+    let pool = db::pool(&app).await?;
+    record_supplier_payment(&pool, input).await
+}
+
+#[tauri::command]
+pub async fn list_supplier_payments<R: Runtime>(
+    app: AppHandle<R>,
+    invoice_id: i64,
+) -> Result<Vec<SupplierPaymentRecord>, String> {
+    let pool = db::pool(&app).await?;
+    let rows = sqlx::query(
+        "SELECT sp.id, sp.invoice_id, si.invoice_no, sp.amount, sp.method, sp.date, sp.notes, u.full_name
+         FROM supplier_payments sp
+         JOIN supplier_invoices si ON si.id = sp.invoice_id
+         LEFT JOIN users u ON u.id = sp.user_id
+         WHERE sp.invoice_id = ?
+         ORDER BY sp.date DESC, sp.id DESC",
+    )
+    .bind(invoice_id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    rows.into_iter()
+        .map(|row| {
+            Ok(SupplierPaymentRecord {
+                id: row.try_get("id").map_err(|e| e.to_string())?,
+                invoice_id: row.try_get("invoice_id").map_err(|e| e.to_string())?,
+                invoice_no: row.try_get("invoice_no").map_err(|e| e.to_string())?,
+                amount: row.try_get("amount").map_err(|e| e.to_string())?,
+                method: row.try_get("method").map_err(|e| e.to_string())?,
+                date: row.try_get("date").map_err(|e| e.to_string())?,
+                notes: row.try_get("notes").map_err(|e| e.to_string())?,
+                user_name: row.try_get("user_name").map_err(|e| e.to_string())?,
+            })
+        })
+        .collect()
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -224,6 +392,7 @@ pub(crate) mod tests {
             "CREATE TABLE supplier_invoices (id INTEGER PRIMARY KEY AUTOINCREMENT, invoice_no TEXT NOT NULL, supplier_id INTEGER NOT NULL, date TEXT NOT NULL, total REAL NOT NULL DEFAULT 0, paid_amount REAL NOT NULL DEFAULT 0, due_amount REAL NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'unpaid', notes TEXT, user_id INTEGER, created_at TEXT NOT NULL DEFAULT (datetime('now')))",
             "CREATE TABLE supplier_invoice_items (id INTEGER PRIMARY KEY AUTOINCREMENT, invoice_id INTEGER NOT NULL, product_id INTEGER NOT NULL, qty REAL NOT NULL, cost_price REAL NOT NULL, subtotal REAL NOT NULL)",
             "CREATE TABLE stock_movements (id INTEGER PRIMARY KEY AUTOINCREMENT, product_id INTEGER NOT NULL, type TEXT NOT NULL, qty REAL NOT NULL, ref_id INTEGER, notes TEXT, user_id INTEGER, created_at TEXT NOT NULL DEFAULT (datetime('now')))",
+            "CREATE TABLE supplier_payments (id INTEGER PRIMARY KEY AUTOINCREMENT, invoice_id INTEGER NOT NULL, amount REAL NOT NULL, method TEXT NOT NULL DEFAULT 'cash', date TEXT NOT NULL DEFAULT (datetime('now')), notes TEXT, user_id INTEGER)",
             "CREATE TABLE audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, action TEXT NOT NULL, entity_type TEXT, entity_id INTEGER, details TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')))",
         ] {
             sqlx::query(sql).execute(&pool).await.unwrap();
@@ -241,12 +410,20 @@ pub(crate) mod tests {
         }
     }
 
+    fn temp_db(name: &str) -> std::path::PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "store-pos-{name}-{}-{nanos}.db",
+            std::process::id()
+        ))
+    }
+
     #[tokio::test]
     async fn create_invoice_records_items_stock_and_audit() {
-        let path = std::env::temp_dir().join(format!(
-            "store-pos-invoice-valid-test-{}.db",
-            std::process::id()
-        ));
+        let path = temp_db("invoice-valid");
         create_schema(&path).await;
         let pool = db::connect(&path).await.unwrap();
 
@@ -329,10 +506,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn create_invoice_rejects_invalid_input() {
-        let path = std::env::temp_dir().join(format!(
-            "store-pos-invoice-invalid-test-{}.db",
-            std::process::id()
-        ));
+        let path = temp_db("invoice-invalid");
         create_schema(&path).await;
         let pool = db::connect(&path).await.unwrap();
 
@@ -383,6 +557,172 @@ pub(crate) mod tests {
             .await
             .unwrap();
         assert_eq!(stock, 10.0, "stock unchanged after failures");
+
+        pool.close().await;
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[tokio::test]
+    async fn payment_updates_paid_due_and_status() {
+        let path = temp_db("payment-valid");
+        create_schema(&path).await;
+        let pool = db::connect(&path).await.unwrap();
+
+        let invoice_id = sqlx::query(
+            "INSERT INTO supplier_invoices (invoice_no, supplier_id, date, total, due_amount) VALUES ('PI-000001', 1, '2026-08-15', 100, 100)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap()
+        .last_insert_rowid();
+
+        let first = record_supplier_payment(
+            &pool,
+            SupplierPaymentInput {
+                invoice_id,
+                amount: 40.0,
+                method: Some("cash".into()),
+                date: Some("2026-08-15".into()),
+                notes: None,
+                user_id: None,
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(first.paid_amount, 40.0);
+        assert_eq!(first.due_amount, 60.0);
+        assert_eq!(first.status, "partial");
+
+        let second = record_supplier_payment(
+            &pool,
+            SupplierPaymentInput {
+                invoice_id,
+                amount: 60.0,
+                method: Some("bank".into()),
+                date: Some("2026-08-16".into()),
+                notes: None,
+                user_id: None,
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(second.paid_amount, 100.0);
+        assert_eq!(second.due_amount, 0.0);
+        assert_eq!(second.status, "paid");
+
+        let (paid, due, status): (f64, f64, String) = sqlx::query_as(
+            "SELECT paid_amount, due_amount, status FROM supplier_invoices WHERE id = ?",
+        )
+        .bind(invoice_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(paid, 100.0);
+        assert_eq!(due, 0.0);
+        assert_eq!(status, "paid");
+
+        let payments: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM supplier_payments WHERE invoice_id = ?",
+        )
+        .bind(invoice_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(payments, 2);
+
+        let audit: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM audit_log WHERE action = 'expense.payment' AND entity_id = ?",
+        )
+        .bind(invoice_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(audit, 2);
+
+        pool.close().await;
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[tokio::test]
+    async fn payment_rejects_overpayment_and_invalid_input() {
+        let path = temp_db("payment-invalid");
+        create_schema(&path).await;
+        let pool = db::connect(&path).await.unwrap();
+
+        let invoice_id = sqlx::query(
+            "INSERT INTO supplier_invoices (invoice_no, supplier_id, date, total, due_amount) VALUES ('PI-000001', 1, '2026-08-15', 100, 100)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap()
+        .last_insert_rowid();
+
+        let over = record_supplier_payment(
+            &pool,
+            SupplierPaymentInput {
+                invoice_id,
+                amount: 101.0,
+                method: Some("cash".into()),
+                date: None,
+                notes: None,
+                user_id: None,
+            },
+        )
+        .await;
+        assert!(over.is_err());
+
+        let zero = record_supplier_payment(
+            &pool,
+            SupplierPaymentInput {
+                invoice_id,
+                amount: 0.0,
+                method: Some("cash".into()),
+                date: None,
+                notes: None,
+                user_id: None,
+            },
+        )
+        .await;
+        assert!(zero.is_err());
+
+        let bad_method = record_supplier_payment(
+            &pool,
+            SupplierPaymentInput {
+                invoice_id,
+                amount: 10.0,
+                method: Some("bitcoin".into()),
+                date: None,
+                notes: None,
+                user_id: None,
+            },
+        )
+        .await;
+        assert!(bad_method.is_err());
+
+        let missing = record_supplier_payment(
+            &pool,
+            SupplierPaymentInput {
+                invoice_id: 9999,
+                amount: 10.0,
+                method: None,
+                date: None,
+                notes: None,
+                user_id: None,
+            },
+        )
+        .await;
+        assert!(missing.is_err());
+
+        let (paid, due, status): (f64, f64, String) = sqlx::query_as(
+            "SELECT paid_amount, due_amount, status FROM supplier_invoices WHERE id = ?",
+        )
+        .bind(invoice_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(paid, 0.0);
+        assert_eq!(due, 100.0);
+        assert_eq!(status, "unpaid", "unchanged after all failed payments");
 
         pool.close().await;
         std::fs::remove_file(&path).ok();
