@@ -3,7 +3,8 @@ import { computed, onMounted, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { useSettingsStore } from "../../stores/settings";
 import { useAuth } from "../../composables/useAuth";
-import type { SaleRecord } from "../../types";
+import { buildReceiptHtml, printReceipt } from "../../lib/receipt";
+import type { SaleReceipt, SaleRecord } from "../../types";
 
 const settings = useSettingsStore();
 const auth = useAuth();
@@ -18,6 +19,7 @@ const voidTarget = ref<SaleRecord | null>(null);
 const voidReason = ref("");
 const voidError = ref("");
 const voiding = ref(false);
+const printingId = ref<number | null>(null);
 
 function fmt(n: number): string {
   if (!settings.currency) return n.toFixed(2);
@@ -56,6 +58,21 @@ function openVoidModal(sale: SaleRecord) {
   voidTarget.value = sale;
   voidReason.value = "";
   voidError.value = "";
+}
+
+async function reprintReceipt(sale: SaleRecord) {
+  printingId.value = sale.id;
+  error.value = "";
+  try {
+    const receipt = await invoke<SaleReceipt>("get_sale_receipt", {
+      input: { saleId: sale.id },
+    });
+    await printReceipt(buildReceiptHtml(receipt));
+  } catch (e) {
+    error.value = `Printing failed: ${String(e)}`;
+  } finally {
+    printingId.value = null;
+  }
 }
 
 async function confirmVoid() {
@@ -176,6 +193,21 @@ onMounted(load);
                 </span>
               </td>
               <td class="text-end">
+                <button
+                  v-if="sale.status === 'completed' || sale.status === 'voided'"
+                  class="btn btn-sm btn-outline-secondary me-1"
+                  type="button"
+                  :disabled="printingId != null"
+                  title="Print receipt"
+                  @click="reprintReceipt(sale)"
+                >
+                  <span
+                    v-if="printingId === sale.id"
+                    class="spinner-border spinner-border-sm"
+                    role="status"
+                  ></span>
+                  <i v-else class="bi bi-printer me-1"></i>Receipt
+                </button>
                 <button
                   v-if="sale.status === 'completed' && openVoid"
                   class="btn btn-sm btn-outline-danger"

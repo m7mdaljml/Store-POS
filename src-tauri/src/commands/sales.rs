@@ -147,6 +147,58 @@ pub struct SaleRecord {
     pub void_reason: Option<String>,
 }
 
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaleReceiptInput {
+    pub sale_id: i64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReceiptItem {
+    pub name: String,
+    pub qty: f64,
+    pub price: f64,
+    pub discount: f64,
+    pub subtotal: f64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReceiptPayment {
+    pub method: String,
+    pub amount: f64,
+    pub reference: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaleReceipt {
+    /// Store profile from the settings table (may be empty until configured).
+    pub store_name: String,
+    pub store_address: String,
+    pub store_phone: String,
+    pub store_tax_id: String,
+    pub receipt_footer: String,
+    pub sale_id: i64,
+    pub sale_no: String,
+    pub created_at: String,
+    pub status: String,
+    pub customer_name: Option<String>,
+    pub user_name: Option<String>,
+    pub subtotal: f64,
+    /// Sum of per-item discounts (price * qty reduction).
+    pub item_discount: f64,
+    /// Order-level discount stored on the sale.
+    pub order_discount: f64,
+    pub tax: f64,
+    pub total: f64,
+    pub paid_amount: f64,
+    pub change_given: f64,
+    pub items: Vec<ReceiptItem>,
+    pub payments: Vec<ReceiptPayment>,
+}
+
 fn optional_field(value: &Option<String>) -> Option<String> {
     value.as_ref().map(|v| v.trim()).filter(|v| !v.is_empty()).map(String::from)
 }
@@ -878,6 +930,167 @@ pub async fn query_sales(
     Ok(out)
 }
 
+/// Loads everything needed to render a sale's receipt: store profile from the
+/// settings table, the sale header, line items and payment breakdown.
+pub async fn fetch_receipt(
+    pool: &sqlx::SqlitePool,
+    input: SaleReceiptInput,
+) -> Result<SaleReceipt, String> {
+    let sale: Option<(
+        String,
+        String,
+        String,
+        Option<i64>,
+        i64,
+        f64,
+        f64,
+        f64,
+        f64,
+        f64,
+        f64,
+    )> = sqlx::query_as(
+        "SELECT sale_no, created_at, status, customer_id, user_id,
+                subtotal, discount, tax, total, paid_amount, change_given
+         FROM sales WHERE id = ?",
+    )
+    .bind(input.sale_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+    let (
+        sale_no,
+        created_at,
+        status,
+        customer_id,
+        user_id,
+        subtotal,
+        order_discount,
+        tax,
+        total,
+        paid_amount,
+        change_given,
+    ) = sale.ok_or_else(|| format!("Sale {} not found", input.sale_id))?;
+
+    let customer_name: Option<String> = match customer_id {
+        Some(cid) => {
+            let row: Option<(String,)> =
+                sqlx::query_as("SELECT name FROM customers WHERE id = ?")
+                    .bind(cid)
+                    .fetch_optional(pool)
+                    .await
+                    .map_err(|e| e.to_string())?;
+            row.map(|r| r.0)
+        }
+        None => None,
+    };
+
+    let user_name: Option<String> =
+        sqlx::query_as("SELECT full_name FROM users WHERE id = ?")
+            .bind(user_id)
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| e.to_string())?
+            .map(|r: (String,)| r.0);
+
+    let item_rows = sqlx::query(
+        "SELECT p.name, si.qty, si.price, si.discount, si.subtotal
+         FROM sale_items si
+         JOIN products p ON p.id = si.product_id
+         WHERE si.sale_id = ?",
+    )
+    .bind(input.sale_id)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let mut items = Vec::with_capacity(item_rows.len());
+    let mut item_discount = 0.0;
+    for row in item_rows {
+        let qty: f64 = row.try_get("qty").map_err(|e| e.to_string())?;
+        let discount: f64 = row.try_get("discount").map_err(|e| e.to_string())?;
+        item_discount += discount * qty;
+        items.push(ReceiptItem {
+            name: row.try_get("name").map_err(|e| e.to_string())?,
+            qty,
+            price: row.try_get("price").map_err(|e| e.to_string())?,
+            discount,
+            subtotal: row.try_get("subtotal").map_err(|e| e.to_string())?,
+        });
+    }
+
+    let payment_rows = sqlx::query(
+        "SELECT method, amount, reference FROM payments WHERE sale_id = ?",
+    )
+    .bind(input.sale_id)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let mut payments = Vec::with_capacity(payment_rows.len());
+    for row in payment_rows {
+        payments.push(ReceiptPayment {
+            method: row.try_get("method").map_err(|e| e.to_string())?,
+            amount: row.try_get("amount").map_err(|e| e.to_string())?,
+            reference: row.try_get("reference").map_err(|e| e.to_string())?,
+        });
+    }
+
+    // Store profile from the settings table (unset until F7.1 manages it).
+    let setting_rows = sqlx::query("SELECT key, value FROM settings")
+        .fetch_all(pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    let mut store_name = String::new();
+    let mut store_address = String::new();
+    let mut store_phone = String::new();
+    let mut store_tax_id = String::new();
+    let mut receipt_footer = String::new();
+    for row in setting_rows {
+        let key: String = row.try_get("key").map_err(|e| e.to_string())?;
+        let value: String = row.try_get("value").map_err(|e| e.to_string())?;
+        match key.as_str() {
+            "store_name" => store_name = value,
+            "store_address" => store_address = value,
+            "store_phone" => store_phone = value,
+            "store_tax_id" => store_tax_id = value,
+            "receipt_footer" => receipt_footer = value,
+            _ => {}
+        }
+    }
+
+    Ok(SaleReceipt {
+        store_name,
+        store_address,
+        store_phone,
+        store_tax_id,
+        receipt_footer,
+        sale_id: input.sale_id,
+        sale_no,
+        created_at,
+        status,
+        customer_name,
+        user_name,
+        subtotal,
+        item_discount,
+        order_discount,
+        tax,
+        total,
+        paid_amount,
+        change_given,
+        items,
+        payments,
+    })
+}
+
+#[tauri::command]
+pub async fn get_sale_receipt<R: Runtime>(
+    app: AppHandle<R>,
+    input: SaleReceiptInput,
+) -> Result<SaleReceipt, String> {
+    let pool = db::pool(&app).await?;
+    fetch_receipt(&pool, input).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -886,7 +1099,12 @@ mod tests {
         r#"
         CREATE TABLE users (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
-          username TEXT NOT NULL
+          username TEXT NOT NULL,
+          full_name TEXT
+        );
+        CREATE TABLE settings (
+          key TEXT PRIMARY KEY,
+          value TEXT NOT NULL
         );
         CREATE TABLE customers (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1734,6 +1952,57 @@ mod tests {
         .await
         .unwrap_err();
         assert!(err.contains("Only held"));
+    }
+
+    #[tokio::test]
+    async fn fetch_receipt_returns_full_receipt() {
+        let pool = mem_pool().await;
+        sample_product(&pool, 1, "Coffee", 20.0, 5.0).await;
+        sample_customer(&pool, 1, "Alice").await;
+        sqlx::query("INSERT INTO users (username, full_name) VALUES ('admin', 'Seed Admin')")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let sale = insert_sale(
+            &pool,
+            CreateSaleInput {
+                items: vec![
+                    item(1, 2.0, 5.0, 0.5),
+                    item(1, 1.0, 5.0, 0.0),
+                ],
+                payments: vec![SalePaymentInput {
+                    method: "cash".into(),
+                    amount: 14.0,
+                    reference: None,
+                    customer_id: None,
+                }],
+                discount: 0.0,
+                tax: 0.0,
+                user_id: Some(1),
+                customer_id: Some(1),
+                held_sale_id: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        let r = fetch_receipt(&pool, SaleReceiptInput { sale_id: sale.sale_id })
+            .await
+            .unwrap();
+        assert_eq!(r.sale_no, "S-000001");
+        assert_eq!(r.status, "completed");
+        assert_eq!(r.customer_name.as_deref(), Some("Alice"));
+        assert_eq!(r.user_name.as_deref(), Some("Seed Admin"));
+        // 2 + 1 items, item discount 0.5*2 = 1.0
+        assert_eq!(r.items.len(), 2);
+        assert!((r.item_discount - 1.0).abs() < 0.001);
+        assert!((r.subtotal - 15.0).abs() < 0.001);
+        assert!((r.total - 14.0).abs() < 0.001);
+        assert_eq!(r.payments.len(), 1);
+        assert_eq!(r.payments[0].method, "cash");
+        assert!((r.payments[0].amount - 14.0).abs() < 0.001);
+        assert!(r.store_name.is_empty());
     }
 
     async fn stock_of(pool: &sqlx::SqlitePool, product_id: i64) -> f64 {

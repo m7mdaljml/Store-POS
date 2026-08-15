@@ -7,12 +7,14 @@ import { useCartStore } from "../../stores/cart";
 import { useAuth } from "../../composables/useAuth";
 import { useScanner } from "../../composables/useScanner";
 import { select } from "../../lib/db";
+import { buildReceiptHtml, printReceipt } from "../../lib/receipt";
 import type {
   CustomerLite,
   HoldSaleResult,
   PaymentLine,
   Product,
   ResumeSaleRecord,
+  SaleReceipt,
   SaleRecord,
   SaleResult,
 } from "../../types";
@@ -34,6 +36,7 @@ const activeSuggestion = ref(0);
 
 const notice = ref("");
 const committing = ref(false);
+const printReceiptOnComplete = ref(true);
 
 const heldSaleId = ref<number | null>(null);
 const heldCustomerId = ref<number | null>(null);
@@ -82,6 +85,12 @@ function fmt(n: number): string {
     currency: settings.currency,
     currencyDisplay: "narrowSymbol",
   }).format(n);
+}
+
+function dateLabel(d: string): string {
+  const date = new Date(d + (d.includes("T") ? "" : "Z"));
+  if (isNaN(date.getTime())) return d;
+  return date.toLocaleString();
 }
 
 function stockFor(productId: number): number {
@@ -223,6 +232,11 @@ function completeSale() {
       heldSaleId.value = null;
       heldCustomerId.value = null;
       catalog.load();
+      if (printReceiptOnComplete.value) {
+        printSaleReceipt(sale.saleId).catch((e: unknown) => {
+          error.value = `Sale completed, but printing failed: ${String(e)}`;
+        });
+      }
     })
     .catch((e: string) => {
       error.value = String(e);
@@ -230,6 +244,13 @@ function completeSale() {
     .finally(() => {
       committing.value = false;
     });
+}
+
+async function printSaleReceipt(saleId: number) {
+  const receipt = await invoke<SaleReceipt>("get_sale_receipt", {
+    input: { saleId },
+  });
+  await printReceipt(buildReceiptHtml(receipt));
 }
 
 function holdCurrentSale() {
@@ -849,6 +870,16 @@ onMounted(async () => {
           <span>{{ fmt(cart.change) }}</span>
         </div>
 
+        <div class="form-check small mb-2">
+          <input
+            id="print-receipt"
+            v-model="printReceiptOnComplete"
+            class="form-check-input"
+            type="checkbox"
+          />
+          <label class="form-check-label" for="print-receipt">Print receipt after sale</label>
+        </div>
+
         <div class="d-flex gap-2 mb-2">
           <button
             class="btn btn-outline-secondary flex-fill"
@@ -917,7 +948,7 @@ onMounted(async () => {
                 <div class="fw-semibold small">{{ sale.saleNo }}</div>
                 <div class="text-muted" style="font-size: 0.72rem">
                   {{ sale.itemCount }} item(s) · {{ fmt(sale.total) }} ·
-                  {{ new Date(sale.createdAt).toLocaleString() }}
+                  {{ dateLabel(sale.createdAt) }}
                 </div>
               </div>
               <div class="d-flex gap-2">

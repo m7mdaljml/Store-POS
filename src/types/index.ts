@@ -106,6 +106,46 @@ export interface ResumeSaleRecord {
   items: ResumeSaleItem[];
 }
 
+/** A sale line item as returned on a receipt. */
+export interface SaleReceiptItem {
+  name: string;
+  qty: number;
+  price: number;
+  discount: number;
+  subtotal: number;
+}
+
+/** A payment method/amount line as returned on a receipt. */
+export interface SaleReceiptPayment {
+  method: string;
+  amount: number;
+  reference: string | null;
+}
+
+/** Everything needed to render a sale's receipt (`get_sale_receipt`). */
+export interface SaleReceipt {
+  storeName: string;
+  storeAddress: string;
+  storePhone: string;
+  storeTaxId: string;
+  receiptFooter: string;
+  saleId: number;
+  saleNo: string;
+  createdAt: string;
+  status: string;
+  customerName: string | null;
+  userName: string | null;
+  subtotal: number;
+  itemDiscount: number;
+  orderDiscount: number;
+  tax: number;
+  total: number;
+  paidAmount: number;
+  changeGiven: number;
+  items: SaleReceiptItem[];
+  payments: SaleReceiptPayment[];
+}
+
 export interface Category {
   id: number;
   name: string;
