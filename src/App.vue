@@ -22,6 +22,7 @@ const navItems = computed(() => {
   const items = [
     { to: "/", label: "Dashboard", icon: "bi-speedometer2", adminOnly: true },
     { to: "/checkout", label: "Checkout", icon: "bi-basket", permission: "sales.checkout" },
+    { to: "/sales", label: "Sales", icon: "bi-receipt", permission: "sales.void" },
     { to: "/products", label: "Products", icon: "bi-box-seam", permission: "inventory.view" },
     { to: "/stock", label: "Stock", icon: "bi-boxes", permission: "inventory.view" },
     { to: "/purchases", label: "Purchases", icon: "bi-truck", permission: "inventory.view" },

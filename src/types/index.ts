@@ -62,6 +62,20 @@ export interface SaleResult {
   changeGiven: number;
 }
 
+/** A row from the sales history (`list_sales` command). */
+export interface SaleRecord {
+  id: number;
+  saleNo: string;
+  createdAt: string;
+  userName: string | null;
+  customerName: string | null;
+  itemCount: number;
+  total: number;
+  paidAmount: number;
+  status: "completed" | "voided";
+  voidReason: string | null;
+}
+
 export interface Category {
   id: number;
   name: string;

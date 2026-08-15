@@ -21,6 +21,12 @@ const routes = [
     meta: { permission: "sales.checkout" },
   },
   {
+    path: "/sales",
+    name: "sales",
+    component: () => import("../app/presentation/sales.vue"),
+    meta: { permission: "sales.void" },
+  },
+  {
     path: "/products",
     name: "products",
     component: () => import("../app/presentation/products.vue"),

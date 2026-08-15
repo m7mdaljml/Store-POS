@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use sqlx::Row;
 use tauri::{AppHandle, Runtime};
 
 use crate::db;
@@ -51,6 +52,36 @@ pub struct SaleResult {
     pub total: f64,
     pub paid_amount: f64,
     pub change_given: f64,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VoidSaleInput {
+    pub sale_id: i64,
+    pub reason: String,
+    pub user_id: Option<i64>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListSalesInput {
+    pub status: Option<String>,
+    pub limit: Option<i64>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaleRecord {
+    pub id: i64,
+    pub sale_no: String,
+    pub created_at: String,
+    pub user_name: Option<String>,
+    pub customer_name: Option<String>,
+    pub item_count: i64,
+    pub total: f64,
+    pub paid_amount: f64,
+    pub status: String,
+    pub void_reason: Option<String>,
 }
 
 fn optional_field(value: &Option<String>) -> Option<String> {
@@ -319,6 +350,180 @@ pub async fn insert_sale(
         paid_amount,
         change_given,
     })
+}
+
+/// Reverses a completed sale: marks it voided, restores stock, reverses any
+/// customer-credit ledger charge and writes an audit entry. All in one
+/// transaction so a failed reversal leaves the sale untouched.
+pub async fn reverse_sale(pool: &sqlx::SqlitePool, input: VoidSaleInput) -> Result<(), String> {
+    let reason = optional_field(&Some(input.reason)).ok_or("Void reason is required")?;
+
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+
+    let sale: Option<(String, String, Option<i64>)> =
+        sqlx::query_as("SELECT sale_no, status, customer_id FROM sales WHERE id = ?")
+            .bind(input.sale_id)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+    let (sale_no, status, sale_customer) = sale.ok_or("Sale not found")?;
+    if status != "completed" {
+        return Err("Only completed sales can be voided".into());
+    }
+
+    sqlx::query(
+        "UPDATE sales SET status = 'voided', void_reason = ?, voided_by = ? WHERE id = ?",
+    )
+    .bind(&reason)
+    .bind(input.user_id)
+    .bind(input.sale_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    // Restore stock for every line item.
+    let items: Vec<(i64, f64)> =
+        sqlx::query_as("SELECT product_id, qty FROM sale_items WHERE sale_id = ?")
+            .bind(input.sale_id)
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+    for (product_id, qty) in items {
+        sqlx::query(
+            "INSERT INTO stock_movements (product_id, type, qty, ref_id, notes, user_id)
+             VALUES (?, 'sale_void_in', ?, ?, ?, ?)",
+        )
+        .bind(product_id)
+        .bind(qty)
+        .bind(input.sale_id)
+        .bind(format!("Void sale {sale_no}: {reason}"))
+        .bind(input.user_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        sqlx::query("UPDATE products SET stock_qty = stock_qty + ? WHERE id = ?")
+            .bind(qty)
+            .bind(product_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+
+    // Reverse customer-credit charges from this sale. The credit customer is
+    // stored on the sale itself; payments only carry the amounts.
+    if let Some(customer_id) = sale_customer {
+        let credits: Vec<(f64,)> = sqlx::query_as(
+            "SELECT amount FROM payments WHERE sale_id = ? AND method = 'credit'",
+        )
+        .bind(input.sale_id)
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+        for (amount,) in credits {
+            let current: (f64,) = sqlx::query_as("SELECT balance FROM customers WHERE id = ?")
+                .bind(customer_id)
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+            let balance_after = current.0 - amount;
+
+            sqlx::query("UPDATE customers SET balance = ? WHERE id = ?")
+                .bind(balance_after)
+                .bind(customer_id)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+
+            sqlx::query(
+                "INSERT INTO customer_ledger (customer_id, sale_id, type, amount, balance_after, notes, user_id)
+                 VALUES (?, ?, 'reversal', ?, ?, ?, ?)",
+            )
+            .bind(customer_id)
+            .bind(input.sale_id)
+            .bind(-amount)
+            .bind(balance_after)
+            .bind(format!("Void sale {sale_no}: {reason}"))
+            .bind(input.user_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+        }
+    }
+
+    sqlx::query(
+        "INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
+         VALUES (?, 'sale.void', 'sale', ?, ?)",
+    )
+    .bind(input.user_id)
+    .bind(input.sale_id)
+    .bind(format!("Voided sale {sale_no}: {reason}"))
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    tx.commit().await.map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn void_sale<R: Runtime>(
+    app: AppHandle<R>,
+    input: VoidSaleInput,
+) -> Result<(), String> {
+    let pool = db::pool(&app).await?;
+    reverse_sale(&pool, input).await
+}
+
+#[tauri::command]
+pub async fn list_sales<R: Runtime>(
+    app: AppHandle<R>,
+    input: Option<ListSalesInput>,
+) -> Result<Vec<SaleRecord>, String> {
+    let pool = db::pool(&app).await?;
+    query_sales(&pool, input.unwrap_or(ListSalesInput { status: None, limit: None })).await
+}
+
+pub async fn query_sales(
+    pool: &sqlx::SqlitePool,
+    input: ListSalesInput,
+) -> Result<Vec<SaleRecord>, String> {
+    let limit = input.limit.unwrap_or(100).max(1).min(500);
+
+    let rows = sqlx::query(
+        "SELECT s.id, s.sale_no, s.created_at, u.username, c.name,
+                (SELECT COUNT(*) FROM sale_items si WHERE si.sale_id = s.id) AS item_count,
+                s.total, s.paid_amount, s.status, s.void_reason
+         FROM sales s
+         LEFT JOIN users u ON u.id = s.user_id
+         LEFT JOIN customers c ON c.id = s.customer_id
+         WHERE (? IS NULL OR s.status = ?)
+         ORDER BY s.id DESC
+         LIMIT ?",
+    )
+    .bind(&input.status)
+    .bind(&input.status)
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let mut out = Vec::with_capacity(rows.len());
+    for row in rows {
+        out.push(SaleRecord {
+            id: row.try_get("id").map_err(|e| e.to_string())?,
+            sale_no: row.try_get("sale_no").map_err(|e| e.to_string())?,
+            created_at: row.try_get("created_at").map_err(|e| e.to_string())?,
+            user_name: row.try_get("username").map_err(|e| e.to_string())?,
+            customer_name: row.try_get("name").map_err(|e| e.to_string())?,
+            item_count: row.try_get("item_count").map_err(|e| e.to_string())?,
+            total: row.try_get("total").map_err(|e| e.to_string())?,
+            paid_amount: row.try_get("paid_amount").map_err(|e| e.to_string())?,
+            status: row.try_get("status").map_err(|e| e.to_string())?,
+            void_reason: row.try_get("void_reason").map_err(|e| e.to_string())?,
+        });
+    }
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -702,5 +907,231 @@ mod tests {
         assert_eq!(first.sale_no, "S-000001");
         assert_eq!(second.sale_no, "S-000002");
         assert_ne!(first.sale_id, second.sale_id);
+    }
+
+    #[tokio::test]
+    async fn void_sale_restores_stock_and_marks_voided() {
+        let pool = mem_pool().await;
+        sample_product(&pool, 1, "Coffee", 20.0, 5.0).await;
+
+        let sale = insert_sale(
+            &pool,
+            CreateSaleInput {
+                items: vec![item(1, 2.0, 5.0, 0.0)],
+                payments: vec![SalePaymentInput {
+                    method: "cash".into(),
+                    amount: 10.0,
+                    reference: None,
+                    customer_id: None,
+                }],
+                discount: 0.0,
+                tax: 0.0,
+                user_id: Some(1),
+                customer_id: None,
+            },
+        )
+        .await
+        .unwrap();
+        assert!((stock_of(&pool, 1).await - 18.0).abs() < 0.001);
+
+        reverse_sale(
+            &pool,
+            VoidSaleInput {
+                sale_id: sale.sale_id,
+                reason: "Damaged goods".into(),
+                user_id: Some(1),
+            },
+        )
+        .await
+        .unwrap();
+
+        let row: (String, String, Option<String>, i64) = sqlx::query_as(
+            "SELECT sale_no, status, void_reason, voided_by FROM sales WHERE id = ?",
+        )
+        .bind(sale.sale_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(row.0, "S-000001");
+        assert_eq!(row.1, "voided");
+        assert_eq!(row.2.as_deref(), Some("Damaged goods"));
+        assert_eq!(row.3, 1);
+
+        // Stock restored.
+        assert!((stock_of(&pool, 1).await - 20.0).abs() < 0.001);
+
+        // A positive reversal movement was recorded.
+        let mv: (String, f64) = sqlx::query_as(
+            "SELECT type, qty FROM stock_movements WHERE ref_id = ? AND type = 'sale_void_in'",
+        )
+        .bind(sale.sale_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(mv.0, "sale_void_in");
+        assert!((mv.1 - 2.0).abs() < 0.001);
+
+        let audit: (String,) =
+            sqlx::query_as("SELECT action FROM audit_log WHERE entity_id = ? AND action = 'sale.void'")
+                .bind(sale.sale_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(audit.0, "sale.void");
+
+        // Voiding an already-voided sale must fail.
+        let err = reverse_sale(
+            &pool,
+            VoidSaleInput {
+                sale_id: sale.sale_id,
+                reason: "Again".into(),
+                user_id: Some(1),
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(err.contains("Only completed"));
+    }
+
+    #[tokio::test]
+    async fn void_sale_rejects_missing_reason_and_reverses_credit() {
+        let pool = mem_pool().await;
+        sample_product(&pool, 1, "Coffee", 20.0, 5.0).await;
+        sample_customer(&pool, 1, "Alice").await;
+
+        let sale = insert_sale(
+            &pool,
+            CreateSaleInput {
+                items: vec![item(1, 1.0, 5.0, 0.0)],
+                payments: vec![SalePaymentInput {
+                    method: "credit".into(),
+                    amount: 5.0,
+                    reference: None,
+                    customer_id: Some(1),
+                }],
+                discount: 0.0,
+                tax: 0.0,
+                user_id: Some(1),
+                customer_id: None,
+            },
+        )
+        .await
+        .unwrap();
+        assert!((balance_of(&pool, 1).await - 5.0).abs() < 0.001);
+
+        // Missing reason is rejected and leaves the sale untouched.
+        let err = reverse_sale(
+            &pool,
+            VoidSaleInput {
+                sale_id: sale.sale_id,
+                reason: "   ".into(),
+                user_id: Some(1),
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(err.contains("reason"));
+        let status: (String,) = sqlx::query_as("SELECT status FROM sales WHERE id = ?")
+            .bind(sale.sale_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(status.0, "completed");
+
+        // Voiding reverses the customer's balance.
+        reverse_sale(
+            &pool,
+            VoidSaleInput {
+                sale_id: sale.sale_id,
+                reason: "Customer changed their mind".into(),
+                user_id: Some(1),
+            },
+        )
+        .await
+        .unwrap();
+        assert!((balance_of(&pool, 1).await - 0.0).abs() < 0.001);
+
+        let ledger: (String, f64, f64) = sqlx::query_as(
+            "SELECT type, amount, balance_after FROM customer_ledger WHERE customer_id = 1 AND type = 'reversal'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(ledger.0, "reversal");
+        assert!((ledger.1 + 5.0).abs() < 0.001);
+        assert!((ledger.2 - 0.0).abs() < 0.001);
+    }
+
+    #[tokio::test]
+    async fn list_sales_returns_records_and_filters() {
+        let pool = mem_pool().await;
+        sample_product(&pool, 1, "Coffee", 100.0, 5.0).await;
+
+        let sale = insert_sale(
+            &pool,
+            CreateSaleInput {
+                items: vec![item(1, 1.0, 5.0, 0.0)],
+                payments: vec![SalePaymentInput {
+                    method: "cash".into(),
+                    amount: 5.0,
+                    reference: None,
+                    customer_id: None,
+                }],
+                discount: 0.0,
+                tax: 0.0,
+                user_id: Some(1),
+                customer_id: None,
+            },
+        )
+        .await
+        .unwrap();
+        reverse_sale(
+            &pool,
+            VoidSaleInput {
+                sale_id: sale.sale_id,
+                reason: "Test void".into(),
+                user_id: Some(1),
+            },
+        )
+        .await
+        .unwrap();
+
+        let all = query_sales(&pool, ListSalesInput { status: None, limit: None })
+            .await
+            .unwrap();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].sale_no, "S-000001");
+        assert_eq!(all[0].status, "voided");
+        assert_eq!(all[0].item_count, 1);
+        assert_eq!(all[0].void_reason.as_deref(), Some("Test void"));
+
+        let completed = query_sales(
+            &pool,
+            ListSalesInput {
+                status: Some("completed".into()),
+                limit: None,
+            },
+        )
+        .await
+        .unwrap();
+        assert!(completed.is_empty());
+    }
+
+    async fn stock_of(pool: &sqlx::SqlitePool, product_id: i64) -> f64 {
+        let row: (f64,) = sqlx::query_as("SELECT stock_qty FROM products WHERE id = ?")
+            .bind(product_id)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        row.0
+    }
+
+    async fn balance_of(pool: &sqlx::SqlitePool, customer_id: i64) -> f64 {
+        let row: (f64,) = sqlx::query_as("SELECT balance FROM customers WHERE id = ?")
+            .bind(customer_id)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        row.0
     }
 }
