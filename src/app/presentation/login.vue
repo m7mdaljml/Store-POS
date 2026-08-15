@@ -17,8 +17,8 @@
           >
             <i class="bi bi-shop"></i>
           </div>
-          <h1 class="h5 mb-1">{{ settings.storeName || "Store POS" }}</h1>
-          <div class="text-muted small">Sign in to continue</div>
+          <h1 class="h5 mb-1">{{ settings.storeName || t("app.storeName") }}</h1>
+          <div class="text-muted small">{{ t("login.subtitle") }}</div>
         </div>
 
         <form @submit.prevent="submit">
@@ -27,7 +27,9 @@
           </div>
 
           <div class="mb-3">
-            <label for="login-username" class="form-label">Username</label>
+            <label for="login-username" class="form-label">
+              {{ t("common.username") }}
+            </label>
             <input
               id="login-username"
               v-model="username"
@@ -39,7 +41,9 @@
           </div>
 
           <div class="mb-4">
-            <label for="login-password" class="form-label">Password</label>
+            <label for="login-password" class="form-label">
+              {{ t("common.password") }}
+            </label>
             <input
               id="login-password"
               v-model="password"
@@ -58,7 +62,7 @@
               v-if="submitting"
               class="spinner-border spinner-border-sm me-2"
             ></span>
-            Sign in
+            {{ t("login.signIn") }}
           </button>
         </form>
       </div>
@@ -69,10 +73,12 @@
 <script setup lang="ts">
 import { ref } from "vue";
 import { useRouter } from "vue-router";
+import { useI18n } from "vue-i18n";
 import { useAuth } from "../../composables/useAuth";
 import { useSettingsStore } from "../../stores/settings";
 
 const router = useRouter();
+const { t } = useI18n();
 const auth = useAuth();
 const settings = useSettingsStore();
 
@@ -84,7 +90,7 @@ const submitting = ref(false);
 async function submit() {
   error.value = "";
   if (!username.value || !password.value) {
-    error.value = "Enter your username and password";
+    error.value = t("login.required");
     return;
   }
   submitting.value = true;

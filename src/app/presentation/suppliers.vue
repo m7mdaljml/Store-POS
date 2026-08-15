@@ -1,9 +1,9 @@
 <template>
   <div>
     <div class="d-flex align-items-center justify-content-between mb-3">
-      <h1 class="h4 mb-0">Suppliers</h1>
+      <h1 class="h4 mb-0">{{ t("suppliers.title") }}</h1>
       <button class="btn btn-primary" type="button" @click="openAdd">
-        <i class="bi bi-plus-lg me-1"></i>Add Supplier
+        <i class="bi bi-plus-lg me-1"></i>{{ t("suppliers.addSupplier") }}
       </button>
     </div>
 
@@ -20,30 +20,30 @@
           v-model="search"
           class="form-control form-control-sm"
           type="search"
-          placeholder="Search by name, contact, phone, email, address or tax ID…"
+          :placeholder="t('suppliers.searchPlaceholder')"
         />
       </div>
       <div class="table-responsive">
         <table class="table align-middle mb-0">
           <thead>
             <tr>
-              <th>Supplier</th>
-              <th>Contact</th>
-              <th>Phone</th>
-              <th>Tax ID</th>
-              <th class="text-end">Invoices</th>
-              <th class="text-end">Total purchased</th>
-              <th class="text-end">Amount due</th>
-              <th class="text-end">Actions</th>
+              <th>{{ t("suppliers.supplier") }}</th>
+              <th>{{ t("suppliers.contact") }}</th>
+              <th>{{ t("suppliers.phone") }}</th>
+              <th>{{ t("suppliers.taxId") }}</th>
+              <th class="text-end">{{ t("common.invoices") }}</th>
+              <th class="text-end">{{ t("suppliers.totalPurchased") }}</th>
+              <th class="text-end">{{ t("suppliers.amountDue") }}</th>
+              <th class="text-end">{{ t("common.actions") }}</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="loading">
-              <td colspan="8" class="text-center text-muted py-4">Loading…</td>
+              <td colspan="8" class="text-center text-muted py-4">{{ t("common.loading") }}</td>
             </tr>
             <tr v-else-if="!filteredSuppliers.length">
               <td colspan="8" class="text-center text-muted py-4">
-                No suppliers yet — click "Add Supplier" to create one
+                {{ t("suppliers.noSuppliers") }}
               </td>
             </tr>
             <tr v-for="s in filteredSuppliers" :key="s.id">
@@ -63,7 +63,7 @@
                 <button
                   class="btn btn-sm btn-outline-secondary me-1"
                   type="button"
-                  title="View details"
+                  :title="t('suppliers.viewDetailsTitle')"
                   @click="openDetail(s)"
                 >
                   <i class="bi bi-eye"></i>
@@ -71,7 +71,7 @@
                 <button
                   class="btn btn-sm btn-outline-primary me-1"
                   type="button"
-                  title="Edit"
+                  :title="t('common.edit')"
                   @click="openEdit(s)"
                 >
                   <i class="bi bi-pencil-square"></i>
@@ -79,7 +79,7 @@
                 <button
                   class="btn btn-sm btn-outline-danger"
                   type="button"
-                  title="Delete"
+                  :title="t('common.delete')"
                   @click="remove(s)"
                 >
                   <i class="bi bi-trash"></i>
@@ -97,7 +97,9 @@
         <div class="modal-content">
           <form @submit.prevent="save">
             <div class="modal-header">
-              <h5 class="modal-title">{{ editingId == null ? "Add Supplier" : "Edit Supplier" }}</h5>
+              <h5 class="modal-title">
+                {{ editingId == null ? t("suppliers.addSupplierTitle") : t("suppliers.editSupplierTitle") }}
+              </h5>
               <button type="button" class="btn-close" @click="showModal = false"></button>
             </div>
             <div class="modal-body">
@@ -105,7 +107,7 @@
                 <i class="bi bi-exclamation-triangle me-1"></i>{{ formError }}
               </div>
               <div class="mb-3">
-                <label class="form-label" for="s-name">Name *</label>
+                <label class="form-label" for="s-name">{{ t("suppliers.nameRequired") }}</label>
                 <input
                   id="s-name"
                   v-model="form.name"
@@ -116,21 +118,21 @@
                 />
               </div>
               <div class="mb-3">
-                <label class="form-label" for="s-contact">Contact person</label>
+                <label class="form-label" for="s-contact">{{ t("suppliers.contactPerson") }}</label>
                 <input id="s-contact" v-model="form.contact" class="form-control" type="text" />
               </div>
               <div class="row g-3">
                 <div class="col-md-6">
-                  <label class="form-label" for="s-phone">Phone</label>
+                  <label class="form-label" for="s-phone">{{ t("suppliers.phone") }}</label>
                   <input id="s-phone" v-model="form.phone" class="form-control" type="text" />
                 </div>
                 <div class="col-md-6">
-                  <label class="form-label" for="s-email">Email</label>
+                  <label class="form-label" for="s-email">{{ t("suppliers.email") }}</label>
                   <input id="s-email" v-model="form.email" class="form-control" type="email" />
                 </div>
               </div>
               <div class="mt-3 mb-3">
-                <label class="form-label" for="s-address">Address</label>
+                <label class="form-label" for="s-address">{{ t("suppliers.address") }}</label>
                 <textarea
                   id="s-address"
                   v-model="form.address"
@@ -139,17 +141,17 @@
                 ></textarea>
               </div>
               <div class="mb-0">
-                <label class="form-label" for="s-tax">Tax ID</label>
+                <label class="form-label" for="s-tax">{{ t("suppliers.taxId") }}</label>
                 <input id="s-tax" v-model="form.taxId" class="form-control" type="text" />
               </div>
             </div>
             <div class="modal-footer">
               <button type="button" class="btn btn-outline-secondary" @click="showModal = false">
-                Cancel
+                {{ t("common.cancel") }}
               </button>
               <button type="submit" class="btn btn-primary" :disabled="saving">
                 <span v-if="saving" class="spinner-border spinner-border-sm me-2"></span>
-                {{ editingId == null ? "Add" : "Save" }}
+                {{ editingId == null ? t("common.add") : t("common.save") }}
               </button>
             </div>
           </form>
@@ -162,11 +164,11 @@
       <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content">
           <div class="modal-header">
-            <h5 class="modal-title">Supplier — {{ detail?.supplier.name }}</h5>
+            <h5 class="modal-title">{{ t("suppliers.supplierDetailTitle", { name: detail?.supplier.name }) }}</h5>
             <button type="button" class="btn-close" @click="detail = null"></button>
           </div>
           <div class="modal-body">
-            <div v-if="detailLoading" class="text-center text-muted py-4">Loading…</div>
+            <div v-if="detailLoading" class="text-center text-muted py-4">{{ t("common.loading") }}</div>
             <div v-else-if="detailError" class="alert alert-danger py-2 small" role="alert">
               <i class="bi bi-exclamation-triangle me-1"></i>{{ detailError }}
             </div>
@@ -174,30 +176,30 @@
               <div class="row g-3 mb-3">
                 <div class="col-md-6">
                   <div class="detail-item">
-                    <span class="detail-label">Contact</span>
+                    <span class="detail-label">{{ t("suppliers.contact") }}</span>
                     <span>{{ detail.supplier.contact ?? "—" }}</span>
                   </div>
                   <div class="detail-item">
-                    <span class="detail-label">Phone</span>
+                    <span class="detail-label">{{ t("suppliers.phone") }}</span>
                     <span>{{ detail.supplier.phone ?? "—" }}</span>
                   </div>
                   <div class="detail-item">
-                    <span class="detail-label">Email</span>
+                    <span class="detail-label">{{ t("suppliers.email") }}</span>
                     <span>{{ detail.supplier.email ?? "—" }}</span>
                   </div>
                 </div>
                 <div class="col-md-6">
                   <div class="detail-item">
-                    <span class="detail-label">Address</span>
+                    <span class="detail-label">{{ t("suppliers.address") }}</span>
                     <span>{{ detail.supplier.address ?? "—" }}</span>
                   </div>
                   <div class="detail-item">
-                    <span class="detail-label">Tax ID</span>
+                    <span class="detail-label">{{ t("suppliers.taxId") }}</span>
                     <span>{{ detail.supplier.tax_id ?? "—" }}</span>
                   </div>
                   <div class="detail-item">
-                    <span class="detail-label">Member since</span>
-                    <span>{{ new Date(detail.supplier.created_at + "Z").toLocaleDateString() }}</span>
+                    <span class="detail-label">{{ t("suppliers.memberSince") }}</span>
+                    <span>{{ dateLabel(detail.supplier.created_at) }}</span>
                   </div>
                 </div>
               </div>
@@ -205,19 +207,19 @@
               <div class="row g-3 mb-3">
                 <div class="col">
                   <div class="card text-center p-3">
-                    <div class="text-muted small text-uppercase">Invoices</div>
+                    <div class="text-muted small text-uppercase">{{ t("common.invoices") }}</div>
                     <div class="fs-5 fw-semibold">{{ detail.supplier.invoice_count }}</div>
                   </div>
                 </div>
                 <div class="col">
                   <div class="card text-center p-3">
-                    <div class="text-muted small text-uppercase">Total purchased</div>
+                    <div class="text-muted small text-uppercase">{{ t("suppliers.totalPurchased") }}</div>
                     <div class="fs-5 fw-semibold">{{ fmt(detail.supplier.total_purchased) }}</div>
                   </div>
                 </div>
                 <div class="col">
                   <div class="card text-center p-3">
-                    <div class="text-muted small text-uppercase">Amount due</div>
+                    <div class="text-muted small text-uppercase">{{ t("suppliers.amountDue") }}</div>
                     <div
                       class="fs-5 fw-semibold"
                       :class="detail.supplier.total_due > 0 ? 'text-danger' : ''"
@@ -228,20 +230,20 @@
                 </div>
               </div>
 
-              <div class="fw-semibold small text-muted text-uppercase mb-2">Recent invoices</div>
+              <div class="fw-semibold small text-muted text-uppercase mb-2">{{ t("suppliers.recentInvoices") }}</div>
               <div v-if="!detail.invoices.length" class="text-muted small py-2">
-                No invoices yet for this supplier.
+                {{ t("suppliers.noInvoicesYet") }}
               </div>
               <div v-else class="table-responsive">
                 <table class="table table-sm align-middle mb-0">
                   <thead>
                     <tr>
-                      <th>Invoice</th>
-                      <th>Date</th>
-                      <th class="text-end">Total</th>
-                      <th class="text-end">Paid</th>
-                      <th class="text-end">Due</th>
-                      <th>Status</th>
+                      <th>{{ t("purchases.invoice") }}</th>
+                      <th>{{ t("common.date") }}</th>
+                      <th class="text-end">{{ t("common.total") }}</th>
+                      <th class="text-end">{{ t("common.paid") }}</th>
+                      <th class="text-end">{{ t("common.due") }}</th>
+                      <th>{{ t("common.status") }}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -253,7 +255,7 @@
                       <td class="text-end">{{ fmt(inv.due_amount) }}</td>
                       <td>
                         <span class="badge" :class="statusBadge(inv.status)">
-                          {{ inv.status }}
+                          {{ statusLabel(inv.status) }}
                         </span>
                       </td>
                     </tr>
@@ -271,10 +273,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
+import { useI18n } from "vue-i18n";
 import { useSettingsStore } from "../../stores/settings";
 import type { Supplier, SupplierDetail } from "../../types";
 
 const settings = useSettingsStore();
+const { t, locale } = useI18n();
 
 const suppliers = ref<Supplier[]>([]);
 const search = ref("");
@@ -301,11 +305,18 @@ const detailError = ref("");
 
 function fmt(n: number): string {
   if (!settings.currency) return n.toFixed(2);
-  return new Intl.NumberFormat(undefined, {
+  return new Intl.NumberFormat(locale.value, {
     style: "currency",
     currency: settings.currency,
     currencyDisplay: "narrowSymbol",
   }).format(n);
+}
+
+function dateLabel(iso: string): string {
+  const d = new Date(iso + "Z");
+  return Number.isNaN(d.getTime())
+    ? iso
+    : d.toLocaleDateString(locale.value);
 }
 
 const filteredSuppliers = computed(() => {
@@ -366,9 +377,9 @@ function openEdit(s: Supplier) {
 }
 
 function validate(): string {
-  if (!form.value.name.trim()) return "Supplier name is required";
+  if (!form.value.name.trim()) return t("suppliers.supplierNameRequired");
   if (form.value.email.trim() && !form.value.email.trim().includes("@"))
-    return "Enter a valid email address";
+    return t("suppliers.emailInvalid");
   return "";
 }
 
@@ -394,10 +405,10 @@ async function save() {
   try {
     if (editingId.value == null) {
       await invoke<number>("create_supplier", { input: payload() });
-      notice.value = "Supplier added";
+      notice.value = t("suppliers.supplierAdded");
     } else {
       await invoke("update_supplier", { supplierId: editingId.value, input: payload() });
-      notice.value = "Supplier updated";
+      notice.value = t("suppliers.supplierUpdated");
     }
     showModal.value = false;
     await load();
@@ -423,16 +434,24 @@ async function openDetail(s: Supplier) {
 
 async function remove(s: Supplier) {
   error.value = "";
-  const msg =
-    `Delete supplier "${s.name}"?\n\n` +
-    "This cannot be undone. Suppliers with invoices on record cannot be deleted.";
-  if (!window.confirm(msg)) return;
+  if (!window.confirm(t("suppliers.deleteSupplierConfirm", { name: s.name }))) return;
   try {
     await invoke("delete_supplier", { supplierId: s.id });
-    notice.value = `"${s.name}" deleted`;
+    notice.value = t("suppliers.supplierDeleted", { name: s.name });
     await load();
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e);
+  }
+}
+
+function statusLabel(status: string): string {
+  switch (status) {
+    case "paid":
+      return t("purchases.settled");
+    case "partial":
+      return t("expenses.partial");
+    default:
+      return t("expenses.unpaid");
   }
 }
 

@@ -2,18 +2,18 @@
   <div class="page-container">
     <div class="page-heading d-flex flex-wrap align-items-center gap-3">
       <div>
-        <h2 class="mb-0">Sales</h2>
-        <span class="text-muted small">Completed and voided transactions</span>
+        <h2 class="mb-0">{{ t("sales.title") }}</h2>
+        <span class="text-muted small">{{ t("sales.subtitle") }}</span>
       </div>
       <div class="ms-auto d-flex align-items-center gap-2">
-        <div class="btn-group btn-group-sm" role="group" aria-label="Filter by status">
+        <div class="btn-group btn-group-sm" role="group" :aria-label="t('sales.filterStatusAria')">
           <button
             type="button"
             class="btn btn-outline-secondary"
             :class="{ active: filter === '' }"
             @click="filter = ''"
           >
-            All
+            {{ t("common.all") }}
           </button>
           <button
             type="button"
@@ -21,7 +21,7 @@
             :class="{ active: filter === 'completed' }"
             @click="filter = 'completed'"
           >
-            Completed
+            {{ t("sales.completed") }}
           </button>
           <button
             type="button"
@@ -29,11 +29,11 @@
             :class="{ active: filter === 'voided' }"
             @click="filter = 'voided'"
           >
-            Voided
+            {{ t("sales.voided") }}
           </button>
         </div>
         <button class="btn btn-sm btn-outline-primary" type="button" @click="load">
-          <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+          <i class="bi bi-arrow-clockwise me-1"></i>{{ t("common.refresh") }}
         </button>
       </div>
     </div>
@@ -51,24 +51,24 @@
           <thead>
             <tr>
               <th>#</th>
-              <th>Sale No</th>
-              <th>Date</th>
-              <th>Cashier</th>
-              <th>Customer</th>
-              <th class="text-end">Items</th>
-              <th class="text-end">Total</th>
-              <th>Status</th>
+              <th>{{ t("sales.saleNo") }}</th>
+              <th>{{ t("common.date") }}</th>
+              <th>{{ t("common.cashier") }}</th>
+              <th>{{ t("common.customer") }}</th>
+              <th class="text-end">{{ t("sales.items") }}</th>
+              <th class="text-end">{{ t("common.total") }}</th>
+              <th>{{ t("common.status") }}</th>
               <th></th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="loading">
               <td colspan="9" class="text-center py-4 text-muted">
-                <span class="spinner-border spinner-border-sm me-2" role="status"></span>Loading…
+                <span class="spinner-border spinner-border-sm me-2" role="status"></span>{{ t("common.loading") }}
               </td>
             </tr>
             <tr v-else-if="!filteredSales.length">
-              <td colspan="9" class="text-center py-4 text-muted">No sales found</td>
+              <td colspan="9" class="text-center py-4 text-muted">{{ t("sales.noSales") }}</td>
             </tr>
             <tr v-for="sale in filteredSales" :key="sale.id">
               <td class="text-muted">{{ sale.id }}</td>
@@ -83,7 +83,7 @@
                   class="badge"
                   :class="sale.status === 'voided' ? 'text-bg-danger' : 'text-bg-success'"
                 >
-                  {{ sale.status }}
+                  {{ sale.status === "voided" ? t("sales.voided") : t("sales.completed") }}
                 </span>
               </td>
               <td class="text-end">
@@ -92,7 +92,7 @@
                   class="btn btn-sm btn-outline-secondary me-1"
                   type="button"
                   :disabled="printingId != null"
-                  title="Print receipt"
+                  :title="t('sales.printReceiptTitle')"
                   @click="reprintReceipt(sale)"
                 >
                   <span
@@ -100,7 +100,7 @@
                     class="spinner-border spinner-border-sm"
                     role="status"
                   ></span>
-                  <i v-else class="bi bi-printer me-1"></i>Receipt
+                  <i v-else class="bi bi-printer me-1"></i>{{ t("sales.receipt") }}
                 </button>
                 <button
                   v-if="sale.status === 'completed' && openVoid"
@@ -108,7 +108,7 @@
                   type="button"
                   @click="openVoidModal(sale)"
                 >
-                  <i class="bi bi-x-circle me-1"></i>Void
+                  <i class="bi bi-x-circle me-1"></i>{{ t("sales.void") }}
                 </button>
                 <span v-else-if="sale.voidReason" class="text-muted small" :title="sale.voidReason">
                   {{ sale.voidReason }}
@@ -130,26 +130,25 @@
       <div class="modal-dialog" role="document">
         <div class="modal-content">
           <div class="modal-header">
-            <h5 class="modal-title">Void sale {{ voidTarget.saleNo }}</h5>
+            <h5 class="modal-title">{{ t("sales.voidSaleTitle", { saleNo: voidTarget.saleNo }) }}</h5>
             <button
               type="button"
               class="btn-close"
-              aria-label="Close"
+              :aria-label="t('common.close')"
               @click="voidTarget = null"
             ></button>
           </div>
           <div class="modal-body">
             <p class="small mb-2">
-              Voiding <strong>{{ voidTarget.saleNo }}</strong> ({{ fmt(voidTarget.total) }})
-              restores stock to shelves and reverses any customer credit. This cannot be undone.
+              {{ t("sales.voidBody", { saleNo: voidTarget.saleNo, total: fmt(voidTarget.total) }) }}
             </p>
-            <label class="form-label" for="void-reason">Reason</label>
+            <label class="form-label" for="void-reason">{{ t("common.reason") }}</label>
             <textarea
               id="void-reason"
               v-model="voidReason"
               class="form-control"
               rows="3"
-              placeholder="e.g. Customer returned item, damaged goods…"
+              :placeholder="t('sales.voidReasonPlaceholder')"
             ></textarea>
             <div v-if="voidError" class="alert alert-warning py-1 px-2 mt-2 small" role="alert">
               {{ voidError }}
@@ -162,7 +161,7 @@
               :disabled="voiding"
               @click="voidTarget = null"
             >
-              Cancel
+              {{ t("common.cancel") }}
             </button>
             <button
               type="button"
@@ -171,7 +170,7 @@
               @click="confirmVoid"
             >
               <span v-if="voiding" class="spinner-border spinner-border-sm me-2" role="status"></span>
-              <i v-else class="bi bi-x-circle me-1"></i>Void sale
+              <i v-else class="bi bi-x-circle me-1"></i>{{ t("sales.voidConfirm") }}
             </button>
           </div>
         </div>
@@ -183,6 +182,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
+import { useI18n } from "vue-i18n";
 import { useSettingsStore } from "../../stores/settings";
 import { useAuth } from "../../composables/useAuth";
 import { buildReceiptHtml, printReceipt } from "../../lib/receipt";
@@ -190,6 +190,7 @@ import type { SaleReceipt, SaleRecord } from "../../types";
 
 const settings = useSettingsStore();
 const auth = useAuth();
+const { t, locale } = useI18n();
 
 const sales = ref<SaleRecord[]>([]);
 const loading = ref(false);
@@ -205,7 +206,7 @@ const printingId = ref<number | null>(null);
 
 function fmt(n: number): string {
   if (!settings.currency) return n.toFixed(2);
-  return new Intl.NumberFormat(undefined, {
+  return new Intl.NumberFormat(locale.value, {
     style: "currency",
     currency: settings.currency,
     currencyDisplay: "narrowSymbol",
@@ -215,7 +216,7 @@ function fmt(n: number): string {
 function dateLabel(d: string): string {
   const date = new Date(d + (d.includes("T") ? "" : "Z"));
   if (isNaN(date.getTime())) return d;
-  return date.toLocaleString();
+  return date.toLocaleString(locale.value);
 }
 
 const filteredSales = computed(() =>
@@ -251,7 +252,7 @@ async function reprintReceipt(sale: SaleRecord) {
     });
     await printReceipt(buildReceiptHtml(receipt));
   } catch (e) {
-    error.value = `Printing failed: ${String(e)}`;
+    error.value = t("sales.printingFailed", { error: String(e) });
   } finally {
     printingId.value = null;
   }
@@ -260,7 +261,7 @@ async function reprintReceipt(sale: SaleRecord) {
 async function confirmVoid() {
   if (!voidTarget.value) return;
   if (!voidReason.value.trim()) {
-    voidError.value = "Enter a reason for voiding this sale";
+    voidError.value = t("sales.reasonRequired");
     return;
   }
   voiding.value = true;
@@ -273,7 +274,7 @@ async function confirmVoid() {
         userId: auth.user?.id ?? null,
       },
     });
-    notice.value = `Sale ${voidTarget.value.saleNo} voided. Stock and any customer credit have been reversed.`;
+    notice.value = t("sales.saleVoided", { saleNo: voidTarget.value.saleNo });
     voidTarget.value = null;
     await load();
   } catch (e) {

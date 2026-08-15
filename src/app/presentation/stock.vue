@@ -1,9 +1,9 @@
 <template>
   <div>
     <div class="d-flex align-items-center justify-content-between mb-3">
-      <h1 class="h4 mb-0">Stock Movements</h1>
+      <h1 class="h4 mb-0">{{ t("stock.title") }}</h1>
       <button class="btn btn-primary" type="button" @click="openAdjust">
-        <i class="bi bi-plus-lg me-1"></i>New Adjustment
+        <i class="bi bi-plus-lg me-1"></i>{{ t("stock.newAdjustment") }}
       </button>
     </div>
 
@@ -17,15 +17,17 @@
     <div class="card">
       <div class="p-2 border-bottom d-flex gap-2">
         <select v-model="typeFilter" class="form-select form-select-sm" style="width: auto">
-          <option value="all">All types</option>
-          <option v-for="(label, key) in TYPE_LABELS" :key="key" :value="key">{{ label }}</option>
+          <option value="all">{{ t("stock.allTypes") }}</option>
+          <option v-for="key in TYPE_ORDER" :key="key" :value="key">
+            {{ t("stock.typeLabels." + key) }}
+          </option>
         </select>
         <select
           v-model="productFilter"
           class="form-select form-select-sm"
           style="width: auto; max-width: 260px"
         >
-          <option :value="null">All products</option>
+          <option :value="null">{{ t("stock.allProducts") }}</option>
           <option v-for="p in catalog.products" :key="p.id" :value="p.id">{{ p.name }}</option>
         </select>
       </div>
@@ -33,21 +35,21 @@
         <table class="table align-middle mb-0">
           <thead>
             <tr>
-              <th>Date</th>
-              <th>Product</th>
-              <th>Type</th>
-              <th class="text-end">Qty</th>
-              <th>Notes</th>
-              <th>By</th>
+              <th>{{ t("common.date") }}</th>
+              <th>{{ t("common.product") }}</th>
+              <th>{{ t("stock.type") }}</th>
+              <th class="text-end">{{ t("stock.qty") }}</th>
+              <th>{{ t("common.notes") }}</th>
+              <th>{{ t("stock.by") }}</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="loading">
-              <td colspan="6" class="text-center text-muted py-4">Loading…</td>
+              <td colspan="6" class="text-center text-muted py-4">{{ t("common.loading") }}</td>
             </tr>
             <tr v-else-if="!filtered.length">
               <td colspan="6" class="text-center text-muted py-4">
-                No stock movements yet — use "New Adjustment" to adjust stock
+                {{ t("stock.noMovements") }}
               </td>
             </tr>
             <tr v-for="m in filtered" :key="m.id">
@@ -78,7 +80,7 @@
         <div class="modal-content">
           <form @submit.prevent="saveAdjust">
             <div class="modal-header">
-              <h5 class="modal-title">Adjust Stock</h5>
+              <h5 class="modal-title">{{ t("stock.adjustTitle") }}</h5>
               <button type="button" class="btn-close" @click="showModal = false"></button>
             </div>
             <div class="modal-body">
@@ -86,24 +88,24 @@
                 <i class="bi bi-exclamation-triangle me-1"></i>{{ adjustError }}
               </div>
               <div class="mb-3">
-                <label class="form-label" for="a-product">Product</label>
+                <label class="form-label" for="a-product">{{ t("common.product") }}</label>
                 <select
                   id="a-product"
                   v-model="selectedProductId"
                   class="form-select"
                 >
                   <option v-for="p in catalog.products" :key="p.id" :value="p.id">
-                    {{ p.name }} ({{ p.stock_qty }} in stock)
+                    {{ p.name }} ({{ p.stock_qty }} {{ t("stock.inStock") }})
                   </option>
                 </select>
               </div>
               <div class="row g-3">
                 <div class="col-6">
-                  <label class="form-label">Current stock</label>
+                  <label class="form-label">{{ t("stock.currentStock") }}</label>
                   <input class="form-control" type="text" :value="currentStock + ' ' + (selectedProduct?.unit ?? '')" disabled />
                 </div>
                 <div class="col-6">
-                  <label class="form-label" for="a-new">New total</label>
+                  <label class="form-label" for="a-new">{{ t("stock.newStockTotal") }}</label>
                   <input
                     id="a-new"
                     v-model.number="adjustNew"
@@ -116,16 +118,16 @@
                 </div>
               </div>
               <div class="mt-3">
-                <label class="form-label" for="a-notes">Reason (optional)</label>
+                <label class="form-label" for="a-notes">{{ t("stock.reasonOptional") }}</label>
                 <input
                   id="a-notes"
                   v-model="adjustNotes"
                   class="form-control"
                   type="text"
-                  placeholder="e.g. Damaged stock, inventory count…"
+                  :placeholder="t('stock.reasonPlaceholder')"
                 />
                 <div v-if="delta !== 0" class="form-text">
-                  Change:
+                  {{ t("stock.change") }}:
                   <span :class="delta > 0 ? 'text-success' : 'text-danger'">
                     {{ delta > 0 ? "+" : "" }}{{ delta }}
                   </span>
@@ -134,7 +136,7 @@
             </div>
             <div class="modal-footer">
               <button type="button" class="btn btn-secondary" @click="showModal = false">
-                Cancel
+                {{ t("common.cancel") }}
               </button>
               <button type="submit" class="btn btn-primary" :disabled="saving">
                 <span
@@ -143,7 +145,7 @@
                   role="status"
                   aria-hidden="true"
                 ></span>
-                Save Adjustment
+                {{ t("stock.saveAdjustment") }}
               </button>
             </div>
           </form>
@@ -156,6 +158,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
+import { useI18n } from "vue-i18n";
 import { useCatalogStore } from "../../stores/catalog";
 import { useAuth } from "../../composables/useAuth";
 
@@ -172,6 +175,7 @@ interface StockMovement {
 
 const catalog = useCatalogStore();
 const auth = useAuth();
+const { t } = useI18n();
 
 const movements = ref<StockMovement[]>([]);
 const loading = ref(false);
@@ -180,6 +184,8 @@ const notice = ref("");
 
 const typeFilter = ref<"all" | string>("all");
 const productFilter = ref<number | null>(null);
+
+const TYPE_ORDER = ["opening", "adjustment", "purchase_in", "sale_out", "void"];
 
 const TYPE_LABELS: Record<string, string> = {
   opening: "Opening",
@@ -197,8 +203,9 @@ const TYPE_BADGES: Record<string, string> = {
   void: "text-bg-danger",
 };
 
-const typeLabel = (t: string) => TYPE_LABELS[t] ?? t;
-const typeBadge = (t: string) => TYPE_BADGES[t] ?? "text-bg-secondary";
+const typeLabel = (key: string) =>
+  key in TYPE_LABELS ? t("stock.typeLabels." + key) : key;
+const typeBadge = (key: string) => TYPE_BADGES[key] ?? "text-bg-secondary";
 
 const filtered = computed(() =>
   movements.value.filter((m) => {
@@ -251,15 +258,15 @@ async function saveAdjust() {
   adjustError.value = "";
   const product = selectedProduct.value;
   if (!product) {
-    adjustError.value = "Select a product";
+    adjustError.value = t("stock.selectProduct");
     return;
   }
   if (typeof adjustNew.value !== "number" || isNaN(adjustNew.value) || adjustNew.value < 0) {
-    adjustError.value = "Enter a valid new stock total (0 or more)";
+    adjustError.value = t("stock.invalidNewTotal");
     return;
   }
   if (delta.value === 0) {
-    adjustError.value = "New total is the same as current stock — nothing to change";
+    adjustError.value = t("stock.noChange");
     return;
   }
   saving.value = true;
@@ -271,7 +278,7 @@ async function saveAdjust() {
       userId: auth.user?.id ?? null,
     });
     showModal.value = false;
-    notice.value = `Stock for "${product.name}" adjusted`;
+    notice.value = t("stock.adjusted", { name: product.name });
     await Promise.all([load(), catalog.load()]);
   } catch (e) {
     adjustError.value = e instanceof Error ? e.message : String(e);

@@ -1,13 +1,13 @@
 <template>
   <div>
     <div class="d-flex align-items-center justify-content-between mb-3">
-      <h1 class="h4 mb-0">Products</h1>
+      <h1 class="h4 mb-0">{{ t("products.title") }}</h1>
       <div class="d-flex gap-2">
         <button class="btn btn-outline-primary" type="button" @click="importCsv" :disabled="csvImporting">
-          <i class="bi bi-filetype-csv me-1"></i>Import CSV
+          <i class="bi bi-filetype-csv me-1"></i>{{ t("products.importCsv") }}
         </button>
         <button class="btn btn-primary" type="button" @click="openAddProduct">
-          <i class="bi bi-plus-lg me-1"></i>Add Product
+          <i class="bi bi-plus-lg me-1"></i>{{ t("products.addProduct") }}
         </button>
       </div>
     </div>
@@ -16,14 +16,16 @@
       <div class="d-flex justify-content-between align-items-start">
         <div>
           <i class="bi bi-file-earmark-arrow-up me-1"></i>
-          <strong>{{ csvResult.imported }}</strong> product(s) imported
-          <span v-if="csvResult.errors.length">, <strong>{{ csvResult.errors.length }}</strong> row(s) skipped</span>
+          <strong>{{ t("products.importResult", { imported: csvResult.imported }) }}</strong>
+          <span v-if="csvResult.errors.length">
+            {{ t("products.importRowsSkipped", { count: csvResult.errors.length }) }}
+          </span>
           <ul v-if="csvResult.errors.length" class="mb-0 mt-1 small">
             <li v-for="(e, i) in csvResult.errors.slice(0, 10)" :key="i">
-              Row {{ e.row }}: {{ e.message }}
+              {{ t("products.importRow", { row: e.row }) }}: {{ e.message }}
             </li>
             <li v-if="csvResult.errors.length > 10" class="text-muted">
-              …and {{ csvResult.errors.length - 10 }} more
+              {{ t("products.andMore", { count: csvResult.errors.length - 10 }) }}
             </li>
           </ul>
         </div>
@@ -41,7 +43,7 @@
     <div class="d-flex gap-3 align-items-start">
       <div class="card category-sidebar">
         <button class="btn btn-sm btn-primary w-100" type="button" @click="openAddCategory">
-          <i class="bi bi-plus-lg me-1"></i>Add Category
+          <i class="bi bi-plus-lg me-1"></i>{{ t("products.addCategory") }}
         </button>
         <div class="mt-2">
           <button
@@ -51,7 +53,7 @@
             @click="selected = null"
           >
             <i class="bi bi-box-seam"></i>
-            <span>All Products</span>
+            <span>{{ t("products.allProducts") }}</span>
             <span class="badge text-bg-secondary">{{ catalog.products.length }}</span>
           </button>
           <button
@@ -69,7 +71,7 @@
               <button
                 class="btn btn-sm btn-link p-0 me-1"
                 type="button"
-                title="Edit"
+                :title="t('common.edit')"
                 @click="openEditCategory(c)"
               >
                 <i class="bi bi-pencil"></i>
@@ -77,7 +79,7 @@
               <button
                 class="btn btn-sm btn-link p-0 text-danger"
                 type="button"
-                title="Delete"
+                :title="t('common.delete')"
                 @click="removeCategory(c)"
               >
                 <i class="bi bi-trash"></i>
@@ -85,7 +87,7 @@
             </span>
           </button>
           <div v-if="!categories.length && !loading" class="text-muted small p-2">
-            No categories yet
+            {{ t("products.noCategories") }}
           </div>
         </div>
       </div>
@@ -96,17 +98,17 @@
             v-model="search"
             class="form-control form-control-sm"
             type="search"
-            placeholder="Search by product name, SKU or barcode…"
+            :placeholder="t('products.searchPlaceholder')"
           />
           <select
             v-model="statusFilter"
             class="form-select form-select-sm"
             style="width: auto"
-            aria-label="Filter by status"
+            :aria-label="t('products.filterStatus')"
           >
-            <option value="all">All statuses</option>
-            <option value="active">Active</option>
-            <option value="inactive">Inactive</option>
+            <option value="all">{{ t("products.allStatuses") }}</option>
+            <option value="active">{{ t("common.active") }}</option>
+            <option value="inactive">{{ t("common.inactive") }}</option>
           </select>
         </div>
         <div class="table-responsive">
@@ -114,20 +116,20 @@
             <thead>
               <tr>
                 <th style="width: 52px"></th>
-                <th>Name</th>
-                <th>Category</th>
-                <th>SKU / Barcode</th>
-                <th class="text-end">Cost</th>
-                <th class="text-end">Sell</th>
-                <th class="text-end">Stock</th>
-                <th>Status</th>
-                <th class="text-end">Actions</th>
+                <th>{{ t("common.name") }}</th>
+                <th>{{ t("products.category") }}</th>
+                <th>{{ t("products.skuBarcode") }}</th>
+                <th class="text-end">{{ t("products.cost") }}</th>
+                <th class="text-end">{{ t("products.sell") }}</th>
+                <th class="text-end">{{ t("products.stock") }}</th>
+                <th>{{ t("common.status") }}</th>
+                <th class="text-end">{{ t("common.actions") }}</th>
               </tr>
             </thead>
             <tbody>
               <tr v-if="!filteredProducts.length">
                 <td colspan="9" class="text-center text-muted py-4">
-                  No products yet — click "Add Product" to create one
+                  {{ t("products.noProducts") }}
                 </td>
               </tr>
               <tr v-for="p in filteredProducts" :key="p.id">
@@ -145,7 +147,7 @@
                 <td class="fw-semibold">{{ p.name }}</td>
                 <td class="text-muted">{{ categoryName(p.category_id) }}</td>
                 <td class="text-muted small">
-                  <div v-if="p.sku">SKU: {{ p.sku }}</div>
+                  <div v-if="p.sku">{{ t("products.sku") }}: {{ p.sku }}</div>
                   <div v-if="p.barcode">{{ p.barcode }}</div>
                   <span v-if="!p.sku && !p.barcode">—</span>
                 </td>
@@ -159,7 +161,7 @@
                       type="checkbox"
                       role="switch"
                       :checked="p.is_active === 1"
-                      :title="p.is_active ? 'Active — click to deactivate' : 'Inactive — click to activate'"
+                      :title="p.is_active ? t('products.activeTitle') : t('products.inactiveTitle')"
                       @change="toggleActive(p)"
                     />
                   </div>
@@ -167,22 +169,22 @@
                     class="badge mt-1"
                     :class="p.is_active ? 'text-bg-success' : 'text-bg-secondary'"
                   >
-                    {{ p.is_active ? "Active" : "Inactive" }}
+                    {{ p.is_active ? t("common.active") : t("common.inactive") }}
                   </span>
                 </td>
                 <td class="text-end text-nowrap">
                   <button
                     class="btn btn-sm btn-outline-secondary me-1"
                     type="button"
-                    title="Adjust stock"
+                    :title="t('products.adjustStock')"
                     @click="openAdjust(p)"
                   >
-                    <i class="bi bi-box-arrow-up-down me-1"></i>Stock
+                    <i class="bi bi-box-arrow-up-down me-1"></i>{{ t("products.stock") }}
                   </button>
                   <button
                     class="btn btn-sm btn-outline-primary me-1"
                     type="button"
-                    title="Edit"
+                    :title="t('common.edit')"
                     @click="openEditProduct(p)"
                   >
                     <i class="bi bi-pencil-square"></i>
@@ -190,7 +192,7 @@
                   <button
                     class="btn btn-sm btn-outline-danger"
                     type="button"
-                    title="Delete"
+                    :title="t('common.delete')"
                     @click="removeProduct(p)"
                   >
                     <i class="bi bi-trash"></i>
@@ -209,7 +211,9 @@
         <div class="modal-content">
           <form @submit.prevent="saveProduct">
             <div class="modal-header">
-              <h5 class="modal-title">{{ editingId == null ? "Add Product" : "Edit Product" }}</h5>
+              <h5 class="modal-title">
+                {{ editingId == null ? t("products.addProductTitle") : t("products.editProductTitle") }}
+              </h5>
               <button type="button" class="btn-close" @click="showModal = false"></button>
             </div>
             <div class="modal-body">
@@ -218,7 +222,7 @@
               </div>
               <div class="row g-3">
                 <div class="col-12">
-                  <label class="form-label" for="p-name">Name *</label>
+                  <label class="form-label" for="p-name">{{ t("common.name") }} *</label>
                   <input
                     id="p-name"
                     v-model="form.name"
@@ -230,7 +234,8 @@
                 </div>
                 <div class="col-12">
                   <label class="form-label">
-                    Image <span class="text-muted fw-normal">(optional)</span>
+                    {{ t("products.image") }}
+                    <span class="text-muted fw-normal">{{ t("common.optional") }}</span>
                   </label>
                   <div class="d-flex align-items-center gap-3">
                     <img
@@ -249,10 +254,10 @@
                         @click="pickImage"
                       >
                         <i class="bi bi-folder2-open me-1"></i>
-                        {{ form.imagePath || pendingImage ? "Choose different…" : "Choose image…" }}
+                        {{ form.imagePath || pendingImage ? t("products.chooseDifferent") : t("products.chooseImage") }}
                       </button>
                       <span v-if="pendingImage" class="text-muted small">
-                        Image will be attached when you save.
+                        {{ t("products.imageWillAttach") }}
                       </span>
                       <button
                         v-if="form.imagePath || pendingImage"
@@ -260,17 +265,17 @@
                         type="button"
                         @click="clearImage"
                       >
-                        <i class="bi bi-x-lg me-1"></i>Remove
+                        <i class="bi bi-x-lg me-1"></i>{{ t("common.remove") }}
                       </button>
                     </div>
                   </div>
                 </div>
                 <div class="col-md-6">
-                  <label class="form-label" for="p-sku">SKU</label>
+                  <label class="form-label" for="p-sku">{{ t("products.sku") }}</label>
                   <input id="p-sku" v-model="form.sku" class="form-control" type="text" />
                 </div>
                 <div class="col-md-6">
-                  <label class="form-label" for="p-barcode">Barcode *</label>
+                  <label class="form-label" for="p-barcode">{{ t("products.barcode") }} *</label>
                   <input
                     id="p-barcode"
                     v-model="form.barcode"
@@ -280,7 +285,7 @@
                   />
                 </div>
                 <div class="col-12">
-                  <label class="form-label" for="p-desc">Description</label>
+                  <label class="form-label" for="p-desc">{{ t("products.description") }}</label>
                   <textarea
                     id="p-desc"
                     v-model="form.description"
@@ -289,23 +294,23 @@
                   ></textarea>
                 </div>
                 <div class="col-md-6">
-                  <label class="form-label" for="p-cat">Category</label>
+                  <label class="form-label" for="p-cat">{{ t("products.category") }}</label>
                   <select id="p-cat" v-model="form.categoryId" class="form-select">
-                    <option :value="null">None</option>
+                    <option :value="null">{{ t("common.none") }}</option>
                     <option v-for="c in categories" :key="c.id" :value="c.id">{{ c.name }}</option>
                   </select>
                 </div>
                 <div class="col-md-6">
-                  <label class="form-label" for="p-tax">Tax profile</label>
+                  <label class="form-label" for="p-tax">{{ t("products.taxProfile") }}</label>
                   <select id="p-tax" v-model="form.taxProfileId" class="form-select">
-                    <option :value="null">No tax</option>
+                    <option :value="null">{{ t("products.noTax") }}</option>
                     <option v-for="t in taxProfiles" :key="t.id" :value="t.id">
                       {{ t.name }} ({{ t.rate }}%)
                     </option>
                   </select>
                 </div>
                 <div class="col-md-4">
-                  <label class="form-label" for="p-cost">Cost price *</label>
+                  <label class="form-label" for="p-cost">{{ t("products.costPrice") }} *</label>
                   <input
                     id="p-cost"
                     v-model.number="form.costPrice"
@@ -316,7 +321,7 @@
                   />
                 </div>
                 <div class="col-md-4">
-                  <label class="form-label" for="p-sell">Sell price *</label>
+                  <label class="form-label" for="p-sell">{{ t("products.sellPrice") }} *</label>
                   <input
                     id="p-sell"
                     v-model.number="form.sellPrice"
@@ -327,11 +332,11 @@
                   />
                 </div>
                 <div class="col-md-4">
-                  <label class="form-label" for="p-unit">Unit *</label>
+                  <label class="form-label" for="p-unit">{{ t("products.unit") }} *</label>
                   <input id="p-unit" v-model="form.unit" class="form-control" type="text" required />
                 </div>
                 <div class="col-md-6">
-                  <label class="form-label" for="p-reorder">Reorder level</label>
+                  <label class="form-label" for="p-reorder">{{ t("products.reorderLevel") }}</label>
                   <input
                     id="p-reorder"
                     v-model.number="form.reorderLevel"
@@ -350,18 +355,18 @@
                       type="checkbox"
                       role="switch"
                     />
-                    <label class="form-check-label" for="p-active">Product is active</label>
+                    <label class="form-check-label" for="p-active">{{ t("products.productActive") }}</label>
                   </div>
                 </div>
               </div>
             </div>
             <div class="modal-footer">
               <button type="button" class="btn btn-outline-secondary" @click="showModal = false">
-                Cancel
+                {{ t("common.cancel") }}
               </button>
               <button type="submit" class="btn btn-primary" :disabled="saving">
                 <span v-if="saving" class="spinner-border spinner-border-sm me-2"></span>
-                {{ editingId == null ? "Add" : "Save" }}
+                {{ editingId == null ? t("common.add") : t("common.save") }}
               </button>
             </div>
           </form>
@@ -376,7 +381,7 @@
           <form @submit.prevent="saveCategory">
             <div class="modal-header">
               <h5 class="modal-title">
-                {{ catEditingId == null ? "Add Category" : "Edit Category" }}
+                {{ catEditingId == null ? t("products.addCategory") : t("products.editCategory") }}
               </h5>
               <button type="button" class="btn-close" @click="showCatModal = false"></button>
             </div>
@@ -385,16 +390,16 @@
                 <i class="bi bi-exclamation-triangle me-1"></i>{{ categoryError }}
               </div>
               <div class="mb-3">
-                <label class="form-label" for="cat-name">Name</label>
+                <label class="form-label" for="cat-name">{{ t("common.name") }}</label>
                 <input id="cat-name" v-model="catForm.name" class="form-control" type="text" autofocus />
               </div>
               <div class="mb-0">
                 <label class="form-label" for="cat-parent">
-                  Parent category
-                  <span class="text-muted fw-normal">(optional)</span>
+                  {{ t("products.parentCategory") }}
+                  <span class="text-muted fw-normal">{{ t("common.optional") }}</span>
                 </label>
                 <select id="cat-parent" v-model="catForm.parentId" class="form-select">
-                  <option :value="null">None</option>
+                  <option :value="null">{{ t("common.none") }}</option>
                   <option
                     v-for="c in categories.filter((x) => x.id !== catEditingId)"
                     :key="c.id"
@@ -407,10 +412,10 @@
             </div>
             <div class="modal-footer">
               <button type="button" class="btn btn-outline-secondary" @click="showCatModal = false">
-                Cancel
+                {{ t("common.cancel") }}
               </button>
               <button type="submit" class="btn btn-primary" :disabled="catSaving">
-                <span v-if="catSaving" class="spinner-border spinner-border-sm me-2"></span>Save
+                <span v-if="catSaving" class="spinner-border spinner-border-sm me-2"></span>{{ t("common.save") }}
               </button>
             </div>
           </form>
@@ -422,7 +427,7 @@
       <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
           <div class="modal-header">
-            <h5 class="modal-title">Adjust stock — {{ adjustTarget.name }}</h5>
+            <h5 class="modal-title">{{ t("products.adjustStockTitle", { name: adjustTarget.name }) }}</h5>
             <button type="button" class="btn-close" @click="adjustTarget = null"></button>
           </div>
           <div class="modal-body">
@@ -430,10 +435,11 @@
               <i class="bi bi-exclamation-triangle me-1"></i>{{ adjustError }}
             </div>
             <div class="mb-2 text-muted small">
-              Current stock: <strong>{{ adjustTarget.stock_qty }}</strong> {{ adjustTarget.unit }}
+              {{ t("products.currentStock") }}:
+              <strong>{{ adjustTarget.stock_qty }}</strong> {{ adjustTarget.unit }}
             </div>
             <div class="mb-3">
-              <label class="form-label" for="adj-new">New stock total</label>
+              <label class="form-label" for="adj-new">{{ t("products.newStockTotal") }}</label>
               <input
                 id="adj-new"
                 v-model.number="adjustNew"
@@ -444,22 +450,22 @@
               />
             </div>
             <div class="mb-0">
-              <label class="form-label" for="adj-notes">Reason (optional)</label>
+              <label class="form-label" for="adj-notes">{{ t("products.reasonOptional") }}</label>
               <input
                 id="adj-notes"
                 v-model="adjustNotes"
                 class="form-control"
                 type="text"
-                placeholder="e.g. stock count, damage, supplier sample…"
+                :placeholder="t('products.adjustReasonPlaceholder')"
               />
             </div>
           </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-outline-secondary" @click="adjustTarget = null">
-              Cancel
+              {{ t("common.cancel") }}
             </button>
             <button type="button" class="btn btn-primary" :disabled="adjustSaving" @click="saveAdjust">
-              <span v-if="adjustSaving" class="spinner-border spinner-border-sm me-2"></span>Save
+              <span v-if="adjustSaving" class="spinner-border spinner-border-sm me-2"></span>{{ t("common.save") }}
             </button>
           </div>
         </div>
@@ -472,6 +478,7 @@
 import { computed, onMounted, ref } from "vue";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
+import { useI18n } from "vue-i18n";
 import { useCatalogStore } from "../../stores/catalog";
 import { useSettingsStore } from "../../stores/settings";
 import { useAuth } from "../../composables/useAuth";
@@ -481,6 +488,7 @@ import type { Category, Product, TaxProfile } from "../../types";
 const catalog = useCatalogStore();
 const settings = useSettingsStore();
 const auth = useAuth();
+const { t, locale } = useI18n();
 
 const categories = ref<Category[]>([]);
 const selected = ref<number | null>(null);
@@ -550,7 +558,7 @@ async function importCsv() {
 
 function fmt(n: number): string {
   if (!settings.currency) return n.toFixed(2);
-  return new Intl.NumberFormat(undefined, {
+  return new Intl.NumberFormat(locale.value, {
     style: "currency",
     currency: settings.currency,
     currencyDisplay: "narrowSymbol",
@@ -577,7 +585,10 @@ async function toggleActive(p: Product) {
   try {
     await invoke("set_product_active", { productId: p.id, isActive: next === 1 });
     p.is_active = next;
-    notice.value = next === 1 ? `"${p.name}" activated` : `"${p.name}" deactivated`;
+    notice.value =
+      next === 1
+        ? t("products.activated", { name: p.name })
+        : t("products.deactivated", { name: p.name });
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e);
   }
@@ -617,7 +628,7 @@ function openEditCategory(c: Category) {
 async function saveCategory() {
   categoryError.value = "";
   if (!catForm.value.name.trim()) {
-    categoryError.value = "Category name is required";
+    categoryError.value = t("products.catNameRequired");
     return;
   }
   catSaving.value = true;
@@ -627,14 +638,14 @@ async function saveCategory() {
         name: catForm.value.name,
         parentId: catForm.value.parentId,
       });
-      notice.value = "Category added";
+      notice.value = t("products.categoryAdded");
     } else {
       await invoke("update_category", {
         categoryId: catEditingId.value,
         name: catForm.value.name,
         parentId: catForm.value.parentId,
       });
-      notice.value = "Category updated";
+      notice.value = t("products.categoryUpdated");
     }
     showCatModal.value = false;
     await Promise.all([loadCategories(), catalog.load()]);
@@ -647,10 +658,10 @@ async function saveCategory() {
 
 async function removeCategory(c: Category) {
   error.value = "";
-  if (!window.confirm(`Delete category "${c.name}"?`)) return;
+  if (!window.confirm(t("products.deleteCategoryConfirm", { name: c.name }))) return;
   try {
     await invoke("delete_category", { categoryId: c.id });
-    notice.value = `"${c.name}" deleted`;
+    notice.value = t("products.categoryDeleted", { name: c.name });
     if (selected.value === c.id) selected.value = null;
     await Promise.all([loadCategories(), catalog.load()]);
   } catch (e) {
@@ -731,19 +742,19 @@ async function pickImage() {
 }
 
 function validateProduct(): string {
-  if (!form.value.name.trim()) return "Product name is required";
-  if (!form.value.barcode.trim()) return "Barcode is required";
+  if (!form.value.name.trim()) return t("products.nameRequired");
+  if (!form.value.barcode.trim()) return t("products.barcodeRequired");
   const cost = form.value.costPrice;
   if (typeof cost !== "number" || isNaN(cost) || cost < 0)
-    return "Enter a valid cost price (0 or more)";
+    return t("products.costInvalid");
   const sell = form.value.sellPrice;
   if (typeof sell !== "number" || isNaN(sell) || sell < 0)
-    return "Enter a valid sell price (0 or more)";
-  if (sell <= cost) return "Sell price must be more than cost price";
-  if (!form.value.unit.trim()) return "Unit is required";
+    return t("products.sellInvalid");
+  if (sell <= cost) return t("products.sellAboveCost");
+  if (!form.value.unit.trim()) return t("products.unitRequired");
   const reorder = form.value.reorderLevel;
   if (typeof reorder !== "number" || isNaN(reorder) || reorder < 0)
-    return "Enter a valid reorder level (0 or more)";
+    return t("products.reorderInvalid");
   return "";
 }
 
@@ -776,10 +787,10 @@ async function saveProduct() {
     let id = editingId.value;
     if (id == null) {
       id = await invoke<number>("create_product", { input: productPayload() });
-      notice.value = "Product added";
+      notice.value = t("products.productAdded");
     } else {
       await invoke("update_product", { productId: id, input: productPayload() });
-      notice.value = "Product updated";
+      notice.value = t("products.productUpdated");
     }
     if (pendingImage.value) {
       await invoke<string>("import_product_image", {
@@ -799,10 +810,10 @@ async function saveProduct() {
 
 async function removeProduct(p: Product) {
   productError.value = "";
-  if (!window.confirm(`Delete "${p.name}" permanently? This cannot be undone.`)) return;
+  if (!window.confirm(t("products.deleteProductConfirm", { name: p.name }))) return;
   try {
     await invoke("delete_product", { productId: p.id });
-    notice.value = `"${p.name}" deleted`;
+    notice.value = t("products.productDeleted", { name: p.name });
     await Promise.all([loadCategories(), catalog.load()]);
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e);
@@ -834,7 +845,11 @@ async function saveAdjust() {
       userId: auth.user?.id ?? null,
     });
     adjustTarget.value = null;
-    notice.value = `Stock updated: ${target.stock_qty} → ${adjustNew.value} ${target.unit}`;
+    notice.value = t("products.stockUpdated", {
+      from: target.stock_qty,
+      to: adjustNew.value,
+      unit: target.unit,
+    });
     await Promise.all([loadCategories(), catalog.load()]);
   } catch (e) {
     adjustError.value = e instanceof Error ? e.message : String(e);

@@ -1,17 +1,17 @@
 <template>
   <div>
     <div class="d-flex align-items-center justify-content-between mb-3">
-      <h1 class="h4 mb-0">Expenses</h1>
+      <h1 class="h4 mb-0">{{ t("expenses.title") }}</h1>
       <div class="d-flex gap-2">
         <button v-can="'export.excel'" class="btn btn-outline-primary" type="button" :disabled="exporting" @click="exportExcel">
           <span v-if="exporting" class="spinner-border spinner-border-sm me-1"></span>
-          <i v-else class="bi bi-file-earmark-excel me-1"></i>Export
+          <i v-else class="bi bi-file-earmark-excel me-1"></i>{{ t("common.export") }}
         </button>
         <button class="btn btn-outline-secondary" type="button" @click="showCatsModal = true">
-          <i class="bi bi-tags me-1"></i>Categories
+          <i class="bi bi-tags me-1"></i>{{ t("expenses.categories") }}
         </button>
         <button class="btn btn-primary" type="button" @click="openAdd">
-          <i class="bi bi-plus-lg me-1"></i>New Expense
+          <i class="bi bi-plus-lg me-1"></i>{{ t("expenses.newExpense") }}
         </button>
       </div>
     </div>
@@ -26,7 +26,7 @@
     <div class="row g-2 mb-3">
       <div class="col">
         <div class="card text-center p-3 h-100">
-          <div class="text-muted small text-uppercase">Outstanding supplier dues</div>
+          <div class="text-muted small text-uppercase">{{ t("expenses.outstandingSupplierDues") }}</div>
           <div
             class="fs-4 fw-semibold"
             :class="(summary?.outstanding_due ?? 0) > 0 ? 'text-danger' : ''"
@@ -37,21 +37,37 @@
       </div>
       <div class="col">
         <div class="card text-center p-3 h-100">
-          <div class="text-muted small text-uppercase">Incoming (period)</div>
+          <div class="text-muted small text-uppercase">{{ t("expenses.incomingPeriod") }}</div>
           <div class="fs-4 fw-semibold">{{ fmt(summary?.total_in ?? 0) }}</div>
-          <div class="text-muted small">{{ summary?.incoming_count ?? 0 }} invoice(s)</div>
+          <div class="text-muted small">
+            {{
+              t(
+                "expenses.invoiceCount",
+                { count: summary?.incoming_count ?? 0 },
+                summary?.incoming_count ?? 0
+              )
+            }}
+          </div>
         </div>
       </div>
       <div class="col">
         <div class="card text-center p-3 h-100">
-          <div class="text-muted small text-uppercase">Outgoing (period)</div>
+          <div class="text-muted small text-uppercase">{{ t("expenses.outgoingPeriod") }}</div>
           <div class="fs-4 fw-semibold text-danger">{{ fmt(summary?.total_out ?? 0) }}</div>
-          <div class="text-muted small">{{ summary?.outgoing_count ?? 0 }} expense(s)</div>
+          <div class="text-muted small">
+            {{
+              t(
+                "expenses.expenseCount",
+                { count: summary?.outgoing_count ?? 0 },
+                summary?.outgoing_count ?? 0
+              )
+            }}
+          </div>
         </div>
       </div>
       <div class="col">
         <div class="card text-center p-3 h-100">
-          <div class="text-muted small text-uppercase">Net (period)</div>
+          <div class="text-muted small text-uppercase">{{ t("expenses.netPeriod") }}</div>
           <div
             class="fs-4 fw-semibold"
             :class="((summary?.total_in ?? 0) - (summary?.total_out ?? 0)) < 0 ? 'text-danger' : ''"
@@ -68,38 +84,38 @@
           v-model="filters.kind"
           class="form-select form-select-sm"
           style="width: auto"
-          aria-label="Filter by type"
+          :aria-label="t('expenses.filterTypeAria')"
         >
-          <option value="all">All types</option>
-          <option value="in">Incoming (stock-in)</option>
-          <option value="out">Outgoing (money out)</option>
+          <option value="all">{{ t("expenses.allTypes") }}</option>
+          <option value="in">{{ t("expenses.incomingStockIn") }}</option>
+          <option value="out">{{ t("expenses.outgoingMoneyOut") }}</option>
         </select>
         <select
           v-model="filters.supplierId"
           class="form-select form-select-sm"
           style="width: auto"
-          aria-label="Filter by supplier"
+          :aria-label="t('expenses.filterSupplierAria')"
         >
-          <option :value="null">All suppliers</option>
+          <option :value="null">{{ t("expenses.allSuppliers") }}</option>
           <option v-for="s in suppliers" :key="s.id" :value="s.id">{{ s.name }}</option>
         </select>
         <select
           v-model="filters.status"
           class="form-select form-select-sm"
           style="width: auto"
-          aria-label="Filter by status"
+          :aria-label="t('expenses.filterStatusAria')"
         >
-          <option value="all">All statuses</option>
-          <option value="unpaid">Unpaid</option>
-          <option value="partial">Partial</option>
-          <option value="paid">Paid</option>
+          <option value="all">{{ t("expenses.allStatuses") }}</option>
+          <option value="unpaid">{{ t("expenses.unpaid") }}</option>
+          <option value="partial">{{ t("expenses.partial") }}</option>
+          <option value="paid">{{ t("common.paid") }}</option>
         </select>
         <input
           v-model="filters.from"
           class="form-control form-control-sm"
           type="date"
           style="width: auto"
-          aria-label="From date"
+          :aria-label="t('expenses.fromDateAria')"
         />
         <span class="text-muted small">→</span>
         <input
@@ -107,7 +123,7 @@
           class="form-control form-control-sm"
           type="date"
           style="width: auto"
-          aria-label="To date"
+          :aria-label="t('expenses.toDateAria')"
         />
         <button
           v-if="
@@ -123,9 +139,11 @@
             filters = { kind: 'all', supplierId: null, status: 'all', from: '', to: '' }
           "
         >
-          <i class="bi bi-x-lg me-1"></i>Clear
+          <i class="bi bi-x-lg me-1"></i>{{ t("common.clear") }}
         </button>
-        <span class="ms-auto text-muted small">{{ filteredCount }} result(s)</span>
+        <span class="ms-auto text-muted small">
+          {{ t("common.results", { count: filteredCount }, filteredCount) }}
+        </span>
       </div>
     </div>
 
@@ -134,30 +152,30 @@
         <table class="table align-middle mb-0">
           <thead>
             <tr>
-              <th>Type</th>
-              <th>Ref / Invoice</th>
-              <th>Supplier</th>
-              <th>Date</th>
-              <th>Details</th>
-              <th class="text-end">Amount</th>
-              <th class="text-end">Paid</th>
-              <th class="text-end">Due</th>
-              <th>Status</th>
+              <th>{{ t("expenses.type") }}</th>
+              <th>{{ t("expenses.refInvoice") }}</th>
+              <th>{{ t("suppliers.supplier") }}</th>
+              <th>{{ t("common.date") }}</th>
+              <th>{{ t("expenses.details") }}</th>
+              <th class="text-end">{{ t("common.amount") }}</th>
+              <th class="text-end">{{ t("common.paid") }}</th>
+              <th class="text-end">{{ t("common.due") }}</th>
+              <th>{{ t("common.status") }}</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="loading">
-              <td colspan="9" class="text-center text-muted py-4">Loading…</td>
+              <td colspan="9" class="text-center text-muted py-4">{{ t("common.loading") }}</td>
             </tr>
             <tr v-else-if="!expenses.length">
               <td colspan="9" class="text-center text-muted py-4">
-                No expenses match the current filters
+                {{ t("expenses.noExpenses") }}
               </td>
             </tr>
             <tr v-for="e in expenses" :key="e.kind + '-' + e.id">
               <td>
                 <span class="badge" :class="e.kind === 'in' ? 'text-bg-primary' : 'text-bg-secondary'">
-                  {{ e.kind === "in" ? "In" : "Out" }}
+                  {{ e.kind === "in" ? t("expenses.in") : t("expenses.out") }}
                 </span>
               </td>
               <td class="fw-semibold">{{ e.ref_no ?? "—" }}</td>
@@ -176,7 +194,7 @@
               </td>
               <td>
                 <span class="badge" :class="statusBadge(e.status)">
-                  {{ e.status }}
+                  {{ statusLabel(e.status) }}
                 </span>
               </td>
             </tr>
@@ -191,7 +209,7 @@
         <div class="modal-content">
           <form @submit.prevent="save">
             <div class="modal-header">
-              <h5 class="modal-title">New Outgoing Expense</h5>
+              <h5 class="modal-title">{{ t("expenses.newOutgoingExpense") }}</h5>
               <button type="button" class="btn-close" @click="showModal = false"></button>
             </div>
             <div class="modal-body">
@@ -199,7 +217,7 @@
                 <i class="bi bi-exclamation-triangle me-1"></i>{{ formError }}
               </div>
               <div class="mb-3">
-                <label class="form-label" for="e-amount">Amount *</label>
+                <label class="form-label" for="e-amount">{{ t("expenses.amount") }}</label>
                 <input
                   id="e-amount"
                   v-model.number="form.amount"
@@ -212,44 +230,44 @@
               </div>
               <div class="row g-3">
                 <div class="col-md-6">
-                  <label class="form-label" for="e-cat">Category</label>
+                  <label class="form-label" for="e-cat">{{ t("expenses.category") }}</label>
                   <select id="e-cat" v-model="form.categoryId" class="form-select">
-                    <option :value="null">None</option>
+                    <option :value="null">{{ t("common.none") }}</option>
                     <option v-for="c in categories" :key="c.id" :value="c.id">{{ c.name }}</option>
                   </select>
                 </div>
                 <div class="col-md-6">
-                  <label class="form-label" for="e-date">Date</label>
+                  <label class="form-label" for="e-date">{{ t("common.date") }}</label>
                   <input id="e-date" v-model="form.date" class="form-control" type="date" />
                 </div>
               </div>
               <div class="mt-3 mb-3">
-                <label class="form-label" for="e-desc">Description</label>
+                <label class="form-label" for="e-desc">{{ t("expenses.description") }}</label>
                 <textarea
                   id="e-desc"
                   v-model="form.description"
                   class="form-control"
                   rows="2"
-                  placeholder="e.g. Rent, utilities, wages, transport…"
+                  :placeholder="t('expenses.descriptionPlaceholder')"
                 ></textarea>
               </div>
               <div class="mb-0">
-                <label class="form-label" for="e-ref">Reference no.</label>
+                <label class="form-label" for="e-ref">{{ t("expenses.referenceNo") }}</label>
                 <input
                   id="e-ref"
                   v-model="form.referenceNo"
                   class="form-control"
                   type="text"
-                  placeholder="Optional invoice / receipt number"
+                  :placeholder="t('expenses.refPlaceholder')"
                 />
               </div>
             </div>
             <div class="modal-footer">
               <button type="button" class="btn btn-outline-secondary" @click="showModal = false">
-                Cancel
+                {{ t("common.cancel") }}
               </button>
               <button type="submit" class="btn btn-primary" :disabled="saving">
-                <span v-if="saving" class="spinner-border spinner-border-sm me-2"></span>Save Expense
+                <span v-if="saving" class="spinner-border spinner-border-sm me-2"></span>{{ t("expenses.saveExpense") }}
               </button>
             </div>
           </form>
@@ -262,7 +280,7 @@
       <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
           <div class="modal-header">
-            <h5 class="modal-title">Expense Categories</h5>
+            <h5 class="modal-title">{{ t("expenses.expenseCategories") }}</h5>
             <button type="button" class="btn-close" @click="showCatsModal = false"></button>
           </div>
           <div class="modal-body">
@@ -274,14 +292,14 @@
                 v-model="newCategoryName"
                 class="form-control"
                 type="text"
-                placeholder="New category name…"
-                aria-label="New category name"
+                :placeholder="t('expenses.newCategoryName')"
+                :aria-label="t('expenses.newCategoryName')"
               />
               <button type="submit" class="btn btn-outline-primary" :disabled="catSaving">
-                <span v-if="catSaving" class="spinner-border spinner-border-sm me-1"></span>Add
+                <span v-if="catSaving" class="spinner-border spinner-border-sm me-1"></span>{{ t("common.add") }}
               </button>
             </form>
-            <div v-if="!categories.length" class="text-muted small">No categories yet.</div>
+            <div v-if="!categories.length" class="text-muted small">{{ t("expenses.noCategoriesYet") }}</div>
             <ul class="list-group">
               <li
                 v-for="c in categories"
@@ -290,12 +308,14 @@
               >
                 <div>
                   <span class="fw-semibold">{{ c.name }}</span>
-                  <span class="text-muted small ms-2">{{ c.expenseCount }} expense(s)</span>
+                  <span class="text-muted small ms-2">
+                    {{ t("expenses.expenseCount", { count: c.expenseCount }, c.expenseCount) }}
+                  </span>
                 </div>
                 <button
                   class="btn btn-sm btn-outline-danger"
                   type="button"
-                  title="Delete"
+                  :title="t('common.delete')"
                   @click="removeCategory(c)"
                 >
                   <i class="bi bi-trash"></i>
@@ -313,6 +333,7 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
+import { useI18n } from "vue-i18n";
 import { useSettingsStore } from "../../stores/settings";
 import { useAuth } from "../../composables/useAuth";
 import type {
@@ -324,6 +345,7 @@ import type {
 
 const settings = useSettingsStore();
 const auth = useAuth();
+const { t, locale } = useI18n();
 
 const suppliers = ref<Supplier[]>([]);
 const categories = ref<ExpenseCategory[]>([]);
@@ -362,11 +384,24 @@ const filteredCount = computed(() => expenses.value.length);
 
 function fmt(n: number): string {
   if (!settings.currency) return n.toFixed(2);
-  return new Intl.NumberFormat(undefined, {
+  return new Intl.NumberFormat(locale.value, {
     style: "currency",
     currency: settings.currency,
     currencyDisplay: "narrowSymbol",
   }).format(n);
+}
+
+function statusLabel(status: string): string {
+  switch (status) {
+    case "paid":
+      return t("common.paid");
+    case "partial":
+      return t("expenses.partial");
+    case "unpaid":
+      return t("expenses.unpaid");
+    default:
+      return status;
+  }
 }
 
 function filterParams() {
@@ -418,7 +453,7 @@ function openAdd() {
 function validate(): string {
   const amount = form.value.amount;
   if (typeof amount !== "number" || isNaN(amount) || amount <= 0)
-    return "Enter an amount greater than zero";
+    return t("expenses.enterAmount");
   return "";
 }
 
@@ -444,7 +479,7 @@ async function save() {
   try {
     await invoke<number>("add_expense_out", { input: payload() });
     showModal.value = false;
-    notice.value = "Expense recorded";
+    notice.value = t("expenses.expenseRecorded");
     await load();
   } catch (e) {
     formError.value = e instanceof Error ? e.message : String(e);
@@ -456,14 +491,14 @@ async function save() {
 async function addCategory() {
   categoryError.value = "";
   if (!newCategoryName.value.trim()) {
-    categoryError.value = "Category name is required";
+    categoryError.value = t("expenses.categoryNameRequired");
     return;
   }
   catSaving.value = true;
   try {
     await invoke<number>("create_expense_category", { name: newCategoryName.value });
     newCategoryName.value = "";
-    notice.value = "Category added";
+    notice.value = t("expenses.categoryAdded");
     await load();
   } catch (e) {
     categoryError.value = e instanceof Error ? e.message : String(e);
@@ -474,10 +509,10 @@ async function addCategory() {
 
 async function removeCategory(c: ExpenseCategory) {
   categoryError.value = "";
-  if (!window.confirm(`Delete category "${c.name}"?`)) return;
+  if (!window.confirm(t("expenses.deleteCategoryConfirm", { name: c.name }))) return;
   try {
     await invoke("delete_expense_category", { categoryId: c.id });
-    notice.value = `"${c.name}" deleted`;
+    notice.value = t("expenses.categoryDeleted", { name: c.name });
     if (form.value.categoryId === c.id) form.value.categoryId = null;
     await load();
   } catch (e) {
@@ -503,13 +538,13 @@ async function exportExcel() {
   error.value = "";
   try {
     const path = await saveDialog({
-      title: "Export expenses",
+      title: t("expenses.exportTitle"),
       defaultPath: `expenses-${new Date().toISOString().slice(0, 10)}.xlsx`,
-      filters: [{ name: "Excel Workbook", extensions: ["xlsx"] }],
+      filters: [{ name: t("expenses.excelFilter"), extensions: ["xlsx"] }],
     });
     if (!path) return;
     await invoke("export_expenses", { path, ...filterParams() });
-    notice.value = `Exported to ${path}`;
+    notice.value = t("expenses.exportedTo", { path });
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e);
   } finally {

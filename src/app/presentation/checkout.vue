@@ -2,20 +2,29 @@
   <div class="checkout-grid">
     <div v-if="!openSession" class="register-bar register-closed">
       <i class="bi bi-cash-stack me-2"></i>
-      <span>Register is closed — open it before completing sales.</span>
+      <span>{{ t("checkout.registerClosed") }}</span>
       <button class="btn btn-sm btn-primary ms-auto" type="button" @click="openRegister">
-        <i class="bi bi-box-arrow-in-right me-1"></i>Open Register
+        <i class="bi bi-box-arrow-in-right me-1"></i>{{ t("checkout.openRegister") }}
       </button>
     </div>
     <div v-else class="register-bar register-open">
       <i class="bi bi-cash-stack me-2"></i>
       <span>
-        Register open since {{ dateLabel(openSession.openedAt) }} ·
-        Opening {{ fmt(openSession.openingCash) }} ·
-        {{ openSession.salesCount }} sale(s) · {{ fmt(openSession.salesTotal) }}
+        {{
+          t(
+            "checkout.registerOpen",
+            {
+              openedAt: dateLabel(openSession.openedAt),
+              openingCash: fmt(openSession.openingCash),
+              count: openSession.salesCount,
+              salesTotal: fmt(openSession.salesTotal),
+            },
+            openSession.salesCount
+          )
+        }}
       </span>
       <button class="btn btn-sm btn-outline-secondary ms-auto" type="button" @click="closeRegister">
-        <i class="bi bi-box-arrow-right me-1"></i>Close Register
+        <i class="bi bi-box-arrow-right me-1"></i>{{ t("checkout.closeRegister") }}
       </button>
     </div>
 
@@ -25,8 +34,8 @@
           v-model="search"
           class="form-control form-control-lg"
           type="search"
-          placeholder="Search by product name, SKU or barcode…"
-          aria-label="Search products"
+          :placeholder="t('checkout.searchPlaceholder')"
+          :aria-label="t('checkout.searchPlaceholder')"
           autocomplete="off"
           @input="onSearchInput"
           @focus="onSearchInput"
@@ -56,7 +65,7 @@
             </span>
           </button>
           <div v-if="!suggestions.length" class="text-muted small p-3">
-            No matching products
+            {{ t("checkout.noMatchingProducts") }}
           </div>
         </div>
       </div>
@@ -68,7 +77,7 @@
           type="button"
           @click="activeCategory = null"
         >
-          All
+          {{ t("common.all") }}
         </button>
         <button
           v-for="c in catalog.categories"
@@ -91,7 +100,7 @@
 
       <div class="product-grid">
         <p v-if="!filteredProducts.length" class="text-muted py-4 text-center w-100">
-          No products found
+          {{ t("checkout.noProducts") }}
         </p>
         <button
           v-for="p in filteredProducts"
@@ -100,7 +109,7 @@
           :class="{ 'is-oos': p.stock_qty <= 0 }"
           type="button"
           :disabled="p.stock_qty <= 0"
-          :title="p.stock_qty > 0 ? 'Click to add to cart' : 'Out of stock'"
+          :title="p.stock_qty > 0 ? t('checkout.clickToAdd') : t('checkout.oosBadge')"
           @click="addToCart(p)"
         >
           <div class="product-card-img">
@@ -109,7 +118,7 @@
             <span v-if="inCart(p.id)" class="product-card-badge">
               <i class="bi bi-cart-plus me-1"></i>{{ inCart(p.id) }}
             </span>
-            <span v-if="p.stock_qty <= 0" class="product-card-oos">Out of stock</span>
+            <span v-if="p.stock_qty <= 0" class="product-card-oos">{{ t("checkout.oosBadge") }}</span>
           </div>
           <div class="product-card-name">{{ p.name }}</div>
           <div class="product-card-price">{{ fmt(p.sell_price) }}</div>
@@ -123,7 +132,7 @@
     <aside class="checkout-right card">
       <div class="card-header d-flex align-items-center justify-content-between">
         <span class="fw-semibold">
-          <i class="bi bi-cart3 me-2"></i>Cart
+          <i class="bi bi-cart3 me-2"></i>{{ t("checkout.cart") }}
           <span class="badge text-bg-primary ms-1">{{ cart.itemCount }}</span>
         </span>
         <button
@@ -132,13 +141,13 @@
           :disabled="!cart.items.length"
           @click="cart.clear()"
         >
-          <i class="bi bi-trash me-1"></i>Clear
+          <i class="bi bi-trash me-1"></i>{{ t("common.clear") }}
         </button>
       </div>
 
       <div class="cart-items">
         <p v-if="!cart.items.length" class="text-muted small text-center my-5">
-          Cart is empty — click products to add them
+          {{ t("checkout.cartEmpty") }}
         </p>
         <div v-for="item in cart.items" :key="item.productId" class="cart-item">
           <div class="d-flex justify-content-between gap-2">
@@ -146,7 +155,7 @@
             <button
               class="btn btn-sm btn-link text-danger p-0 lh-1"
               type="button"
-              title="Remove"
+              :title="t('common.remove')"
               @click="cart.remove(item.productId)"
             >
               <i class="bi bi-x-lg"></i>
@@ -173,11 +182,11 @@
             </div>
             <div class="text-end">
               <div class="fw-semibold fs-6">{{ fmt(cart.lineTotal(item)) }}</div>
-              <div class="text-muted text-xs">{{ fmt(item.price) }} each</div>
+              <div class="text-muted text-xs">{{ fmt(item.price) }} {{ t("checkout.eachUnit") }}</div>
             </div>
           </div>
           <div class="d-flex justify-content-between align-items-center mt-1">
-            <span class="text-muted text-xs">Discount / unit</span>
+            <span class="text-muted text-xs">{{ t("checkout.discountPerUnit") }}</span>
             <div class="input-group input-group-sm item-discount">
               <span class="input-group-text">−</span>
               <input
@@ -187,7 +196,7 @@
                 step="0.01"
                 :max="item.price"
                 :value="item.discount"
-                :aria-label="`Discount per unit for ${item.name}`"
+                :aria-label="`${t('checkout.discountPerUnit')} — ${item.name}`"
                 @input="onItemDiscount(item.productId, $event)"
               />
             </div>
@@ -198,16 +207,16 @@
       <div class="cart-totals card-body border-top">
         <div class="d-flex justify-content-between align-items-center mb-2">
           <label class="form-label mb-0 small text-muted" for="order-discount">
-            Order discount
+            {{ t("checkout.orderDiscount") }}
           </label>
-          <div class="btn-group btn-group-sm" role="group" aria-label="Discount type">
+          <div class="btn-group btn-group-sm" role="group" :aria-label="t('checkout.discountType')">
             <button
               class="btn btn-outline-secondary"
               :class="{ active: cart.orderDiscountType === 'fixed' }"
               type="button"
               @click="setDiscountType('fixed')"
             >
-              Fixed
+              {{ t("checkout.fixed") }}
             </button>
             <button
               class="btn btn-outline-secondary"
@@ -231,8 +240,8 @@
             :value="cart.orderDiscountValue"
             :aria-label="
               cart.orderDiscountType === 'percent'
-                ? 'Order discount percentage'
-                : 'Order discount amount'
+                ? t('checkout.discountPercentAria')
+                : t('checkout.discountAmountAria')
             "
             @input="onOrderDiscount"
           />
@@ -241,18 +250,18 @@
         <div class="text-muted mb-2" style="font-size: 0.72rem">{{ discountLimitHint }}</div>
 
         <div class="d-flex justify-content-between mb-1">
-          <span class="text-muted">Subtotal</span>
+          <span class="text-muted">{{ t("checkout.subtotal") }}</span>
           <span>{{ fmt(cart.subtotal) }}</span>
         </div>
         <div v-if="cart.itemDiscountTotal" class="d-flex justify-content-between mb-1 text-danger">
-          <span class="text-muted">Item discounts</span>
+          <span class="text-muted">{{ t("checkout.itemDiscounts") }}</span>
           <span>−{{ fmt(cart.itemDiscountTotal) }}</span>
         </div>
         <div
           v-if="cart.orderDiscountAmount"
           class="d-flex justify-content-between mb-1 text-danger"
         >
-          <span class="text-muted">Order discount</span>
+          <span class="text-muted">{{ t("checkout.orderDiscount") }}</span>
           <span>
             −{{ fmt(cart.orderDiscountAmount) }}
             <span v-if="cart.orderDiscountType === 'percent'" class="text-muted">
@@ -261,20 +270,20 @@
           </span>
         </div>
         <div class="d-flex justify-content-between align-items-center pt-2 border-top">
-          <span class="fw-semibold">Total</span>
+          <span class="fw-semibold">{{ t("common.total") }}</span>
           <span class="fs-4 fw-bold">{{ fmt(cart.total) }}</span>
         </div>
       </div>
 
       <div class="checkout-payment card-body border-top">
         <div class="fw-semibold small mb-2">
-          <i class="bi bi-cash-coin me-1"></i>Payment
+          <i class="bi bi-cash-coin me-1"></i>{{ t("checkout.payment") }}
         </div>
 
         <div class="mb-2">
-          <label class="form-label mb-1 small text-muted" for="cash-received">Cash received</label>
+          <label class="form-label mb-1 small text-muted" for="cash-received">{{ t("checkout.cashReceived") }}</label>
           <div class="input-group input-group-sm">
-            <span class="input-group-text">{{ settings.currency || "amt" }}</span>
+            <span class="input-group-text">{{ settings.currency || t("checkout.currencyFallback") }}</span>
             <input
               id="cash-received"
               class="form-control text-end"
@@ -282,26 +291,26 @@
               min="0"
               step="0.01"
               :value="cart.cashReceived"
-              aria-label="Cash received"
+              :aria-label="t('checkout.cashReceived')"
               @input="onCashReceived"
             />
             <button
               class="btn btn-outline-secondary"
               type="button"
-              title="Set cash to the exact total"
+              :title="t('checkout.exactTitle')"
               @click="cart.syncCashToTotal()"
             >
-              Exact
+              {{ t("checkout.exact") }}
             </button>
           </div>
         </div>
-        <div class="d-flex flex-wrap gap-1 mb-2" aria-label="Quick cash amounts">
+        <div class="d-flex flex-wrap gap-1 mb-2" :aria-label="t('checkout.quickCashAria')">
           <button
             v-for="amt in quickCashAmounts"
             :key="amt"
             class="btn btn-sm btn-outline-secondary"
             type="button"
-            :title="`Tender ${fmt(amt)}`"
+            :title="`${t('checkout.cashReceived')} ${fmt(amt)}`"
             @click="cart.cashReceived = amt"
           >
             {{ fmt(amt) }}
@@ -309,7 +318,7 @@
         </div>
 
         <div v-if="cart.splitLines.length" class="mb-2">
-          <div class="text-muted small mb-1">Split payments</div>
+          <div class="text-muted small mb-1">{{ t("checkout.splitPayments") }}</div>
           <div
             v-for="(line, i) in cart.splitLines"
             :key="i"
@@ -318,21 +327,21 @@
             <select
               class="form-select form-select-sm payment-line-method"
               :value="line.method"
-              :aria-label="`Payment ${i + 1} method`"
+              :aria-label="`${t('common.method')} ${i + 1}`"
               @change="
                 cart.setSplitLine(i, {
                   method: ($event.target as HTMLSelectElement).value as PaymentLine['method'],
                 })
               "
             >
-              <option value="card">Card</option>
-              <option value="credit">Customer credit</option>
+              <option value="card">{{ t("checkout.card") }}</option>
+              <option value="credit">{{ t("checkout.customerCredit") }}</option>
             </select>
             <template v-if="line.method === 'credit'">
               <select
                 class="form-select form-select-sm"
                 :value="line.customerId ?? ''"
-                :aria-label="`Payment ${i + 1} customer`"
+                :aria-label="`${t('checkout.customerCredit')} ${i + 1}`"
                 @change="
                   cart.setSplitLine(i, {
                     customerId: ($event.target as HTMLSelectElement).value
@@ -341,7 +350,7 @@
                   })
                 "
               >
-                <option value="" disabled>Select customer…</option>
+                <option value="" disabled>{{ t("checkout.selectCustomer") }}</option>
                 <option v-for="c in customers" :key="c.id" :value="c.id">
                   {{ customerLabel(c) }}
                 </option>
@@ -352,8 +361,8 @@
                 class="form-control form-control-sm"
                 type="text"
                 :value="line.reference ?? ''"
-                placeholder="Card ref (optional)"
-                :aria-label="`Payment ${i + 1} card reference`"
+                :placeholder="t('checkout.cardRef')"
+                :aria-label="`${t('checkout.cardRef')} ${i + 1}`"
                 @input="
                   cart.setSplitLine(i, {
                     reference: ($event.target as HTMLInputElement).value,
@@ -362,21 +371,21 @@
               />
             </template>
             <div class="input-group input-group-sm">
-              <span class="input-group-text">{{ settings.currency || "amt" }}</span>
+              <span class="input-group-text">{{ settings.currency || t("checkout.currencyFallback") }}</span>
               <input
                 class="form-control text-end"
                 type="number"
                 min="0"
                 step="0.01"
                 :value="line.amount"
-                :aria-label="`Payment ${i + 1} amount`"
+                :aria-label="`${t('common.amount')} ${i + 1}`"
                 @input="onSplitAmount(i, $event)"
               />
             </div>
             <button
               class="btn btn-sm btn-outline-danger"
               type="button"
-              title="Remove payment"
+              :title="t('common.remove')"
               @click="cart.removeSplitLine(i)"
             >
               <i class="bi bi-x-lg"></i>
@@ -389,29 +398,29 @@
           type="button"
           @click="cart.addSplitLine()"
         >
-          <i class="bi bi-plus-lg me-1"></i>Add payment method
+          <i class="bi bi-plus-lg me-1"></i>{{ t("checkout.addPayment") }}
         </button>
 
         <div class="d-flex justify-content-between mb-1">
-          <span class="text-muted">Split payments</span>
+          <span class="text-muted">{{ t("checkout.splitPayments") }}</span>
           <span>{{ fmt(cart.splitTotal) }}</span>
         </div>
         <div class="d-flex justify-content-between mb-1">
-          <span class="text-muted">Cash tendered</span>
+          <span class="text-muted">{{ t("checkout.cashTendered") }}</span>
           <span>{{ fmt(cart.cashReceived) }}</span>
         </div>
         <div
           v-if="cart.shortfall > 0.005"
           class="d-flex justify-content-between mb-1 text-danger fw-semibold"
         >
-          <span>Short</span>
+          <span>{{ t("checkout.short") }}</span>
           <span>−{{ fmt(cart.shortfall) }}</span>
         </div>
         <div
           v-if="cart.change > 0.005"
           class="d-flex justify-content-between mb-2 text-success fw-semibold"
         >
-          <span>Change</span>
+          <span>{{ t("checkout.change") }}</span>
           <span>{{ fmt(cart.change) }}</span>
         </div>
 
@@ -422,7 +431,7 @@
             class="form-check-input"
             type="checkbox"
           />
-          <label class="form-check-label" for="print-receipt">Print receipt after sale</label>
+          <label class="form-check-label" for="print-receipt">{{ t("checkout.printReceiptAfter") }}</label>
         </div>
 
         <div class="d-flex gap-2 mb-2">
@@ -430,18 +439,18 @@
             class="btn btn-outline-secondary flex-fill"
             type="button"
             :disabled="!cart.items.length || !openSession || holding || committing"
-            title="Save the cart to resume later"
+            :title="t('checkout.hold')"
             @click="holdCurrentSale"
           >
             <span v-if="holding" class="spinner-border spinner-border-sm me-1" role="status"></span>
-            <i v-else class="bi bi-pause-circle me-1"></i>Hold
+            <i v-else class="bi bi-pause-circle me-1"></i>{{ t("checkout.hold") }}
           </button>
           <button
             class="btn btn-outline-secondary flex-fill"
             type="button"
             @click="openHeldSales"
           >
-            <i class="bi bi-clock-history me-1"></i>Held Sales
+            <i class="bi bi-clock-history me-1"></i>{{ t("checkout.heldSales") }}
           </button>
         </div>
 
@@ -452,7 +461,7 @@
           @click="completeSale"
         >
           <span v-if="committing" class="spinner-border spinner-border-sm me-2" role="status"></span>
-          <i v-else class="bi bi-cash-coin me-2"></i>Complete Sale
+          <i v-else class="bi bi-cash-coin me-2"></i>{{ t("checkout.completeSale") }}
         </button>
       </div>
     </aside>
@@ -468,23 +477,22 @@
         <div class="modal-content">
           <div class="modal-header">
             <h5 class="modal-title">
-              <i class="bi bi-cash-stack me-2"></i>Open register
+              <i class="bi bi-cash-stack me-2"></i>{{ t("checkout.openRegisterTitle") }}
             </h5>
             <button
               type="button"
               class="btn-close"
-              aria-label="Close"
+              :aria-label="t('common.close')"
               @click="openModal = false"
             ></button>
           </div>
           <div class="modal-body">
             <p class="small mb-3">
-              Enter the cash amount in the drawer at the start of your shift. All sales will be
-              recorded against this session until you close the register.
+              {{ t("checkout.openRegisterBody") }}
             </p>
-            <label class="form-label" for="opening-cash">Opening cash</label>
+            <label class="form-label" for="opening-cash">{{ t("checkout.openingCash") }}</label>
             <div class="input-group">
-              <span class="input-group-text">{{ settings.currency || "amt" }}</span>
+              <span class="input-group-text">{{ settings.currency || t("checkout.currencyFallback") }}</span>
               <input
                 id="opening-cash"
                 v-model.number="openCash"
@@ -502,7 +510,7 @@
               :disabled="registerBusy"
               @click="openModal = false"
             >
-              Cancel
+              {{ t("common.cancel") }}
             </button>
             <button
               type="button"
@@ -515,7 +523,7 @@
                 class="spinner-border spinner-border-sm me-1"
                 role="status"
               ></span>
-              <i v-else class="bi bi-box-arrow-in-right me-1"></i>Open register
+              <i v-else class="bi bi-box-arrow-in-right me-1"></i>{{ t("checkout.openRegister") }}
             </button>
           </div>
         </div>
@@ -533,23 +541,26 @@
         <div class="modal-content">
           <div class="modal-header">
             <h5 class="modal-title">
-              <i class="bi bi-cash-stack me-2"></i>Close register
+              <i class="bi bi-cash-stack me-2"></i>{{ t("checkout.closeRegisterTitle") }}
             </h5>
             <button
               type="button"
               class="btn-close"
-              aria-label="Close"
+              :aria-label="t('common.close')"
               @click="closeModal = false"
             ></button>
           </div>
           <div class="modal-body">
             <p class="small mb-3">
-              Count the cash in the drawer and enter it below. The expected amount is
-              opening {{ fmt(openSession?.openingCash ?? 0) }} plus cash received minus change given.
+              {{
+                t("checkout.closeRegisterBody", {
+                  opening: fmt(openSession?.openingCash ?? 0),
+                })
+              }}
             </p>
-            <label class="form-label" for="closing-cash">Counted cash</label>
+            <label class="form-label" for="closing-cash">{{ t("checkout.closingCash") }}</label>
             <div class="input-group">
-              <span class="input-group-text">{{ settings.currency || "amt" }}</span>
+              <span class="input-group-text">{{ settings.currency || t("checkout.currencyFallback") }}</span>
               <input
                 id="closing-cash"
                 v-model.number="closeCash"
@@ -567,7 +578,7 @@
               :disabled="registerBusy"
               @click="closeModal = false"
             >
-              Cancel
+              {{ t("common.cancel") }}
             </button>
             <button
               type="button"
@@ -580,7 +591,7 @@
                 class="spinner-border spinner-border-sm me-1"
                 role="status"
               ></span>
-              <i v-else class="bi bi-box-arrow-right me-1"></i>Close register
+              <i v-else class="bi bi-box-arrow-right me-1"></i>{{ t("checkout.closeRegister") }}
             </button>
           </div>
         </div>
@@ -598,50 +609,57 @@
         <div class="modal-content">
           <div class="modal-header">
             <h5 class="modal-title">
-              <i class="bi bi-check-circle me-2"></i>Register closed
+              <i class="bi bi-check-circle me-2"></i>{{ t("checkout.registerClosedTitle") }}
             </h5>
             <button
               type="button"
               class="btn-close"
-              aria-label="Close"
+              :aria-label="t('common.close')"
               @click="closeResult = null"
             ></button>
           </div>
           <div class="modal-body">
             <div class="d-flex justify-content-between mb-1">
-              <span class="text-muted">Opening cash</span>
+              <span class="text-muted">{{ t("checkout.openingCash") }}</span>
               <span>{{ fmt(closeResult.openingCash) }}</span>
             </div>
             <div class="d-flex justify-content-between mb-1">
-              <span class="text-muted">Cash received</span>
+              <span class="text-muted">{{ t("checkout.cashReceivedLabel") }}</span>
               <span>{{ fmt(closeResult.cashPaid) }}</span>
             </div>
             <div class="d-flex justify-content-between mb-1">
-              <span class="text-muted">Change given</span>
+              <span class="text-muted">{{ t("checkout.changeGiven") }}</span>
               <span>−{{ fmt(closeResult.changeGiven) }}</span>
             </div>
             <div class="d-flex justify-content-between mb-1">
-              <span class="text-muted">Expected cash</span>
+              <span class="text-muted">{{ t("checkout.expectedCash") }}</span>
               <span class="fw-semibold">{{ fmt(closeResult.expectedCash ?? 0) }}</span>
             </div>
             <div class="d-flex justify-content-between mb-1">
-              <span class="text-muted">Counted cash</span>
+              <span class="text-muted">{{ t("checkout.countedCash") }}</span>
               <span class="fw-semibold">{{ fmt(closeResult.closingCash ?? 0) }}</span>
             </div>
             <div
               class="d-flex justify-content-between pt-2 border-top"
               :class="(closeResult.variance ?? 0) < -0.005 ? 'text-danger fw-bold' : (closeResult.variance ?? 0) > 0.005 ? 'text-warning fw-bold' : 'text-success fw-bold'"
             >
-              <span>Variance</span>
+              <span>{{ t("checkout.variance") }}</span>
               <span>{{ fmt(closeResult.variance ?? 0) }}</span>
             </div>
             <p class="small text-muted mt-2 mb-0">
-              {{ closeResult.salesCount }} sale(s) worth {{ fmt(closeResult.salesTotal) }} were
-              recorded in this session.
+              {{
+                t(
+                  "checkout.salesRecorded",
+                  { count: closeResult.salesCount, total: fmt(closeResult.salesTotal) },
+                  closeResult.salesCount
+                )
+              }}
             </p>
           </div>
           <div class="modal-footer">
-            <button type="button" class="btn btn-primary" @click="closeResult = null">Done</button>
+            <button type="button" class="btn btn-primary" @click="closeResult = null">
+              {{ t("checkout.done") }}
+            </button>
           </div>
         </div>
       </div>
@@ -658,12 +676,12 @@
         <div class="modal-content">
           <div class="modal-header">
             <h5 class="modal-title">
-              <i class="bi bi-clock-history me-2"></i>Held sales
+              <i class="bi bi-clock-history me-2"></i>{{ t("checkout.heldSales") }}
             </h5>
             <button
               type="button"
               class="btn-close"
-              aria-label="Close"
+              :aria-label="t('common.close')"
               @click="heldSalesOpen = false"
             ></button>
           </div>
@@ -672,7 +690,7 @@
               {{ heldError }}
             </div>
             <p v-if="!heldSales.length && !heldError" class="text-muted small text-center my-4">
-              No held sales
+              {{ t("checkout.heldNone") }}
             </p>
             <div
               v-for="sale in heldSales"
@@ -682,7 +700,14 @@
               <div>
                 <div class="fw-semibold small">{{ sale.saleNo }}</div>
                 <div class="text-muted" style="font-size: 0.72rem">
-                  {{ sale.itemCount }} item(s) · {{ fmt(sale.total) }} ·
+                  {{
+                    t(
+                      "checkout.itemCount",
+                      { count: sale.itemCount },
+                      sale.itemCount
+                    )
+                  }}
+                  · {{ fmt(sale.total) }} ·
                   {{ dateLabel(sale.createdAt) }}
                 </div>
               </div>
@@ -693,7 +718,7 @@
                   :disabled="resumingHeld"
                   @click="resumeHeldSale(sale)"
                 >
-                  Resume
+                  {{ t("checkout.resume") }}
                 </button>
                 <button
                   class="btn btn-sm btn-outline-danger"
@@ -701,7 +726,7 @@
                   :disabled="resumingHeld"
                   @click="cancelHeldSale(sale)"
                 >
-                  Cancel
+                  {{ t("common.cancel") }}
                 </button>
               </div>
             </div>
@@ -715,6 +740,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { useI18n } from "vue-i18n";
 import { useCatalogStore } from "../../stores/catalog";
 import { useSettingsStore } from "../../stores/settings";
 import { useCartStore } from "../../stores/cart";
@@ -738,6 +764,7 @@ const catalog = useCatalogStore();
 const settings = useSettingsStore();
 const cart = useCartStore();
 const auth = useAuth();
+const { t, locale } = useI18n();
 
 const customers = ref<CustomerLite[]>([]);
 
@@ -803,7 +830,7 @@ const filteredProducts = computed(() => {
 
 function fmt(n: number): string {
   if (!settings.currency) return n.toFixed(2);
-  return new Intl.NumberFormat(undefined, {
+  return new Intl.NumberFormat(locale.value, {
     style: "currency",
     currency: settings.currency,
     currencyDisplay: "narrowSymbol",
@@ -813,7 +840,7 @@ function fmt(n: number): string {
 function dateLabel(d: string): string {
   const date = new Date(d + (d.includes("T") ? "" : "Z"));
   if (isNaN(date.getTime())) return d;
-  return date.toLocaleString();
+  return date.toLocaleString(locale.value);
 }
 
 function stockFor(productId: number): number {
@@ -826,12 +853,15 @@ function inCart(productId: number): number {
 
 function addToCart(p: Product) {
   if (p.stock_qty <= 0) {
-    error.value = `"${p.name}" is out of stock`;
+    error.value = t("checkout.outOfStock", { name: p.name });
     return;
   }
   const inCartQty = inCart(p.id);
   if (inCartQty >= p.stock_qty) {
-    error.value = `Only ${p.stock_qty} unit(s) of "${p.name}" in stock`;
+    error.value = t("checkout.stockLimit", {
+      stock: p.stock_qty,
+      name: p.name,
+    });
     return;
   }
   error.value = "";
@@ -903,13 +933,13 @@ function customerLabel(c: CustomerLite): string {
 }
 
 const quickCashAmounts = computed(() => {
-  const t = cart.total;
-  if (t <= 0) return [] as number[];
+  const total = cart.total;
+  if (total <= 0) return [] as number[];
   const amounts = new Set<number>();
   for (const step of [5, 10, 20, 50]) {
-    amounts.add(Math.ceil(t / step) * step);
+    amounts.add(Math.ceil(total / step) * step);
   }
-  return [...amounts].filter((a) => a > t);
+  return [...amounts].filter((a) => a > total);
 });
 
 function onCashReceived(e: Event) {
@@ -925,11 +955,11 @@ function onSplitAmount(index: number, e: Event) {
 function completeSale() {
   if (!cart.items.length) return;
   if (!cart.paymentValid) {
-    error.value = `Payment is short by ${fmt(cart.shortfall)}`;
+    error.value = t("checkout.paymentShort", { amount: fmt(cart.shortfall) });
     return;
   }
   if (!openSession.value) {
-    error.value = "Open the register before completing a sale";
+    error.value = t("checkout.registerRequired");
     return;
   }
   error.value = "";
@@ -965,7 +995,7 @@ function completeSale() {
   })
     .then((sale) => {
       const change = fmt(sale.changeGiven);
-      notice.value = `Sale ${sale.saleNo} completed. Change due: ${change}.`;
+      notice.value = t("checkout.saleCompleted", { saleNo: sale.saleNo, change });
       cart.clear();
       heldSaleId.value = null;
       heldCustomerId.value = null;
@@ -973,7 +1003,7 @@ function completeSale() {
       loadOpenSession();
       if (printReceiptOnComplete.value) {
         printSaleReceipt(sale.saleId).catch((e: unknown) => {
-          error.value = `Sale completed, but printing failed: ${String(e)}`;
+          error.value = t("checkout.printFailed", { error: String(e) });
         });
       }
     })
@@ -1000,7 +1030,7 @@ function openRegister() {
 
 async function confirmOpenRegister() {
   if (isNaN(openCash.value) || openCash.value < 0) {
-    error.value = "Enter a valid opening cash amount";
+    error.value = t("checkout.invalidCash");
     return;
   }
   registerBusy.value = true;
@@ -1010,7 +1040,7 @@ async function confirmOpenRegister() {
       input: { openingCash: openCash.value, userId: auth.user?.id ?? null },
     });
     openModal.value = false;
-    notice.value = "Register opened. Sales will be linked to this session.";
+    notice.value = t("checkout.registerOpened");
   } catch (e) {
     error.value = String(e);
   } finally {
@@ -1027,7 +1057,7 @@ function closeRegister() {
 async function confirmCloseRegister() {
   if (!openSession.value) return;
   if (isNaN(closeCash.value) || closeCash.value < 0) {
-    error.value = "Enter the counted drawer amount";
+    error.value = t("checkout.invalidCounted");
     return;
   }
   registerBusy.value = true;
@@ -1077,7 +1107,7 @@ function holdCurrentSale() {
     },
   })
     .then((held) => {
-      notice.value = `Sale ${held.saleNo} held — resume it anytime from the held sales list.`;
+      notice.value = t("checkout.saleHeld", { saleNo: held.saleNo });
       cart.clear();
       heldSaleId.value = null;
       heldCustomerId.value = null;
@@ -1108,7 +1138,7 @@ function openHeldSales() {
 
 function resumeHeldSale(sale: SaleRecord) {
   if (cart.items.length) {
-    error.value = "Clear the current cart before resuming a held sale";
+    error.value = t("checkout.clearCartFirst");
     return;
   }
   resumingHeld.value = true;
@@ -1131,7 +1161,7 @@ function resumeHeldSale(sale: SaleRecord) {
       heldSaleId.value = record.saleId;
       heldCustomerId.value = record.customerId;
       heldSalesOpen.value = false;
-      notice.value = `Held sale ${record.saleNo} loaded into the cart.`;
+      notice.value = t("checkout.heldLoaded", { saleNo: record.saleNo });
       search.value = "";
     })
     .catch((e: string) => {
@@ -1143,7 +1173,7 @@ function resumeHeldSale(sale: SaleRecord) {
 }
 
 function cancelHeldSale(sale: SaleRecord) {
-  if (!confirm(`Cancel held sale ${sale.saleNo}? This cannot be undone.`)) return;
+  if (!confirm(t("checkout.cancelHeld", { saleNo: sale.saleNo }))) return;
   resumingHeld.value = true;
   invoke("cancel_held_sale", {
     input: { saleId: sale.id, userId: auth.user?.id ?? null },
@@ -1194,7 +1224,10 @@ function bumpQty(productId: number, delta: number) {
     return;
   }
   if (next > stockFor(productId)) {
-    error.value = `Only ${stockFor(productId)} unit(s) of "${item.name}" in stock`;
+    error.value = t("checkout.stockLimit", {
+      stock: stockFor(productId),
+      name: item.name,
+    });
     return;
   }
   error.value = "";
@@ -1206,7 +1239,7 @@ function onItemDiscount(productId: number, e: Event) {
   if (!item) return;
   const value = Number((e.target as HTMLInputElement).value);
   if (isNaN(value) || value < 0) {
-    error.value = "Enter a valid item discount";
+    error.value = t("checkout.invalidDiscount");
     return;
   }
   const amount = value * item.qty;
@@ -1225,13 +1258,16 @@ function discountAllowed(amount: number): boolean {
 }
 
 function discountError(amount: number): string {
-  return `Discount of ${fmt(amount)} exceeds the ${fmt(settings.discountThreshold)} limit — requires sales.discount permission`;
+  return t("checkout.discountTooHigh", {
+    amount: fmt(amount),
+    limit: fmt(settings.discountThreshold),
+  });
 }
 
 const discountLimitHint = computed(() =>
   auth.can("sales.discount")
-    ? "Unlimited discounts (admin)"
-    : `Limited to ${fmt(settings.discountThreshold)} per order`
+    ? t("checkout.discountUnlimited")
+    : t("checkout.discountLimited", { amount: fmt(settings.discountThreshold) })
 );
 
 function discountMax(): number {
@@ -1242,7 +1278,7 @@ function discountMax(): number {
 function onOrderDiscount(e: Event) {
   const value = Number((e.target as HTMLInputElement).value);
   if (isNaN(value) || value < 0) {
-    error.value = "Enter a valid discount";
+    error.value = t("checkout.invalidOrderDiscount");
     return;
   }
   applyOrderDiscount(cart.orderDiscountType, value);
@@ -1271,7 +1307,7 @@ useScanner({
       (p) => p.is_active === 1 && (p.barcode === code || p.sku === code)
     );
     if (!product) {
-      error.value = `No product found for barcode "${code}"`;
+      error.value = t("checkout.noProductBarcode", { code });
       return;
     }
     addToCart(product);

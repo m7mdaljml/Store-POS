@@ -1,9 +1,9 @@
 <template>
   <div>
     <div class="d-flex align-items-center justify-content-between mb-3">
-      <h1 class="h4 mb-0">Purchases</h1>
+      <h1 class="h4 mb-0">{{ t("purchases.title") }}</h1>
       <button v-can="'expenses.manage'" class="btn btn-primary" type="button" @click="openAdd">
-        <i class="bi bi-plus-lg me-1"></i>New Invoice
+        <i class="bi bi-plus-lg me-1"></i>{{ t("purchases.newInvoice") }}
       </button>
     </div>
 
@@ -19,23 +19,23 @@
         <table class="table align-middle mb-0">
           <thead>
             <tr>
-              <th>Invoice</th>
-              <th>Supplier</th>
-              <th>Date</th>
-              <th class="text-end">Total</th>
-              <th class="text-end">Paid</th>
-              <th class="text-end">Due</th>
-              <th>Status</th>
-              <th class="text-end">Actions</th>
+              <th>{{ t("purchases.invoice") }}</th>
+              <th>{{ t("purchases.supplier") }}</th>
+              <th>{{ t("common.date") }}</th>
+              <th class="text-end">{{ t("common.total") }}</th>
+              <th class="text-end">{{ t("common.paid") }}</th>
+              <th class="text-end">{{ t("common.due") }}</th>
+              <th>{{ t("common.status") }}</th>
+              <th class="text-end">{{ t("common.actions") }}</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="loading">
-              <td colspan="8" class="text-center text-muted py-4">Loading…</td>
+              <td colspan="8" class="text-center text-muted py-4">{{ t("common.loading") }}</td>
             </tr>
             <tr v-else-if="!invoices.length">
               <td colspan="8" class="text-center text-muted py-4">
-                No incoming invoices yet — click "New Invoice" to record stock-in from a supplier
+                {{ t("purchases.noInvoices") }}
               </td>
             </tr>
             <tr v-for="inv in invoices" :key="inv.id">
@@ -52,7 +52,7 @@
               </td>
               <td>
                 <span class="badge" :class="statusBadge(inv.status)">
-                  {{ inv.status }}
+                  {{ statusLabel(inv.status) }}
                 </span>
               </td>
               <td class="text-end text-nowrap">
@@ -60,12 +60,12 @@
                   v-if="inv.due_amount > 0"
                   class="btn btn-sm btn-outline-success"
                   type="button"
-                  title="Record payment"
+                  :title="t('purchases.recordPaymentTitle')"
                   @click="openPay(inv)"
                 >
-                  <i class="bi bi-cash-coin me-1"></i>Pay
+                  <i class="bi bi-cash-coin me-1"></i>{{ t("purchases.pay") }}
                 </button>
-                <span v-else class="text-muted small fst-italic">Settled</span>
+                <span v-else class="text-muted small fst-italic">{{ t("purchases.settled") }}</span>
               </td>
             </tr>
           </tbody>
@@ -79,7 +79,7 @@
         <div class="modal-content">
           <form @submit.prevent="save">
             <div class="modal-header">
-              <h5 class="modal-title">New Incoming Invoice</h5>
+              <h5 class="modal-title">{{ t("purchases.newInvoiceTitle") }}</h5>
               <button type="button" class="btn-close" @click="showModal = false"></button>
             </div>
             <div class="modal-body">
@@ -88,27 +88,27 @@
               </div>
               <div class="row g-3">
                 <div class="col-md-6">
-                  <label class="form-label" for="pi-supplier">Supplier *</label>
+                  <label class="form-label" for="pi-supplier">{{ t("purchases.supplier") }} *</label>
                   <select id="pi-supplier" v-model="form.supplierId" class="form-select">
-                    <option :value="null">Select a supplier…</option>
+                    <option :value="null">{{ t("purchases.selectSupplier") }}</option>
                     <option v-for="s in suppliers" :key="s.id" :value="s.id">{{ s.name }}</option>
                   </select>
                 </div>
                 <div class="col-md-6">
-                  <label class="form-label" for="pi-date">Date</label>
+                  <label class="form-label" for="pi-date">{{ t("common.date") }}</label>
                   <input id="pi-date" v-model="form.date" class="form-control" type="date" />
                 </div>
               </div>
 
               <div class="d-flex justify-content-between align-items-center mt-4 mb-2">
-                <span class="fw-semibold small text-muted text-uppercase">Products</span>
+                <span class="fw-semibold small text-muted text-uppercase">{{ t("purchases.products") }}</span>
                 <button type="button" class="btn btn-sm btn-outline-primary" @click="addLine">
-                  <i class="bi bi-plus-lg me-1"></i>Add line
+                  <i class="bi bi-plus-lg me-1"></i>{{ t("purchases.addLine") }}
                 </button>
               </div>
 
               <div v-if="!form.lines.length" class="text-muted small py-2">
-                No lines yet — click "Add line" to add products.
+                {{ t("purchases.noLines") }}
               </div>
               <div
                 v-for="(line, index) in form.lines"
@@ -128,7 +128,7 @@
                       }
                     "
                   >
-                    <option value="">Select product…</option>
+                    <option value="">{{ t("purchases.selectProduct") }}</option>
                     <option v-for="p in activeProducts" :key="p.id" :value="p.id">
                       {{ p.name }}
                     </option>
@@ -151,7 +151,7 @@
                     type="number"
                     step="0.01"
                     min="0"
-                    placeholder="cost"
+                    :placeholder="t('products.cost')"
                   />
                 </div>
                 <div class="col-2 d-flex justify-content-between align-items-center">
@@ -159,7 +159,7 @@
                   <button
                     type="button"
                     class="btn btn-sm btn-outline-danger p-1"
-                    title="Remove line"
+                    :title="t('common.remove')"
                     @click="removeLine(index)"
                   >
                     <i class="bi bi-x-lg"></i>
@@ -169,28 +169,36 @@
 
               <div class="d-flex justify-content-end mt-3 pt-2 border-top">
                 <div class="d-flex align-items-center gap-3">
-                  <span class="text-muted small">{{ form.lines.length }} line(s)</span>
-                  <span class="fw-semibold">Total: {{ fmt(invoiceTotal) }}</span>
+                  <span class="text-muted small">
+                    {{
+                      t(
+                        "purchases.lineCount",
+                        { count: form.lines.length },
+                        form.lines.length
+                      )
+                    }}
+                  </span>
+                  <span class="fw-semibold">{{ t("purchases.totalLabel", { total: fmt(invoiceTotal) }) }}</span>
                 </div>
               </div>
 
               <div class="mt-3">
-                <label class="form-label" for="pi-notes">Notes</label>
+                <label class="form-label" for="pi-notes">{{ t("common.notes") }}</label>
                 <textarea
                   id="pi-notes"
                   v-model="form.notes"
                   class="form-control"
                   rows="2"
-                  placeholder="Optional reference or remarks…"
+                  :placeholder="t('purchases.notesPlaceholder')"
                 ></textarea>
               </div>
             </div>
             <div class="modal-footer">
               <button type="button" class="btn btn-outline-secondary" @click="showModal = false">
-                Cancel
+                {{ t("common.cancel") }}
               </button>
               <button type="submit" class="btn btn-primary" :disabled="saving">
-                <span v-if="saving" class="spinner-border spinner-border-sm me-2"></span>Save Invoice
+                <span v-if="saving" class="spinner-border spinner-border-sm me-2"></span>{{ t("purchases.saveInvoice") }}
               </button>
             </div>
           </form>
@@ -204,7 +212,7 @@
         <div class="modal-content">
           <form @submit.prevent="savePayment">
             <div class="modal-header">
-              <h5 class="modal-title">Record Payment — {{ payTarget.invoice_no }}</h5>
+              <h5 class="modal-title">{{ t("purchases.recordPaymentTitle2", { invoiceNo: payTarget.invoice_no }) }}</h5>
               <button type="button" class="btn-close" @click="payTarget = null"></button>
             </div>
             <div class="modal-body">
@@ -213,21 +221,21 @@
               </div>
               <div class="d-flex gap-3 mb-3">
                 <div class="flex-grow-1 card text-center p-2">
-                  <div class="text-muted small text-uppercase">Total</div>
+                  <div class="text-muted small text-uppercase">{{ t("common.total") }}</div>
                   <div class="fw-semibold">{{ fmt(payTarget.total) }}</div>
                 </div>
                 <div class="flex-grow-1 card text-center p-2">
-                  <div class="text-muted small text-uppercase">Paid</div>
+                  <div class="text-muted small text-uppercase">{{ t("common.paid") }}</div>
                   <div class="fw-semibold">{{ fmt(payTarget.paid_amount) }}</div>
                 </div>
                 <div class="flex-grow-1 card text-center p-2">
-                  <div class="text-muted small text-uppercase">Outstanding</div>
+                  <div class="text-muted small text-uppercase">{{ t("purchases.outstanding") }}</div>
                   <div class="fw-semibold text-danger">{{ fmt(payTarget.due_amount) }}</div>
                 </div>
               </div>
               <div class="row g-3">
                 <div class="col-md-6">
-                  <label class="form-label" for="pay-amount">Amount *</label>
+                  <label class="form-label" for="pay-amount">{{ t("purchases.amountRequired") }}</label>
                   <input
                     id="pay-amount"
                     v-model.number="payForm.amount"
@@ -240,44 +248,44 @@
                   />
                 </div>
                 <div class="col-md-6">
-                  <label class="form-label" for="pay-method">Method</label>
+                  <label class="form-label" for="pay-method">{{ t("common.method") }}</label>
                   <select id="pay-method" v-model="payForm.method" class="form-select">
-                    <option value="cash">Cash</option>
-                    <option value="card">Card</option>
-                    <option value="bank">Bank</option>
+                    <option value="cash">{{ t("purchases.cash") }}</option>
+                    <option value="card">{{ t("purchases.card") }}</option>
+                    <option value="bank">{{ t("purchases.bank") }}</option>
                   </select>
                 </div>
               </div>
               <div class="mt-3">
-                <label class="form-label" for="pay-date">Date</label>
+                <label class="form-label" for="pay-date">{{ t("common.date") }}</label>
                 <input id="pay-date" v-model="payForm.date" class="form-control" type="date" />
               </div>
               <div class="mt-3 mb-0">
-                <label class="form-label" for="pay-notes">Notes</label>
+                <label class="form-label" for="pay-notes">{{ t("common.notes") }}</label>
                 <input
                   id="pay-notes"
                   v-model="payForm.notes"
                   class="form-control"
                   type="text"
-                  placeholder="Optional reference…"
+                  :placeholder="t('purchases.notesPlaceholder')"
                 />
               </div>
 
               <div v-if="payHistory.length" class="mt-4">
-                <div class="fw-semibold small text-muted text-uppercase mb-2">Payment history</div>
+                <div class="fw-semibold small text-muted text-uppercase mb-2">{{ t("purchases.paymentHistory") }}</div>
                 <table class="table table-sm align-middle mb-0">
                   <thead>
                     <tr>
-                      <th>Date</th>
-                      <th>Method</th>
-                      <th>Notes</th>
-                      <th class="text-end">Amount</th>
+                      <th>{{ t("common.date") }}</th>
+                      <th>{{ t("common.method") }}</th>
+                      <th>{{ t("common.notes") }}</th>
+                      <th class="text-end">{{ t("common.amount") }}</th>
                     </tr>
                   </thead>
                   <tbody>
                     <tr v-for="p in payHistory" :key="p.id">
                       <td class="text-muted">{{ p.date }}</td>
-                      <td class="text-capitalize">{{ p.method }}</td>
+                      <td class="text-capitalize">{{ paymentMethodLabel(p.method) }}</td>
                       <td class="text-muted">{{ p.notes ?? "—" }}</td>
                       <td class="text-end fw-semibold">{{ fmt(p.amount) }}</td>
                     </tr>
@@ -287,11 +295,11 @@
             </div>
             <div class="modal-footer">
               <button type="button" class="btn btn-outline-secondary" @click="payTarget = null">
-                Close
+                {{ t("common.close") }}
               </button>
               <button type="submit" class="btn btn-success" :disabled="paySaving">
                 <span v-if="paySaving" class="spinner-border spinner-border-sm me-2"></span>
-                Record Payment
+                {{ t("purchases.recordPaymentBtn") }}
               </button>
             </div>
           </form>
@@ -304,6 +312,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
+import { useI18n } from "vue-i18n";
 import { useCatalogStore } from "../../stores/catalog";
 import { useSettingsStore } from "../../stores/settings";
 import { useAuth } from "../../composables/useAuth";
@@ -312,6 +321,7 @@ import type { Supplier, SupplierInvoice, InvoiceLine, SupplierPayment } from "..
 const catalog = useCatalogStore();
 const settings = useSettingsStore();
 const auth = useAuth();
+const { t, locale } = useI18n();
 
 const suppliers = ref<Supplier[]>([]);
 const invoices = ref<SupplierInvoice[]>([]);
@@ -337,11 +347,26 @@ const payForm = ref({ amount: 0, method: "cash", date: "", notes: "" });
 
 function fmt(n: number): string {
   if (!settings.currency) return n.toFixed(2);
-  return new Intl.NumberFormat(undefined, {
+  return new Intl.NumberFormat(locale.value, {
     style: "currency",
     currency: settings.currency,
     currencyDisplay: "narrowSymbol",
   }).format(n);
+}
+
+function statusLabel(status: string): string {
+  switch (status) {
+    case "paid":
+      return t("purchases.settled");
+    case "partial":
+      return t("expenses.partial");
+    default:
+      return t("expenses.unpaid");
+  }
+}
+
+function paymentMethodLabel(method: string): string {
+  return t("purchases." + method);
 }
 
 function lineSubtotal(line: InvoiceLine): number {
@@ -400,13 +425,13 @@ function onProductChange(line: InvoiceLine) {
 }
 
 function validate(): string {
-  if (!form.value.supplierId) return "Select a supplier";
+  if (!form.value.supplierId) return t("purchases.selectSupplierErr");
   const validLines = form.value.lines.filter((l) => l.productId != null);
-  if (!validLines.length) return "Add at least one product line";
+  if (!validLines.length) return t("purchases.atLeastOneLine");
   for (const l of validLines) {
-    if (!l.qty || l.qty <= 0) return "Quantities must be greater than zero";
+    if (!l.qty || l.qty <= 0) return t("purchases.qtyPositive");
     if (typeof l.costPrice !== "number" || isNaN(l.costPrice) || l.costPrice < 0)
-      return "Enter a valid cost price (0 or more)";
+      return t("purchases.costValid");
   }
   return "";
 }
@@ -434,7 +459,7 @@ async function save() {
   try {
     await invoke<number>("create_supplier_invoice", { input: payload() });
     showModal.value = false;
-    notice.value = "Invoice recorded — stock updated";
+    notice.value = t("purchases.invoiceRecorded");
     await Promise.all([load(), catalog.load()]);
   } catch (e) {
     formError.value = e instanceof Error ? e.message : String(e);
@@ -479,11 +504,13 @@ async function savePayment() {
   payError.value = "";
   const amount = payForm.value.amount;
   if (typeof amount !== "number" || isNaN(amount) || amount <= 0) {
-    payError.value = "Enter a payment amount greater than zero";
+    payError.value = t("purchases.paymentAmount");
     return;
   }
   if (amount > inv.due_amount) {
-    payError.value = `Payment exceeds the outstanding amount (${fmt(inv.due_amount)})`;
+    payError.value = t("purchases.paymentExceeds", {
+      outstanding: fmt(inv.due_amount),
+    });
     return;
   }
   paySaving.value = true;
@@ -499,7 +526,7 @@ async function savePayment() {
       },
     });
     payTarget.value = null;
-    notice.value = `Payment recorded for ${inv.invoice_no}`;
+    notice.value = t("purchases.paymentRecorded", { invoiceNo: inv.invoice_no });
     await load();
   } catch (e) {
     payError.value = e instanceof Error ? e.message : String(e);

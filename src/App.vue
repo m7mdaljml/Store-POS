@@ -6,7 +6,7 @@
           <i class="bi bi-shop"></i>
         </div>
         <span v-if="!collapsed" class="fw-semibold fs-6">
-          {{ settings.storeName || "Store POS" }}
+          {{ settings.storeName || t("app.storeName") }}
         </span>
       </div>
 
@@ -30,7 +30,7 @@
           v-if="auth.isAuthenticated"
           class="sidebar-toggle"
           type="button"
-          aria-label="Toggle sidebar"
+          :aria-label="t('app.toggleSidebar')"
           @click="collapsed = !collapsed"
         >
           <i
@@ -41,7 +41,9 @@
           ></i>
         </button>
 
-        <h1 class="topbar-title">{{ settings.storeName || "Store POS" }}</h1>
+        <h1 class="topbar-title">
+          {{ settings.storeName || t("app.storeName") }}
+        </h1>
 
         <div class="ms-auto d-flex align-items-center gap-3">
           <span class="text-muted small fw-medium">
@@ -51,16 +53,25 @@
           <button
             class="btn btn-sm btn-outline-secondary"
             type="button"
-            :title="
-              theme.isDark ? 'Switch to light theme' : 'Switch to dark theme'
-            "
+            :title="theme.isDark ? t('app.switchThemeLight') : t('app.switchThemeDark')"
             @click="theme.toggle()"
           >
             <i class="bi" :class="theme.isDark ? 'bi-sun' : 'bi-moon'"></i>
           </button>
 
+          <button
+            class="btn btn-sm btn-outline-secondary"
+            type="button"
+            :title="t('app.switchLanguage')"
+            @click="toggleLocale()"
+          >
+            <i class="bi bi-translate"></i>
+          </button>
+
           <template v-if="auth.isAuthenticated">
-            <span class="role-badge">{{ auth.user?.roleName }}</span>
+            <span class="role-badge">
+              {{ t(auth.user?.roleName === "Admin" ? "roles.admin" : "roles.cashier") }}
+            </span>
             <div class="d-flex align-items-center gap-2">
               <div
                 class="d-flex align-items-center justify-content-center rounded-circle text-bg-primary"
@@ -80,7 +91,7 @@
               type="button"
               @click="auth.logout()"
             >
-              <i class="bi bi-box-arrow-right me-1"></i>Logout
+              <i class="bi bi-box-arrow-right me-1"></i>{{ t("app.logout") }}
             </button>
           </template>
 
@@ -89,7 +100,7 @@
             to="/login"
             class="btn btn-sm btn-primary"
           >
-            <i class="bi bi-box-arrow-in-right me-1"></i>Login
+            <i class="bi bi-box-arrow-in-right me-1"></i>{{ t("app.login") }}
           </RouterLink>
         </div>
       </header>
@@ -104,14 +115,17 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { RouterLink, RouterView, useRoute, useRouter } from "vue-router";
+import { useI18n } from "vue-i18n";
 import { useAuth } from "./composables/useAuth";
 import { useSettingsStore } from "./stores/settings";
 import { useCatalogStore } from "./stores/catalog";
 import { useThemeStore } from "./stores/theme";
 import { seedIfNeeded } from "./lib/seed";
+import { toggleLocale } from "./i18n";
 
 const route = useRoute();
 const router = useRouter();
+const { t } = useI18n();
 const auth = useAuth();
 const settings = useSettingsStore();
 const catalog = useCatalogStore();
@@ -123,19 +137,19 @@ let timer: number | undefined;
 
 const navItems = computed(() => {
   const items = [
-    { to: "/", label: "Dashboard", icon: "bi-speedometer2", adminOnly: true },
-    { to: "/checkout", label: "Checkout", icon: "bi-basket", permission: "sales.checkout" },
-    { to: "/sales", label: "Sales", icon: "bi-receipt", permission: "sales.void" },
-    { to: "/products", label: "Products", icon: "bi-box-seam", permission: "inventory.view" },
-    { to: "/stock", label: "Stock", icon: "bi-boxes", permission: "inventory.view" },
-    { to: "/purchases", label: "Purchases", icon: "bi-truck", permission: "inventory.view" },
-    { to: "/suppliers", label: "Suppliers", icon: "bi-person-lines-fill", permission: "expenses.manage" },
-    { to: "/customers", label: "Customers", icon: "bi-people", adminOnly: true },
-    { to: "/reports", label: "Reports", icon: "bi-graph-up-arrow", permission: "reports.view" },
-    { to: "/sessions", label: "Sessions", icon: "bi-cash-stack", permission: "reports.view" },
-    { to: "/expenses", label: "Expenses", icon: "bi-cash-coin", permission: "expenses.manage" },
-    { to: "/users", label: "Users", icon: "bi-person-gear", permission: "users.manage" },
-    { to: "/settings", label: "Settings", icon: "bi-gear", permission: "settings.manage" },
+    { to: "/", label: t("nav.dashboard"), icon: "bi-speedometer2", adminOnly: true },
+    { to: "/checkout", label: t("nav.checkout"), icon: "bi-basket", permission: "sales.checkout" },
+    { to: "/sales", label: t("nav.sales"), icon: "bi-receipt", permission: "sales.void" },
+    { to: "/products", label: t("nav.products"), icon: "bi-box-seam", permission: "inventory.view" },
+    { to: "/stock", label: t("nav.stock"), icon: "bi-boxes", permission: "inventory.view" },
+    { to: "/purchases", label: t("nav.purchases"), icon: "bi-truck", permission: "inventory.view" },
+    { to: "/suppliers", label: t("nav.suppliers"), icon: "bi-person-lines-fill", permission: "expenses.manage" },
+    { to: "/customers", label: t("nav.customers"), icon: "bi-people", adminOnly: true },
+    { to: "/reports", label: t("nav.reports"), icon: "bi-graph-up-arrow", permission: "reports.view" },
+    { to: "/sessions", label: t("nav.sessions"), icon: "bi-cash-stack", permission: "reports.view" },
+    { to: "/expenses", label: t("nav.expenses"), icon: "bi-cash-coin", permission: "expenses.manage" },
+    { to: "/users", label: t("nav.users"), icon: "bi-person-gear", permission: "users.manage" },
+    { to: "/settings", label: t("nav.settings"), icon: "bi-gear", permission: "settings.manage" },
   ];
   return items.filter((item) => {
     if (item.adminOnly) return auth.role === "Admin";

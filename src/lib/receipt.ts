@@ -1,4 +1,5 @@
 import type { SaleReceipt } from "../types";
+import { i18n } from "../i18n";
 
 /** Format a number as a plain currency string (no thousands grouping). */
 function money(n: number): string {
@@ -17,14 +18,23 @@ function esc(s: string | null | undefined): string {
 function fmtDateTime(raw: string): string {
   const date = new Date(raw + (raw.includes("T") ? "" : "Z"));
   if (isNaN(date.getTime())) return raw;
-  return date.toLocaleString();
+  return date.toLocaleString(i18n.global.locale.value);
 }
 
-const METHOD_LABELS: Record<string, string> = {
-  cash: "CASH",
-  card: "CARD",
-  credit: "CREDIT",
-};
+function methodLabel(method: string): string {
+  switch (method) {
+    case "cash":
+      return t("receipt.methodCash");
+    case "card":
+      return t("receipt.methodCard");
+    case "credit":
+      return t("receipt.methodCredit");
+    default:
+      return esc(method).toUpperCase();
+  }
+}
+
+const t = i18n.global.t;
 
 /**
  * Builds a self-contained 80mm thermal receipt document from a sale. Uses a
@@ -33,7 +43,7 @@ const METHOD_LABELS: Record<string, string> = {
 export function buildReceiptHtml(r: SaleReceipt): string {
   const statusLine =
     r.status === "voided"
-      ? `<div class="center b">*** VOIDED ***</div>`
+      ? `<div class="center b">*** ${esc(t("receipt.voided"))} ***</div>`
       : r.status !== "completed"
         ? `<div class="center b">*** ${esc(r.status.toUpperCase())} ***</div>`
         : "";
@@ -44,7 +54,7 @@ export function buildReceiptHtml(r: SaleReceipt): string {
       const line = `${it.qty} x ${money(it.price)}`;
       const discountLine =
         it.discount > 0
-          ? `<div class="row sub"><span>discount</span><span>-${money(it.discount * it.qty)}</span></div>`
+          ? `<div class="row sub"><span>${esc(t("receipt.discount"))}</span><span>-${money(it.discount * it.qty)}</span></div>`
           : "";
       return `
       <div class="item-name">${name}</div>
@@ -54,40 +64,42 @@ export function buildReceiptHtml(r: SaleReceipt): string {
     .join("");
 
   const discountRows = r.itemDiscount > 0
-    ? `<div class="row sub"><span>Item discounts</span><span>-${money(r.itemDiscount)}</span></div>`
+    ? `<div class="row sub"><span>${esc(t("receipt.itemDiscounts"))}</span><span>-${money(r.itemDiscount)}</span></div>`
     : "";
   const orderDiscountRows = r.orderDiscount > 0
-    ? `<div class="row sub"><span>Order discount</span><span>-${money(r.orderDiscount)}</span></div>`
+    ? `<div class="row sub"><span>${esc(t("receipt.orderDiscount"))}</span><span>-${money(r.orderDiscount)}</span></div>`
     : "";
   const taxRows = r.tax > 0
-    ? `<div class="row"><span>Tax</span><span>${money(r.tax)}</span></div>`
+    ? `<div class="row"><span>${esc(t("receipt.tax"))}</span><span>${money(r.tax)}</span></div>`
     : "";
 
   const paymentRows = r.payments
     .map(
       (p) =>
-        `<div class="row"><span>${esc(METHOD_LABELS[p.method] ?? esc(p.method).toUpperCase())}</span><span>${money(p.amount)}</span></div>`
+        `<div class="row"><span>${methodLabel(p.method)}</span><span>${money(p.amount)}</span></div>`
     )
     .join("");
 
   const customerRow = r.customerName
-    ? `<div class="row"><span>Customer</span><span>${esc(r.customerName)}</span></div>`
+    ? `<div class="row"><span>${esc(t("common.customer"))}</span><span>${esc(r.customerName)}</span></div>`
     : "";
   const cashierRow = r.userName
-    ? `<div class="row"><span>Cashier</span><span>${esc(r.userName)}</span></div>`
+    ? `<div class="row"><span>${esc(t("common.cashier"))}</span><span>${esc(r.userName)}</span></div>`
     : "";
 
-  const storeHeader = r.storeName || "RECEIPT";
+  const storeHeader = r.storeName || t("receipt.receipt");
   const storeLine1 = r.storeAddress ? `<div class="center">${esc(r.storeAddress)}</div>` : "";
   const storeLine2 = r.storePhone ? `<div class="center">${esc(r.storePhone)}</div>` : "";
-  const storeLine3 = r.storeTaxId ? `<div class="center">Tax ID: ${esc(r.storeTaxId)}</div>` : "";
-  const footer = r.receiptFooter || "Thank you for your visit!";
+  const storeLine3 = r.storeTaxId
+    ? `<div class="center">${esc(t("suppliers.taxId"))}: ${esc(r.storeTaxId)}</div>`
+    : "";
+  const footer = r.receiptFooter || t("receipt.footer");
 
   return `<!doctype html>
 <html>
 <head>
 <meta charset="utf-8">
-<title>Receipt ${esc(r.saleNo)}</title>
+<title>${esc(t("receipt.receipt"))} ${esc(r.saleNo)}</title>
 <style>
   @page { size: 80mm auto; margin: 2mm; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -117,22 +129,22 @@ export function buildReceiptHtml(r: SaleReceipt): string {
   ${storeLine3}
   <div class="hr"></div>
   ${statusLine}
-  <div class="row"><span>Sale #</span><span>${esc(r.saleNo)}</span></div>
-  <div class="row"><span>Date</span><span>${esc(fmtDateTime(r.createdAt))}</span></div>
+  <div class="row"><span>${esc(t("receipt.saleNo"))}</span><span>${esc(r.saleNo)}</span></div>
+  <div class="row"><span>${esc(t("common.date"))}</span><span>${esc(fmtDateTime(r.createdAt))}</span></div>
   ${cashierRow}
   ${customerRow}
   <div class="hr"></div>
   ${itemRows}
   <div class="hr"></div>
-  <div class="row"><span>Subtotal</span><span>${money(r.subtotal)}</span></div>
+  <div class="row"><span>${esc(t("receipt.subtotal"))}</span><span>${money(r.subtotal)}</span></div>
   ${discountRows}
   ${orderDiscountRows}
   ${taxRows}
-  <div class="row b" style="font-size: 13px"><span>TOTAL</span><span>${money(r.total)}</span></div>
+  <div class="row b" style="font-size: 13px"><span>${esc(t("receipt.total"))}</span><span>${money(r.total)}</span></div>
   <div class="hr"></div>
   ${paymentRows}
-  <div class="row"><span>Paid</span><span>${money(r.paidAmount)}</span></div>
-  <div class="row"><span>Change</span><span>${money(r.changeGiven)}</span></div>
+  <div class="row"><span>${esc(t("receipt.paid"))}</span><span>${money(r.paidAmount)}</span></div>
+  <div class="row"><span>${esc(t("receipt.change"))}</span><span>${money(r.changeGiven)}</span></div>
   <div class="hr"></div>
   <div class="footer">${esc(footer)}</div>
 </body>

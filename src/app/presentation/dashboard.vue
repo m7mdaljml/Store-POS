@@ -1,13 +1,13 @@
 <template>
   <div>
-    <h1 class="h4 mb-3">Dashboard</h1>
+    <h1 class="h4 mb-3">{{ t("dashboard.title") }}</h1>
 
     <div class="row g-3 mb-3">
       <div class="col-6 col-lg-3">
         <div class="kpi-card">
           <div class="kpi-icon"><i class="bi bi-cash-stack"></i></div>
           <div>
-            <div class="kpi-label">Today's Revenue</div>
+            <div class="kpi-label">{{ t("dashboard.todayRevenue") }}</div>
             <div class="kpi-value">{{ fmt(kpi.revenue) }}</div>
           </div>
         </div>
@@ -16,7 +16,7 @@
         <div class="kpi-card">
           <div class="kpi-icon"><i class="bi bi-receipt"></i></div>
           <div>
-            <div class="kpi-label">Today's Orders</div>
+            <div class="kpi-label">{{ t("dashboard.todayOrders") }}</div>
             <div class="kpi-value">{{ kpi.orders }}</div>
           </div>
         </div>
@@ -25,7 +25,7 @@
         <div class="kpi-card">
           <div class="kpi-icon"><i class="bi bi-graph-up-arrow"></i></div>
           <div>
-            <div class="kpi-label">Avg Ticket Today</div>
+            <div class="kpi-label">{{ t("dashboard.avgTicket") }}</div>
             <div class="kpi-value">{{ fmt(kpi.avgTicket) }}</div>
           </div>
         </div>
@@ -34,7 +34,7 @@
         <div class="kpi-card">
           <div class="kpi-icon"><i class="bi bi-calendar-month"></i></div>
           <div>
-            <div class="kpi-label">This Month</div>
+            <div class="kpi-label">{{ t("dashboard.thisMonth") }}</div>
             <div class="kpi-value">{{ fmt(kpi.monthRevenue) }}</div>
           </div>
         </div>
@@ -46,7 +46,7 @@
         <div class="kpi-card">
           <div class="kpi-icon"><i class="bi bi-box-seam"></i></div>
           <div>
-            <div class="kpi-label">Total Products</div>
+            <div class="kpi-label">{{ t("dashboard.totalProducts") }}</div>
             <div class="kpi-value">{{ totalProducts }}</div>
           </div>
         </div>
@@ -55,7 +55,7 @@
         <div class="kpi-card">
           <div class="kpi-icon"><i class="bi bi-check-circle"></i></div>
           <div>
-            <div class="kpi-label">Active Products</div>
+            <div class="kpi-label">{{ t("dashboard.activeProducts") }}</div>
             <div class="kpi-value">{{ activeProducts }}</div>
           </div>
         </div>
@@ -64,7 +64,7 @@
         <div class="kpi-card">
           <div class="kpi-icon"><i class="bi bi-boxes"></i></div>
           <div>
-            <div class="kpi-label">Units on Hand</div>
+            <div class="kpi-label">{{ t("dashboard.unitsOnHand") }}</div>
             <div class="kpi-value">{{ unitsOnHand }}</div>
           </div>
         </div>
@@ -75,7 +75,7 @@
             <i class="bi bi-exclamation-triangle"></i>
           </div>
           <div>
-            <div class="kpi-label">Low Stock</div>
+            <div class="kpi-label">{{ t("dashboard.lowStock") }}</div>
             <div class="kpi-value" :class="lowStock.length ? 'text-danger' : 'text-success'">
               {{ lowStock.length }}
             </div>
@@ -87,10 +87,10 @@
     <div class="card">
       <div class="card-header d-flex align-items-center justify-content-between">
         <span class="fw-semibold">
-          <i class="bi bi-exclamation-triangle me-1 text-warning"></i>Low-Stock Alerts
+          <i class="bi bi-exclamation-triangle me-1 text-warning"></i>{{ t("dashboard.lowStockAlerts") }}
         </span>
         <RouterLink to="/stock" class="btn btn-sm btn-outline-secondary">
-          <i class="bi bi-boxes me-1"></i>Go to Stock
+          <i class="bi bi-boxes me-1"></i>{{ t("dashboard.goToStock") }}
         </RouterLink>
       </div>
       <div class="table-responsive">
@@ -98,21 +98,20 @@
           <thead>
             <tr>
               <th style="width: 52px"></th>
-              <th>Product</th>
-              <th>Category</th>
-              <th class="text-end">In Stock</th>
-              <th class="text-end">Reorder Level</th>
-              <th>Status</th>
+              <th>{{ t("dashboard.product") }}</th>
+              <th>{{ t("dashboard.category") }}</th>
+              <th class="text-end">{{ t("dashboard.inStock") }}</th>
+              <th class="text-end">{{ t("dashboard.reorderLevel") }}</th>
+              <th>{{ t("common.status") }}</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="!catalog.loaded">
-              <td colspan="6" class="text-center text-muted py-4">Loading…</td>
+              <td colspan="6" class="text-center text-muted py-4">{{ t("common.loading") }}</td>
             </tr>
             <tr v-else-if="!lowStock.length">
               <td colspan="6" class="text-center text-muted py-4">
-                No products below their reorder level. Set a reorder level in Products →
-                Edit to enable alerts.
+                {{ t("dashboard.noLowStock") }}
               </td>
             </tr>
             <tr v-for="p in lowStock" :key="p.id">
@@ -136,7 +135,7 @@
                   class="badge"
                   :class="p.stock_qty === 0 ? 'text-bg-danger' : 'text-bg-warning'"
                 >
-                  {{ p.stock_qty === 0 ? "Out of stock" : "Low" }}
+                  {{ p.stock_qty === 0 ? t("dashboard.outOfStock") : t("dashboard.low") }}
                 </span>
               </td>
             </tr>
@@ -150,6 +149,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { RouterLink } from "vue-router";
+import { useI18n } from "vue-i18n";
 import { useCatalogStore } from "../../stores/catalog";
 import { useSettingsStore } from "../../stores/settings";
 import { convertFileSrc } from "@tauri-apps/api/core";
@@ -157,6 +157,7 @@ import { select } from "../../lib/db";
 
 const catalog = useCatalogStore();
 const settings = useSettingsStore();
+const { t, locale } = useI18n();
 
 interface SalesKpi {
   revenue: number;
@@ -188,7 +189,7 @@ async function loadKpis() {
 
 function fmt(n: number): string {
   if (!settings.currency) return n.toFixed(2);
-  return new Intl.NumberFormat(undefined, {
+  return new Intl.NumberFormat(locale.value, {
     style: "currency",
     currency: settings.currency,
     currencyDisplay: "narrowSymbol",
