@@ -52,6 +52,30 @@ const adjustError = ref("");
 
 const taxProfiles = ref<TaxProfile[]>([]);
 
+const csvImporting = ref(false);
+const csvResult = ref<{ imported: number; errors: { row: number; message: string }[] } | null>(
+  null,
+);
+
+async function importCsv() {
+  const filePath = await open({
+    multiple: false,
+    filters: [{ name: "CSV", extensions: ["csv"] }],
+  });
+  if (typeof filePath !== "string") return;
+  csvImporting.value = true;
+  csvResult.value = null;
+  error.value = "";
+  try {
+    csvResult.value = await invoke("import_products_csv", { sourcePath: filePath });
+    await Promise.all([loadCategories(), catalog.load()]);
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    csvImporting.value = false;
+  }
+}
+
 function fmt(n: number): string {
   if (!settings.currency) return n.toFixed(2);
   return new Intl.NumberFormat(undefined, {
@@ -358,9 +382,33 @@ onMounted(async () => {
   <div>
     <div class="d-flex align-items-center justify-content-between mb-3">
       <h1 class="h4 mb-0">Products</h1>
-      <button class="btn btn-primary" type="button" @click="openAddProduct">
-        <i class="bi bi-plus-lg me-1"></i>Add Product
-      </button>
+      <div class="d-flex gap-2">
+        <button class="btn btn-outline-primary" type="button" @click="importCsv" :disabled="csvImporting">
+          <i class="bi bi-filetype-csv me-1"></i>Import CSV
+        </button>
+        <button class="btn btn-primary" type="button" @click="openAddProduct">
+          <i class="bi bi-plus-lg me-1"></i>Add Product
+        </button>
+      </div>
+    </div>
+
+    <div v-if="csvResult" class="alert alert-info py-2 small" role="alert">
+      <div class="d-flex justify-content-between align-items-start">
+        <div>
+          <i class="bi bi-file-earmark-arrow-up me-1"></i>
+          <strong>{{ csvResult.imported }}</strong> product(s) imported
+          <span v-if="csvResult.errors.length">, <strong>{{ csvResult.errors.length }}</strong> row(s) skipped</span>
+          <ul v-if="csvResult.errors.length" class="mb-0 mt-1 small">
+            <li v-for="(e, i) in csvResult.errors.slice(0, 10)" :key="i">
+              Row {{ e.row }}: {{ e.message }}
+            </li>
+            <li v-if="csvResult.errors.length > 10" class="text-muted">
+              …and {{ csvResult.errors.length - 10 }} more
+            </li>
+          </ul>
+        </div>
+        <button type="button" class="btn-close" @click="csvResult = null"></button>
+      </div>
     </div>
 
     <div v-if="error" class="alert alert-danger py-2 small" role="alert">

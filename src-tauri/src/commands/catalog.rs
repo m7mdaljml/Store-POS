@@ -424,3 +424,242 @@ pub async fn adjust_stock<R: Runtime>(
     tx.commit().await.map_err(|e| e.to_string())?;
     Ok(())
 }
+
+#[derive(Serialize)]
+pub struct CsvImportError {
+    pub row: usize,
+    pub message: String,
+}
+
+#[derive(Serialize)]
+pub struct CsvImportResult {
+    pub imported: usize,
+    pub errors: Vec<CsvImportError>,
+}
+
+fn normalize_header(raw: &str) -> String {
+    raw.trim().to_lowercase().replace([' ', '-'], "_")
+}
+
+fn parse_import_f64(raw: &str, field: &str) -> Result<f64, String> {
+    let t = raw.trim();
+    if t.is_empty() {
+        return Ok(0.0);
+    }
+    t.parse::<f64>()
+        .map_err(|_| format!("Invalid {field} value \"{raw}\""))
+}
+
+fn validate_import_row(
+    name: &str,
+    barcode: &str,
+    cost: f64,
+    sell: f64,
+    unit: &str,
+    reorder: f64,
+    stock: f64,
+) -> Result<(), String> {
+    if name.trim().is_empty() {
+        return Err("Name is required".into());
+    }
+    if barcode.trim().is_empty() {
+        return Err("Barcode is required".into());
+    }
+    if cost < 0.0 {
+        return Err("Cost price cannot be negative".into());
+    }
+    if sell < 0.0 {
+        return Err("Sell price cannot be negative".into());
+    }
+    if sell <= cost {
+        return Err("Sell price must be more than cost price".into());
+    }
+    if unit.trim().is_empty() {
+        return Err("Unit is required".into());
+    }
+    if reorder < 0.0 {
+        return Err("Reorder level cannot be negative".into());
+    }
+    if stock < 0.0 {
+        return Err("Stock cannot be negative".into());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn import_products_csv<R: Runtime>(
+    app: AppHandle<R>,
+    source_path: String,
+) -> Result<CsvImportResult, String> {
+    let pool = db::pool(&app).await?;
+    let mut reader = csv::ReaderBuilder::new()
+        .has_headers(true)
+        .from_path(&source_path)
+        .map_err(|e| format!("Could not read CSV file: {e}"))?;
+
+    let headers = reader
+        .headers()
+        .map_err(|e| e.to_string())?
+        .clone();
+    let norm: Vec<String> = headers.iter().map(|h| normalize_header(h)).collect();
+
+    let find_col = |aliases: &[&str]| -> Option<usize> {
+        norm.iter().position(|h| aliases.contains(&h.as_str()))
+    };
+    let require_col = |aliases: &[&str], label: &str| -> Result<usize, String> {
+        find_col(aliases).ok_or_else(|| format!("CSV is missing a '{label}' column"))
+    };
+
+    let c_name = require_col(&["name", "product", "productname", "product_name"], "name")?;
+    let c_barcode = require_col(
+        &["barcode", "code", "bar_code", "barcode_no"],
+        "barcode",
+    )?;
+    let c_sku = find_col(&["sku", "product_code"]);
+    let c_category = find_col(&["category", "categoryname", "category_name", "group"]);
+    let c_cost = find_col(&["cost", "costprice", "cost_price"]);
+    let c_sell = find_col(&["sell", "sellprice", "sell_price", "price"]);
+    let c_unit = find_col(&["unit", "uom"]);
+    let c_reorder = find_col(&["reorder", "reorderlevel", "reorder_level", "min_stock"]);
+    let c_stock = find_col(&[
+        "stock", "qty", "quantity", "openingstock", "opening_stock", "stockqty", "stock_qty",
+    ]);
+
+    let mut result = CsvImportResult {
+        imported: 0,
+        errors: Vec::new(),
+    };
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+
+    for (idx, record) in reader.records().enumerate() {
+        let row_no = idx + 2;
+        let record = match record {
+            Ok(r) => r,
+            Err(e) => {
+                result
+                    .errors
+                    .push(CsvImportError { row: row_no, message: e.to_string() });
+                continue;
+            }
+        };
+        let cell = |i: Option<usize>| -> Option<String> {
+            i.and_then(|ix| record.get(ix)).map(|s| s.trim().to_string())
+        };
+
+        let name = cell(Some(c_name)).unwrap_or_default();
+        let barcode = cell(Some(c_barcode)).unwrap_or_default();
+
+        let cost = match cell(c_cost).map(|v| parse_import_f64(&v, "cost price")).transpose() {
+            Ok(v) => v.unwrap_or(0.0),
+            Err(e) => {
+                result.errors.push(CsvImportError { row: row_no, message: e });
+                continue;
+            }
+        };
+        let sell = match cell(c_sell).map(|v| parse_import_f64(&v, "sell price")).transpose() {
+            Ok(v) => v.unwrap_or(0.0),
+            Err(e) => {
+                result.errors.push(CsvImportError { row: row_no, message: e });
+                continue;
+            }
+        };
+        let reorder = match cell(c_reorder).map(|v| parse_import_f64(&v, "reorder level")).transpose() {
+            Ok(v) => v.unwrap_or(0.0),
+            Err(e) => {
+                result.errors.push(CsvImportError { row: row_no, message: e });
+                continue;
+            }
+        };
+        let stock = match cell(c_stock).map(|v| parse_import_f64(&v, "stock")).transpose() {
+            Ok(v) => v.unwrap_or(0.0),
+            Err(e) => {
+                result.errors.push(CsvImportError { row: row_no, message: e });
+                continue;
+            }
+        };
+
+        let unit = cell(c_unit)
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "store item".into());
+
+        if let Err(msg) = validate_import_row(&name, &barcode, cost, sell, &unit, reorder, stock) {
+            result.errors.push(CsvImportError { row: row_no, message: msg });
+            continue;
+        }
+
+        let dup: Option<(i64,)> =
+            sqlx::query_as("SELECT id FROM products WHERE barcode = ?")
+                .bind(&barcode)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+        if dup.is_some() {
+            result.errors.push(CsvImportError {
+                row: row_no,
+                message: format!("Product with barcode \"{barcode}\" already exists"),
+            });
+            continue;
+        }
+
+        let category_id = match cell(c_category).filter(|s| !s.is_empty()) {
+            Some(cat_name) => {
+                let existing: Option<(i64,)> = sqlx::query_as(
+                    "SELECT id FROM categories WHERE lower(name) = lower(?)",
+                )
+                .bind(&cat_name)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+                match existing {
+                    Some((id,)) => Some(id),
+                    None => {
+                        let r = sqlx::query("INSERT INTO categories (name) VALUES (?)")
+                            .bind(&cat_name)
+                            .execute(&mut *tx)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                        Some(r.last_insert_rowid())
+                    }
+                }
+            }
+            None => None,
+        };
+
+        let pid = sqlx::query(
+            "INSERT INTO products
+                (sku, barcode, name, category_id, cost_price, sell_price,
+                 unit, stock_qty, reorder_level)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(empty_to_none(&cell(c_sku)))
+        .bind(&barcode)
+        .bind(name.trim())
+        .bind(category_id)
+        .bind(cost)
+        .bind(sell)
+        .bind(unit.trim())
+        .bind(stock)
+        .bind(reorder)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?
+        .last_insert_rowid();
+
+        if stock > 0.0 {
+            sqlx::query(
+                "INSERT INTO stock_movements (product_id, type, qty, notes)
+                 VALUES (?, 'opening', ?, 'Imported from CSV')",
+            )
+            .bind(pid)
+            .bind(stock)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+        }
+
+        result.imported += 1;
+    }
+
+    tx.commit().await.map_err(|e| e.to_string())?;
+    Ok(result)
+}

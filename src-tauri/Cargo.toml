@@ -28,6 +28,7 @@ argon2 = "0.5"
 password-hash = { version = "0.5", features = ["getrandom"] }
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite"] }
 tauri-plugin-dialog = "2.7.2"
+csv = "1.4.0"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
