@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
-use tauri::{AppHandle, Runtime};
+use tauri::{AppHandle, Manager, Runtime};
 
 use crate::db;
 
@@ -163,11 +163,18 @@ fn validate_product(input: &ProductInput) -> Result<(), String> {
     if input.name.trim().is_empty() {
         return Err("Product name is required".into());
     }
+    let barcode = input.barcode.as_ref().map(|s| s.trim());
+    if barcode.map_or(true, |s| s.is_empty()) {
+        return Err("Barcode is required".into());
+    }
     if input.cost_price < 0.0 {
         return Err("Cost price cannot be negative".into());
     }
     if input.sell_price < 0.0 {
         return Err("Sell price cannot be negative".into());
+    }
+    if input.sell_price <= input.cost_price {
+        return Err("Sell price must be more than cost price".into());
     }
     if input.unit.trim().is_empty() {
         return Err("Unit is required".into());
@@ -308,6 +315,49 @@ pub async fn delete_product<R: Runtime>(app: AppHandle<R>, product_id: i64) -> R
         return Err("Product not found".into());
     }
     Ok(())
+}
+
+#[tauri::command]
+pub async fn import_product_image<R: Runtime>(
+    app: AppHandle<R>,
+    product_id: i64,
+    source_path: String,
+) -> Result<String, String> {
+    let source = std::path::Path::new(&source_path);
+    if !source.is_file() {
+        return Err("Selected file does not exist".into());
+    }
+
+    let images_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("images");
+    std::fs::create_dir_all(&images_dir).map_err(|e| e.to_string())?;
+
+    let ext = source
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|s| s.to_lowercase())
+        .unwrap_or_else(|| "png".into());
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or_default();
+    let dest = images_dir.join(format!("product_{product_id}_{stamp}.{ext}"));
+
+    std::fs::copy(source, &dest).map_err(|e| format!("Could not copy image: {e}"))?;
+    let dest_path = dest.to_string_lossy().to_string();
+
+    let pool = db::pool(&app).await?;
+    sqlx::query("UPDATE products SET image_path = ? WHERE id = ?")
+        .bind(&dest_path)
+        .bind(product_id)
+        .execute(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(dest_path)
 }
 
 #[tauri::command]

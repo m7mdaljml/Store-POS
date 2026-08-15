@@ -320,3 +320,24 @@ body {
   font-size: 0.8rem;
   text-decoration: none;
 }
+
+.product-thumb {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--pos-radius-sm);
+  object-fit: cover;
+  border: 1px solid var(--pos-border);
+}
+
+.product-thumb-lg {
+  width: 72px;
+  height: 72px;
+}
+
+.product-thumb-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--pos-surface-2);
+  color: var(--pos-text-muted);
+}

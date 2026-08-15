@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, convertFileSrc } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 import { useCatalogStore } from "../../stores/catalog";
 import { useSettingsStore } from "../../stores/settings";
 import { select } from "../../lib/db";
@@ -20,6 +21,7 @@ const showModal = ref(false);
 const saving = ref(false);
 const productError = ref("");
 const editingId = ref<number | null>(null);
+const pendingImage = ref<string | null>(null);
 const form = ref({
   name: "",
   sku: "",
@@ -29,9 +31,10 @@ const form = ref({
   costPrice: 0,
   sellPrice: 0,
   taxProfileId: null as number | null,
-  unit: "pc",
+  unit: "store item",
   reorderLevel: 0,
   isActive: true,
+  imagePath: null as string | null,
 });
 
 const showCatModal = ref(false);
@@ -150,6 +153,7 @@ async function removeCategory(c: Category) {
 function openAddProduct() {
   productError.value = "";
   editingId.value = null;
+  pendingImage.value = null;
   form.value = {
     name: "",
     sku: "",
@@ -159,9 +163,10 @@ function openAddProduct() {
     costPrice: 0,
     sellPrice: 0,
     taxProfileId: null,
-    unit: "pc",
+    unit: "store item",
     reorderLevel: 0,
     isActive: true,
+    imagePath: null,
   };
   showModal.value = true;
 }
@@ -169,6 +174,7 @@ function openAddProduct() {
 function openEditProduct(p: Product) {
   productError.value = "";
   editingId.value = p.id;
+  pendingImage.value = null;
   form.value = {
     name: p.name,
     sku: p.sku ?? "",
@@ -181,8 +187,54 @@ function openEditProduct(p: Product) {
     unit: p.unit,
     reorderLevel: p.reorder_level,
     isActive: p.is_active === 1,
+    imagePath: p.image_path,
   };
   showModal.value = true;
+}
+
+function clearImage() {
+  form.value.imagePath = null;
+  pendingImage.value = null;
+}
+
+async function pickImage() {
+  productError.value = "";
+  const selectedPath = await open({
+    multiple: false,
+    filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "gif", "webp", "bmp"] }],
+  });
+  if (typeof selectedPath !== "string") return;
+  if (editingId.value != null) {
+    try {
+      form.value.imagePath = await invoke<string>("import_product_image", {
+        productId: editingId.value,
+        sourcePath: selectedPath,
+      });
+      pendingImage.value = null;
+    } catch (e) {
+      productError.value = e instanceof Error ? e.message : String(e);
+    }
+  } else {
+    pendingImage.value = selectedPath;
+    form.value.imagePath = null;
+  }
+}
+
+function validateProduct(): string {
+  if (!form.value.name.trim()) return "Product name is required";
+  if (!form.value.barcode.trim()) return "Barcode is required";
+  const cost = form.value.costPrice;
+  if (typeof cost !== "number" || isNaN(cost) || cost < 0)
+    return "Enter a valid cost price (0 or more)";
+  const sell = form.value.sellPrice;
+  if (typeof sell !== "number" || isNaN(sell) || sell < 0)
+    return "Enter a valid sell price (0 or more)";
+  if (sell <= cost) return "Sell price must be more than cost price";
+  if (!form.value.unit.trim()) return "Unit is required";
+  const reorder = form.value.reorderLevel;
+  if (typeof reorder !== "number" || isNaN(reorder) || reorder < 0)
+    return "Enter a valid reorder level (0 or more)";
+  return "";
 }
 
 function productPayload() {
@@ -197,25 +249,34 @@ function productPayload() {
     taxProfileId: form.value.taxProfileId,
     unit: form.value.unit,
     reorderLevel: form.value.reorderLevel,
-    imagePath: null,
+    imagePath: form.value.imagePath,
     isActive: form.value.isActive,
   };
 }
 
 async function saveProduct() {
   productError.value = "";
-  if (!form.value.name.trim()) {
-    productError.value = "Product name is required";
+  const err = validateProduct();
+  if (err) {
+    productError.value = err;
     return;
   }
   saving.value = true;
   try {
-    if (editingId.value == null) {
-      await invoke<number>("create_product", { input: productPayload() });
+    let id = editingId.value;
+    if (id == null) {
+      id = await invoke<number>("create_product", { input: productPayload() });
       notice.value = "Product added";
     } else {
-      await invoke("update_product", { productId: editingId.value, input: productPayload() });
+      await invoke("update_product", { productId: id, input: productPayload() });
       notice.value = "Product updated";
+    }
+    if (pendingImage.value) {
+      await invoke<string>("import_product_image", {
+        productId: id,
+        sourcePath: pendingImage.value,
+      });
+      pendingImage.value = null;
     }
     showModal.value = false;
     await Promise.all([loadCategories(), catalog.load()]);
@@ -360,6 +421,7 @@ onMounted(async () => {
           <table class="table align-middle mb-0">
             <thead>
               <tr>
+                <th style="width: 52px"></th>
                 <th>Name</th>
                 <th>Category</th>
                 <th>SKU / Barcode</th>
@@ -372,11 +434,22 @@ onMounted(async () => {
             </thead>
             <tbody>
               <tr v-if="!filteredProducts.length">
-                <td colspan="8" class="text-center text-muted py-4">
+                <td colspan="9" class="text-center text-muted py-4">
                   No products yet — click "Add Product" to create one
                 </td>
               </tr>
               <tr v-for="p in filteredProducts" :key="p.id">
+                <td>
+                  <img
+                    v-if="p.image_path"
+                    :src="convertFileSrc(p.image_path)"
+                    class="product-thumb"
+                    alt=""
+                  />
+                  <div v-else class="product-thumb product-thumb-empty">
+                    <i class="bi bi-image"></i>
+                  </div>
+                </td>
                 <td class="fw-semibold">{{ p.name }}</td>
                 <td class="text-muted">{{ categoryName(p.category_id) }}</td>
                 <td class="text-muted small">
@@ -444,15 +517,65 @@ onMounted(async () => {
               <div class="row g-3">
                 <div class="col-12">
                   <label class="form-label" for="p-name">Name *</label>
-                  <input id="p-name" v-model="form.name" class="form-control" type="text" autofocus />
+                  <input
+                    id="p-name"
+                    v-model="form.name"
+                    class="form-control"
+                    type="text"
+                    autofocus
+                    required
+                  />
+                </div>
+                <div class="col-12">
+                  <label class="form-label">
+                    Image <span class="text-muted fw-normal">(optional)</span>
+                  </label>
+                  <div class="d-flex align-items-center gap-3">
+                    <img
+                      v-if="form.imagePath"
+                      :src="convertFileSrc(form.imagePath)"
+                      class="product-thumb product-thumb-lg"
+                      alt=""
+                    />
+                    <div v-else class="product-thumb product-thumb-lg product-thumb-empty">
+                      <i class="bi bi-image"></i>
+                    </div>
+                    <div class="d-flex flex-column gap-1">
+                      <button
+                        class="btn btn-sm btn-outline-secondary"
+                        type="button"
+                        @click="pickImage"
+                      >
+                        <i class="bi bi-folder2-open me-1"></i>
+                        {{ form.imagePath || pendingImage ? "Choose different…" : "Choose image…" }}
+                      </button>
+                      <span v-if="pendingImage" class="text-muted small">
+                        Image will be attached when you save.
+                      </span>
+                      <button
+                        v-if="form.imagePath || pendingImage"
+                        class="btn btn-sm btn-outline-danger"
+                        type="button"
+                        @click="clearImage"
+                      >
+                        <i class="bi bi-x-lg me-1"></i>Remove
+                      </button>
+                    </div>
+                  </div>
                 </div>
                 <div class="col-md-6">
                   <label class="form-label" for="p-sku">SKU</label>
                   <input id="p-sku" v-model="form.sku" class="form-control" type="text" />
                 </div>
                 <div class="col-md-6">
-                  <label class="form-label" for="p-barcode">Barcode</label>
-                  <input id="p-barcode" v-model="form.barcode" class="form-control" type="text" />
+                  <label class="form-label" for="p-barcode">Barcode *</label>
+                  <input
+                    id="p-barcode"
+                    v-model="form.barcode"
+                    class="form-control"
+                    type="text"
+                    required
+                  />
                 </div>
                 <div class="col-12">
                   <label class="form-label" for="p-desc">Description</label>
@@ -502,8 +625,8 @@ onMounted(async () => {
                   />
                 </div>
                 <div class="col-md-4">
-                  <label class="form-label" for="p-unit">Unit</label>
-                  <input id="p-unit" v-model="form.unit" class="form-control" type="text" />
+                  <label class="form-label" for="p-unit">Unit *</label>
+                  <input id="p-unit" v-model="form.unit" class="form-control" type="text" required />
                 </div>
                 <div class="col-md-6">
                   <label class="form-label" for="p-reorder">Reorder level</label>
