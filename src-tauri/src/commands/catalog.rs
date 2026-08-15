@@ -385,6 +385,7 @@ pub async fn adjust_stock<R: Runtime>(
     product_id: i64,
     qty: f64,
     notes: Option<String>,
+    user_id: Option<i64>,
 ) -> Result<(), String> {
     let pool = db::pool(&app).await?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
@@ -405,11 +406,12 @@ pub async fn adjust_stock<R: Runtime>(
     }
 
     sqlx::query(
-        "INSERT INTO stock_movements (product_id, type, qty, notes) VALUES (?, 'adjustment', ?, ?)",
+        "INSERT INTO stock_movements (product_id, type, qty, notes, user_id) VALUES (?, 'adjustment', ?, ?, ?)",
     )
     .bind(product_id)
     .bind(qty)
     .bind(notes)
+    .bind(user_id)
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
@@ -423,6 +425,48 @@ pub async fn adjust_stock<R: Runtime>(
 
     tx.commit().await.map_err(|e| e.to_string())?;
     Ok(())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StockMovement {
+    pub id: i64,
+    pub product_id: i64,
+    pub product_name: String,
+    pub movement_type: String,
+    pub qty: f64,
+    pub notes: Option<String>,
+    pub user_name: Option<String>,
+    pub created_at: String,
+}
+
+#[tauri::command]
+pub async fn list_stock_movements<R: Runtime>(app: AppHandle<R>) -> Result<Vec<StockMovement>, String> {
+    let pool = db::pool(&app).await?;
+    let rows = sqlx::query(
+        "SELECT sm.id, sm.product_id, p.name, sm.type, sm.qty, sm.notes, u.full_name, sm.created_at
+         FROM stock_movements sm
+         JOIN products p ON p.id = sm.product_id
+         LEFT JOIN users u ON u.id = sm.user_id
+         ORDER BY sm.created_at DESC, sm.id DESC",
+    )
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(rows
+        .into_iter()
+        .map(|r| StockMovement {
+            id: r.get(0),
+            product_id: r.get(1),
+            product_name: r.get(2),
+            movement_type: r.get(3),
+            qty: r.get(4),
+            notes: r.get(5),
+            user_name: r.get(6),
+            created_at: r.get(7),
+        })
+        .collect())
 }
 
 #[derive(Serialize)]

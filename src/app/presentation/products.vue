@@ -4,11 +4,13 @@ import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useCatalogStore } from "../../stores/catalog";
 import { useSettingsStore } from "../../stores/settings";
+import { useAuth } from "../../composables/useAuth";
 import { select } from "../../lib/db";
 import type { Category, Product, TaxProfile } from "../../types";
 
 const catalog = useCatalogStore();
 const settings = useSettingsStore();
+const auth = useAuth();
 
 const categories = ref<Category[]>([]);
 const selected = ref<number | null>(null);
@@ -359,6 +361,7 @@ async function saveAdjust() {
       productId: target.id,
       qty: delta,
       notes: adjustNotes.value || null,
+      userId: auth.user?.id ?? null,
     });
     adjustTarget.value = null;
     notice.value = `Stock updated: ${target.stock_qty} → ${adjustNew.value} ${target.unit}`;
