@@ -91,3 +91,22 @@ export interface SupplierDetail {
   supplier: Supplier;
   invoices: SupplierInvoiceSummary[];
 }
+
+export interface SupplierInvoice {
+  id: number;
+  invoice_no: string;
+  supplier_id: number;
+  supplier_name: string;
+  date: string;
+  total: number;
+  paid_amount: number;
+  due_amount: number;
+  status: string;
+  notes: string | null;
+}
+
+export interface InvoiceLine {
+  productId: number | null;
+  qty: number;
+  costPrice: number;
+}
