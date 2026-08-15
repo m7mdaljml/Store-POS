@@ -13,6 +13,7 @@ const settings = useSettingsStore();
 const categories = ref<Category[]>([]);
 const selected = ref<number | null>(null);
 const search = ref("");
+const statusFilter = ref<"all" | "active" | "inactive">("all");
 const loading = ref(false);
 const error = ref("");
 const notice = ref("");
@@ -64,6 +65,8 @@ const filteredProducts = computed(() => {
   const q = search.value.trim().toLowerCase();
   return catalog.products.filter((p) => {
     if (selected.value != null && p.category_id !== selected.value) return false;
+    if (statusFilter.value === "active" && p.is_active !== 1) return false;
+    if (statusFilter.value === "inactive" && p.is_active === 1) return false;
     if (!q) return true;
     return (
       p.name.toLowerCase().includes(q) ||
@@ -72,6 +75,17 @@ const filteredProducts = computed(() => {
     );
   });
 });
+
+async function toggleActive(p: Product) {
+  const next = p.is_active === 1 ? 0 : 1;
+  try {
+    await invoke("set_product_active", { productId: p.id, isActive: next === 1 });
+    p.is_active = next;
+    notice.value = next === 1 ? `"${p.name}" activated` : `"${p.name}" deactivated`;
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e);
+  }
+}
 
 const categoryName = (id: number | null) =>
   categories.value.find((c) => c.id === id)?.name ?? "—";
@@ -409,13 +423,23 @@ onMounted(async () => {
       </div>
 
       <div class="card flex-grow-1">
-        <div class="p-2 border-bottom">
+        <div class="p-2 border-bottom d-flex gap-2">
           <input
             v-model="search"
             class="form-control form-control-sm"
             type="search"
             placeholder="Search by product name, SKU or barcode…"
           />
+          <select
+            v-model="statusFilter"
+            class="form-select form-select-sm"
+            style="width: auto"
+            aria-label="Filter by status"
+          >
+            <option value="all">All statuses</option>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </select>
         </div>
         <div class="table-responsive">
           <table class="table align-middle mb-0">
@@ -461,8 +485,18 @@ onMounted(async () => {
                 <td class="text-end">{{ fmt(p.sell_price) }}</td>
                 <td class="text-end">{{ p.stock_qty }} {{ p.unit }}</td>
                 <td>
+                  <div class="form-check form-switch mb-0">
+                    <input
+                      class="form-check-input"
+                      type="checkbox"
+                      role="switch"
+                      :checked="p.is_active === 1"
+                      :title="p.is_active ? 'Active — click to deactivate' : 'Inactive — click to activate'"
+                      @change="toggleActive(p)"
+                    />
+                  </div>
                   <span
-                    class="badge"
+                    class="badge mt-1"
                     :class="p.is_active ? 'text-bg-success' : 'text-bg-secondary'"
                   >
                     {{ p.is_active ? "Active" : "Inactive" }}

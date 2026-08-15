@@ -293,6 +293,25 @@ pub async fn update_product<R: Runtime>(
 }
 
 #[tauri::command]
+pub async fn set_product_active<R: Runtime>(
+    app: AppHandle<R>,
+    product_id: i64,
+    is_active: bool,
+) -> Result<(), String> {
+    let pool = db::pool(&app).await?;
+    let result = sqlx::query("UPDATE products SET is_active = ? WHERE id = ?")
+        .bind(i64::from(is_active))
+        .bind(product_id)
+        .execute(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    if result.rows_affected() == 0 {
+        return Err("Product not found".into());
+    }
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn delete_product<R: Runtime>(app: AppHandle<R>, product_id: i64) -> Result<(), String> {
     let pool = db::pool(&app).await?;
     let sold: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM sale_items WHERE product_id = ?")

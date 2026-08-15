@@ -61,6 +61,7 @@ pub fn run() {
       commands::catalog::create_product,
       commands::catalog::update_product,
       commands::catalog::delete_product,
+      commands::catalog::set_product_active,
       commands::catalog::adjust_stock,
       commands::catalog::import_product_image
     ])
