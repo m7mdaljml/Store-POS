@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { useCatalogStore } from "../../stores/catalog";
 import { useSettingsStore } from "../../stores/settings";
 import { useCartStore } from "../../stores/cart";
 import { useAuth } from "../../composables/useAuth";
 import { useScanner } from "../../composables/useScanner";
 import { select } from "../../lib/db";
-import type { CustomerLite, PaymentLine, Product } from "../../types";
+import type { CustomerLite, PaymentLine, Product, SaleResult } from "../../types";
 
 const catalog = useCatalogStore();
 const settings = useSettingsStore();
@@ -25,6 +25,7 @@ const searchOpen = ref(false);
 const activeSuggestion = ref(0);
 
 const notice = ref("");
+const committing = ref(false);
 
 const suggestions = computed(() => {
   const q = search.value.trim().toLowerCase();
@@ -86,7 +87,14 @@ function addToCart(p: Product) {
     return;
   }
   error.value = "";
-  cart.add({ productId: p.id, name: p.name, price: p.sell_price, qty: 1, discount: 0 });
+  cart.add({
+    productId: p.id,
+    name: p.name,
+    price: p.sell_price,
+    qty: 1,
+    discount: 0,
+    costPrice: p.cost_price ?? 0,
+  });
 }
 
 function addSuggestion(p: Product) {
@@ -162,7 +170,47 @@ function completeSale() {
     error.value = `Payment is short by ${fmt(cart.shortfall)}`;
     return;
   }
-  notice.value = "Payment ready — transaction commit arrives in the next step (F4.7)";
+  error.value = "";
+  notice.value = "";
+  committing.value = true;
+  invoke<SaleResult>("create_sale", {
+    input: {
+      items: cart.items.map((i) => ({
+        productId: i.productId,
+        qty: i.qty,
+        price: i.price,
+        costPrice: i.costPrice,
+        discount: i.discount,
+      })),
+      payments: [
+        ...(cart.cashReceived > 0
+          ? [{ method: "cash", amount: cart.cashReceived, reference: null, customerId: null }]
+          : []),
+        ...cart.splitLines.map((l) => ({
+          method: l.method,
+          amount: l.amount,
+          reference: l.reference ?? null,
+          customerId: l.customerId ?? null,
+        })),
+      ],
+      discount: cart.orderDiscountAmount,
+      tax: 0,
+      customerId: null,
+      userId: auth.user?.id ?? null,
+    },
+  })
+    .then((sale) => {
+      const change = fmt(sale.changeGiven);
+      notice.value = `Sale ${sale.saleNo} completed. Change due: ${change}.`;
+      cart.clear();
+      catalog.load();
+    })
+    .catch((e: string) => {
+      error.value = String(e);
+    })
+    .finally(() => {
+      committing.value = false;
+    });
 }
 
 let lastTotal = cart.total;
@@ -684,10 +732,11 @@ onMounted(async () => {
         <button
           class="btn btn-lg btn-primary w-100"
           type="button"
-          :disabled="!cart.items.length || !cart.paymentValid"
+          :disabled="!cart.items.length || !cart.paymentValid || committing"
           @click="completeSale"
         >
-          <i class="bi bi-cash-coin me-2"></i>Complete Sale
+          <span v-if="committing" class="spinner-border spinner-border-sm me-2" role="status"></span>
+          <i v-else class="bi bi-cash-coin me-2"></i>Complete Sale
         </button>
       </div>
     </aside>

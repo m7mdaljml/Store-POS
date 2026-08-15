@@ -83,7 +83,8 @@ pub fn run() {
       commands::expenses::add_expense_out,
       commands::expenses::list_expenses,
       commands::expenses::expense_summary,
-      commands::expenses::export_expenses
+      commands::expenses::export_expenses,
+      commands::sales::create_sale
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

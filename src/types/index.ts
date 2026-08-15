@@ -31,6 +31,8 @@ export interface CartItem {
   price: number;
   qty: number;
   discount: number;
+  /** Cost price snapshot at the time the item was added. */
+  costPrice: number;
 }
 
 /** A non-cash payment line (card / customer credit). */
@@ -46,6 +48,18 @@ export interface CustomerLite {
   name: string;
   phone: string | null;
   balance: number;
+}
+
+/** Result of a committed sale (from the `create_sale` command). */
+export interface SaleResult {
+  saleId: number;
+  saleNo: string;
+  subtotal: number;
+  discount: number;
+  tax: number;
+  total: number;
+  paidAmount: number;
+  changeGiven: number;
 }
 
 export interface Category {
