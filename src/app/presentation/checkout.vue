@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { useCatalogStore } from "../../stores/catalog";
 import { useSettingsStore } from "../../stores/settings";
@@ -11,8 +11,29 @@ const settings = useSettingsStore();
 const cart = useCartStore();
 
 const search = ref("");
+const searchBox = ref<HTMLElement | null>(null);
 const activeCategory = ref<number | null>(null);
 const error = ref("");
+
+const searchOpen = ref(false);
+const activeSuggestion = ref(0);
+
+const suggestions = computed(() => {
+  const q = search.value.trim().toLowerCase();
+  if (!q) return [];
+  return catalog.products
+    .filter((p) => {
+      if (p.is_active !== 1) return false;
+      if (activeCategory.value != null && p.category_id !== activeCategory.value)
+        return false;
+      return (
+        p.name.toLowerCase().includes(q) ||
+        (p.sku?.toLowerCase().includes(q) ?? false) ||
+        (p.barcode?.toLowerCase().includes(q) ?? false)
+      );
+    })
+    .slice(0, 8);
+});
 
 const filteredProducts = computed(() => {
   const q = search.value.trim().toLowerCase();
@@ -47,7 +68,10 @@ function inCart(productId: number): number {
 }
 
 function addToCart(p: Product) {
-  if (p.stock_qty <= 0) return;
+  if (p.stock_qty <= 0) {
+    error.value = `"${p.name}" is out of stock`;
+    return;
+  }
   const inCartQty = inCart(p.id);
   if (inCartQty >= p.stock_qty) {
     error.value = `Only ${p.stock_qty} unit(s) of "${p.name}" in stock`;
@@ -56,6 +80,71 @@ function addToCart(p: Product) {
   error.value = "";
   cart.add({ productId: p.id, name: p.name, price: p.sell_price, qty: 1, discount: 0 });
 }
+
+function addSuggestion(p: Product) {
+  addToCart(p);
+  search.value = "";
+  searchOpen.value = false;
+}
+
+function onSearchInput() {
+  activeSuggestion.value = 0;
+  searchOpen.value = search.value.trim().length > 0 && suggestions.value.length > 0;
+}
+
+function onSearchKeydown(e: KeyboardEvent) {
+  if (e.key === "Escape") {
+    searchOpen.value = false;
+    return;
+  }
+  if (e.key === "ArrowDown") {
+    e.preventDefault();
+    searchOpen.value = true;
+    if (suggestions.value.length) {
+      activeSuggestion.value =
+        (activeSuggestion.value + 1) % suggestions.value.length;
+    }
+    return;
+  }
+  if (e.key === "ArrowUp") {
+    e.preventDefault();
+    if (suggestions.value.length) {
+      activeSuggestion.value =
+        (activeSuggestion.value - 1 + suggestions.value.length) %
+        suggestions.value.length;
+    }
+    return;
+  }
+  if (e.key === "Enter") {
+    const choice = suggestions.value[activeSuggestion.value];
+    if (choice) {
+      e.preventDefault();
+      addSuggestion(choice);
+    }
+  }
+}
+
+function pickSuggestion(p: Product) {
+  addSuggestion(p);
+}
+
+function onDocClick(e: MouseEvent) {
+  if (searchBox.value && !searchBox.value.contains(e.target as Node)) {
+    searchOpen.value = false;
+  }
+}
+
+onMounted(async () => {
+  document.addEventListener("click", onDocClick);
+  await Promise.allSettled([
+    catalog.loaded ? Promise.resolve() : catalog.load(),
+    settings.loaded ? Promise.resolve() : settings.load(),
+  ]);
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener("click", onDocClick);
+});
 
 function bumpQty(productId: number, delta: number) {
   const item = cart.items.find((i) => i.productId === productId);
@@ -89,14 +178,45 @@ onMounted(async () => {
 <template>
   <div class="checkout-grid">
     <section class="checkout-left">
-      <div class="mb-3">
+      <div class="mb-3 checkout-search" ref="searchBox">
         <input
           v-model="search"
           class="form-control form-control-lg"
           type="search"
           placeholder="Search by product name, SKU or barcode…"
           aria-label="Search products"
+          autocomplete="off"
+          @input="onSearchInput"
+          @focus="onSearchInput"
+          @keydown="onSearchKeydown"
         />
+        <div v-if="searchOpen && suggestions.length" class="checkout-search-dropdown card">
+          <button
+            v-for="(s, i) in suggestions"
+            :key="s.id"
+            class="search-item"
+            :class="{ active: i === activeSuggestion }"
+            type="button"
+            @mouseenter="activeSuggestion = i"
+            @click="pickSuggestion(s)"
+          >
+            <span class="search-item-name">
+              {{ s.name }}
+              <span class="text-muted small ms-1">
+                {{ s.sku || s.barcode }}
+              </span>
+            </span>
+            <span class="ms-auto text-nowrap">
+              <span class="fw-semibold">{{ fmt(s.sell_price) }}</span>
+              <span class="text-muted small ms-2">
+                {{ s.stock_qty }} {{ s.unit }}
+              </span>
+            </span>
+          </button>
+          <div v-if="!suggestions.length" class="text-muted small p-3">
+            No matching products
+          </div>
+        </div>
       </div>
 
       <div class="checkout-cat-tabs mb-3">
