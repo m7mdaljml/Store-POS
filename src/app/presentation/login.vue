@@ -1,10 +1,7 @@
 <template>
-  <div
-    class="d-flex align-items-center justify-content-center"
-    style="min-height: calc(100vh - 64px)"
-  >
-    <div class="card shadow-sm" style="width: 380px">
-      <div class="card-body p-4">
+  <div class="login-wrap">
+    <div class="card shadow-sm login-card">
+      <div class="card-body">
         <div class="text-center mb-4">
           <div
             class="d-inline-flex align-items-center justify-content-center rounded-3 text-white mb-3"
@@ -21,7 +18,7 @@
           <div class="text-muted small">{{ t("login.subtitle") }}</div>
         </div>
 
-        <form @submit.prevent="submit">
+        <form novalidate @submit.prevent="submit">
           <div v-if="error" class="alert alert-danger py-2 small" role="alert">
             <i class="bi bi-exclamation-triangle me-1"></i>{{ error }}
           </div>
@@ -35,22 +32,45 @@
               v-model="username"
               type="text"
               class="form-control"
+              :class="{ 'is-invalid': !!fieldErrors.username || authFailed }"
               autocomplete="username"
               autofocus
+              @input="clearFieldError('username')"
             />
+            <div v-if="fieldErrors.username" class="invalid-feedback d-block">
+              {{ fieldErrors.username }}
+            </div>
           </div>
 
           <div class="mb-4">
             <label for="login-password" class="form-label">
               {{ t("common.password") }}
             </label>
-            <input
-              id="login-password"
-              v-model="password"
-              type="password"
-              class="form-control"
-              autocomplete="current-password"
-            />
+            <div class="input-group">
+              <input
+                id="login-password"
+                v-model="password"
+                :type="showPassword ? 'text' : 'password'"
+                class="form-control"
+                :class="{ 'is-invalid': !!fieldErrors.password || authFailed }"
+                autocomplete="current-password"
+                @input="clearFieldError('password')"
+              />
+              <button
+                class="btn btn-outline-secondary"
+                type="button"
+                tabindex="-1"
+                :aria-label="
+                  showPassword ? t('login.hidePassword') : t('login.showPassword')
+                "
+                @click="showPassword = !showPassword"
+              >
+                <i class="bi" :class="showPassword ? 'bi-eye-slash' : 'bi-eye'"></i>
+              </button>
+            </div>
+            <div v-if="fieldErrors.password" class="invalid-feedback d-block">
+              {{ fieldErrors.password }}
+            </div>
           </div>
 
           <button
@@ -86,21 +106,62 @@ const username = ref("");
 const password = ref("");
 const error = ref("");
 const submitting = ref(false);
+const showPassword = ref(false);
+const authFailed = ref(false);
+const fieldErrors = ref<{ username?: string; password?: string }>({});
+
+function clearFieldError(field: "username" | "password") {
+  fieldErrors.value[field] = undefined;
+  authFailed.value = false;
+}
 
 async function submit() {
   error.value = "";
-  if (!username.value || !password.value) {
-    error.value = t("login.required");
+  authFailed.value = false;
+  fieldErrors.value = {};
+
+  const errors: typeof fieldErrors.value = {};
+  if (!username.value.trim()) {
+    errors.username = t("login.requiredUsername");
+  }
+  if (!password.value) {
+    errors.password = t("login.requiredPassword");
+  }
+  if (errors.username || errors.password) {
+    fieldErrors.value = errors;
     return;
   }
+
   submitting.value = true;
   try {
-    await auth.login(username.value, password.value);
+    await auth.login(username.value.trim(), password.value);
     router.push(auth.user?.roleName === "Cashier" ? "/checkout" : "/");
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e);
+  } catch {
+    error.value = t("login.invalidCredentials");
+    authFailed.value = true;
   } finally {
     submitting.value = false;
   }
 }
 </script>
+
+<style scoped>
+/* Card sits slightly above center (~46% of viewport height) */
+.login-wrap {
+  min-height: calc(100vh - 64px - var(--pos-space-xl) * 2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-bottom: 9vh;
+}
+
+.login-card {
+  width: 400px;
+  max-width: 100%;
+  border-radius: var(--pos-radius-lg);
+}
+
+.login-card .card-body {
+  padding: var(--pos-space-2xl);
+}
+</style>

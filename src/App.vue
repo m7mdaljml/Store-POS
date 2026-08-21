@@ -1,6 +1,6 @@
 <template>
   <div class="app-shell">
-    <aside class="sidebar" :class="{ collapsed }">
+    <aside v-if="!isLoginRoute" class="sidebar" :class="{ collapsed }">
       <div class="sidebar-brand">
         <div class="sidebar-brand-icon">
           <i class="bi bi-shop"></i>
@@ -16,6 +16,7 @@
           :key="item.to"
           :to="item.to"
           class="sidebar-link"
+          active-class="active"
           :title="item.label"
         >
           <i class="bi sidebar-link-icon" :class="item.icon"></i>
@@ -134,6 +135,8 @@ const theme = useThemeStore();
 const collapsed = ref(false);
 const clock = ref("");
 let timer: number | undefined;
+
+const isLoginRoute = computed(() => route.name === "login");
 
 const navItems = computed(() => {
   const items = [

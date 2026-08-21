@@ -67,7 +67,11 @@ export const en = {
   login: {
     subtitle: "Sign in to continue",
     signIn: "Sign in",
-    required: "Enter your username and password",
+    requiredUsername: "Enter your username",
+    requiredPassword: "Enter your password",
+    invalidCredentials: "Invalid username or password",
+    showPassword: "Show password",
+    hidePassword: "Hide password",
   },
   dashboard: {
     title: "Dashboard",

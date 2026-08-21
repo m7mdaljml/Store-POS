@@ -179,7 +179,8 @@ body {
 }
 
 .sidebar-link.active {
-  color: #fff;
+  color: var(--pos-accent-strong);
+  font-weight: 600;
   background: var(--pos-accent-soft);
 }
 

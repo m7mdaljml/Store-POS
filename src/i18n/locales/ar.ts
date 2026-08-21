@@ -68,7 +68,11 @@ export const ar = {
   login: {
     subtitle: "سجّل الدخول للمتابعة",
     signIn: "تسجيل الدخول",
-    required: "أدخل اسم المستخدم وكلمة المرور",
+    requiredUsername: "أدخل اسم المستخدم",
+    requiredPassword: "أدخل كلمة المرور",
+    invalidCredentials: "اسم المستخدم أو كلمة المرور غير صحيحة",
+    showPassword: "إظهار كلمة المرور",
+    hidePassword: "إخفاء كلمة المرور",
   },
   dashboard: {
     title: "لوحة التحكم",
