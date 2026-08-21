@@ -109,6 +109,7 @@ export const en = {
     stockLimit: "Only {stock} unit(s) of {name} in stock",
     cart: "Cart",
     cartEmpty: "Cart is empty — click products to add them",
+    summary: "Order Summary",
     eachUnit: "each",
     discountPerUnit: "Discount / unit",
     orderDiscount: "Order discount",

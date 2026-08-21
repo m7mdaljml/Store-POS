@@ -30,9 +30,10 @@
 
     <section class="checkout-left">
       <div class="mb-3 checkout-search" ref="searchBox">
+        <i class="bi bi-upc-scan checkout-scan-icon"></i>
         <input
           v-model="search"
-          class="form-control form-control-lg"
+          class="form-control form-control-lg checkout-search-input"
           type="search"
           :placeholder="t('checkout.searchPlaceholder')"
           :aria-label="t('checkout.searchPlaceholder')"
@@ -64,9 +65,6 @@
               </span>
             </span>
           </button>
-          <div v-if="!suggestions.length" class="text-muted small p-3">
-            {{ t("checkout.noMatchingProducts") }}
-          </div>
         </div>
       </div>
 
@@ -106,7 +104,7 @@
           v-for="p in filteredProducts"
           :key="p.id"
           class="product-card"
-          :class="{ 'is-oos': p.stock_qty <= 0 }"
+          :class="{ 'is-oos': p.stock_qty <= 0, 'is-in-cart': inCart(p.id) > 0 }"
           type="button"
           :disabled="p.stock_qty <= 0"
           :title="p.stock_qty > 0 ? t('checkout.clickToAdd') : t('checkout.oosBadge')"
@@ -116,44 +114,56 @@
             <img v-if="p.image_path" :src="convertFileSrc(p.image_path)" alt="" />
             <i v-else class="bi bi-box-seam"></i>
             <span v-if="inCart(p.id)" class="product-card-badge">
-              <i class="bi bi-cart-plus me-1"></i>{{ inCart(p.id) }}
+              {{ inCart(p.id) }}
             </span>
             <span v-if="p.stock_qty <= 0" class="product-card-oos">{{ t("checkout.oosBadge") }}</span>
           </div>
           <div class="product-card-name">{{ p.name }}</div>
-          <div class="product-card-price">{{ fmt(p.sell_price) }}</div>
-          <div class="product-card-stock" :class="{ 'text-danger': p.stock_qty <= 0 }">
-            <i class="bi bi-box me-1"></i>{{ p.stock_qty }} {{ p.unit }}
+          <div class="product-card-foot">
+            <span class="product-card-price">{{ fmt(p.sell_price) }}</span>
+            <span
+              class="stock-pill"
+              :class="
+                p.stock_qty <= 0 ? 'out' : p.stock_qty <= p.reorder_level ? 'low' : 'in'
+              "
+            >
+              {{ p.stock_qty }} {{ p.unit }}
+            </span>
           </div>
         </button>
       </div>
     </section>
 
-    <aside class="checkout-right card">
-      <div class="card-header d-flex align-items-center justify-content-between">
-        <span class="fw-semibold">
-          <i class="bi bi-cart3 me-2"></i>{{ t("checkout.cart") }}
-          <span class="badge text-bg-primary ms-1">{{ cart.itemCount }}</span>
-        </span>
+    <aside class="ticket-panel">
+      <header class="ticket-header">
+        <div class="d-flex align-items-center gap-2">
+          <i class="bi bi-basket2-fill ticket-header-icon"></i>
+          <span class="ticket-title">{{ t("checkout.cart") }}</span>
+          <span v-if="cart.itemCount" class="ticket-count">{{ cart.itemCount }}</span>
+        </div>
         <button
-          class="btn btn-sm btn-outline-secondary"
+          class="btn btn-sm btn-soft"
           type="button"
           :disabled="!cart.items.length"
+          :title="t('common.clear')"
           @click="cart.clear()"
         >
-          <i class="bi bi-trash me-1"></i>{{ t("common.clear") }}
+          <i class="bi bi-trash"></i>
         </button>
-      </div>
+      </header>
 
-      <div class="cart-items">
-        <p v-if="!cart.items.length" class="text-muted small text-center my-5">
-          {{ t("checkout.cartEmpty") }}
-        </p>
-        <div v-for="item in cart.items" :key="item.productId" class="cart-item">
-          <div class="d-flex justify-content-between gap-2">
-            <div class="cart-item-name fw-semibold small">{{ item.name }}</div>
+      <div class="ticket-items">
+        <div v-if="!cart.items.length" class="ticket-empty">
+          <i class="bi bi-basket2"></i>
+          <p>{{ t("checkout.cartEmpty") }}</p>
+        </div>
+
+        <div v-for="item in cart.items" :key="item.productId" class="ticket-line">
+          <div class="ticket-line-head">
+            <span class="ticket-line-name" :title="item.name">{{ item.name }}</span>
+            <span class="ticket-line-unit">{{ fmt(item.price) }} {{ t("checkout.eachUnit") }}</span>
             <button
-              class="btn btn-sm btn-link text-danger p-0 lh-1"
+              class="line-remove"
               type="button"
               :title="t('common.remove')"
               @click="cart.remove(item.productId)"
@@ -161,66 +171,77 @@
               <i class="bi bi-x-lg"></i>
             </button>
           </div>
-          <div class="d-flex justify-content-between align-items-center mt-1">
-            <div class="input-group input-group-sm cart-qty">
+          <div class="ticket-line-body">
+            <div class="line-stepper">
               <button
-                class="btn btn-outline-secondary"
                 type="button"
+                aria-label="-"
                 @click="bumpQty(item.productId, -1)"
               >
                 <i class="bi bi-dash"></i>
               </button>
-              <span class="input-group-text cart-qty-val">{{ item.qty }}</span>
+              <span>{{ item.qty }}</span>
               <button
-                class="btn btn-outline-secondary"
                 type="button"
+                aria-label="+"
                 :disabled="item.qty >= stockFor(item.productId)"
                 @click="bumpQty(item.productId, 1)"
               >
                 <i class="bi bi-plus"></i>
               </button>
             </div>
-            <div class="text-end">
-              <div class="fw-semibold fs-6">{{ fmt(cart.lineTotal(item)) }}</div>
-              <div class="text-muted text-xs">{{ fmt(item.price) }} {{ t("checkout.eachUnit") }}</div>
-            </div>
-          </div>
-          <div class="d-flex justify-content-between align-items-center mt-1">
-            <span class="text-muted text-xs">{{ t("checkout.discountPerUnit") }}</span>
-            <div class="input-group input-group-sm item-discount">
-              <span class="input-group-text">−</span>
-              <input
-                class="form-control text-end"
-                type="number"
-                min="0"
-                step="0.01"
-                :max="item.price"
-                :value="item.discount"
-                :aria-label="`${t('checkout.discountPerUnit')} — ${item.name}`"
-                @input="onItemDiscount(item.productId, $event)"
-              />
-            </div>
+            <input
+              class="form-control form-control-sm line-disc"
+              type="number"
+              min="0"
+              step="0.01"
+              placeholder="0.00"
+              :max="item.price"
+              :value="item.discount"
+              :aria-label="`${t('checkout.discountPerUnit')} — ${item.name}`"
+              @input="onItemDiscount(item.productId, $event)"
+            />
+            <span class="line-total">{{ fmt(cart.lineTotal(item)) }}</span>
           </div>
         </div>
       </div>
 
-      <div class="cart-totals card-body border-top">
-        <div class="d-flex justify-content-between align-items-center mb-2">
+      <footer class="ticket-footer">
+        <div class="ticket-discount">
           <label class="form-label mb-0 small text-muted" for="order-discount">
             {{ t("checkout.orderDiscount") }}
           </label>
-          <div class="btn-group btn-group-sm" role="group" :aria-label="t('checkout.discountType')">
+          <div class="input-group input-group-sm disc-input">
+            <input
+              id="order-discount"
+              class="form-control text-end"
+              type="number"
+              placeholder="0.00"
+              :min="0"
+              :max="discountMax()"
+              step="0.01"
+              :value="cart.orderDiscountValue"
+              :aria-label="
+                cart.orderDiscountType === 'percent'
+                  ? t('checkout.discountPercentAria')
+                  : t('checkout.discountAmountAria')
+              "
+              @input="onOrderDiscount"
+            />
+            <span v-if="cart.orderDiscountType === 'percent'" class="input-group-text">%</span>
+          </div>
+          <div class="btn-group btn-group-sm ms-auto" role="group" :aria-label="t('checkout.discountType')">
             <button
-              class="btn btn-outline-secondary"
-              :class="{ active: cart.orderDiscountType === 'fixed' }"
+              class="btn"
+              :class="cart.orderDiscountType === 'fixed' ? 'btn-primary' : 'btn-soft'"
               type="button"
               @click="setDiscountType('fixed')"
             >
               {{ t("checkout.fixed") }}
             </button>
             <button
-              class="btn btn-outline-secondary"
-              :class="{ active: cart.orderDiscountType === 'percent' }"
+              class="btn"
+              :class="cart.orderDiscountType === 'percent' ? 'btn-primary' : 'btn-soft'"
               type="button"
               @click="setDiscountType('percent')"
             >
@@ -228,40 +249,18 @@
             </button>
           </div>
         </div>
-        <div class="input-group input-group-sm mb-1">
-          <span class="input-group-text">−</span>
-          <input
-            id="order-discount"
-            class="form-control text-end"
-            type="number"
-            :min="0"
-            :max="discountMax()"
-            step="0.01"
-            :value="cart.orderDiscountValue"
-            :aria-label="
-              cart.orderDiscountType === 'percent'
-                ? t('checkout.discountPercentAria')
-                : t('checkout.discountAmountAria')
-            "
-            @input="onOrderDiscount"
-          />
-          <span v-if="cart.orderDiscountType === 'percent'" class="input-group-text">%</span>
-        </div>
         <div class="text-muted mb-2" style="font-size: 0.72rem">{{ discountLimitHint }}</div>
 
-        <div class="d-flex justify-content-between mb-1">
-          <span class="text-muted">{{ t("checkout.subtotal") }}</span>
-          <span>{{ fmt(cart.subtotal) }}</span>
+        <div class="t-row">
+          <span>{{ t("checkout.subtotal") }}</span>
+          <span class="fw-semibold">{{ fmt(cart.subtotal) }}</span>
         </div>
-        <div v-if="cart.itemDiscountTotal" class="d-flex justify-content-between mb-1 text-danger">
-          <span class="text-muted">{{ t("checkout.itemDiscounts") }}</span>
+        <div v-if="cart.itemDiscountTotal" class="t-row t-disc">
+          <span>{{ t("checkout.itemDiscounts") }}</span>
           <span>−{{ fmt(cart.itemDiscountTotal) }}</span>
         </div>
-        <div
-          v-if="cart.orderDiscountAmount"
-          class="d-flex justify-content-between mb-1 text-danger"
-        >
-          <span class="text-muted">{{ t("checkout.orderDiscount") }}</span>
+        <div v-if="cart.orderDiscountAmount" class="t-row t-disc">
+          <span>{{ t("checkout.orderDiscount") }}</span>
           <span>
             −{{ fmt(cart.orderDiscountAmount) }}
             <span v-if="cart.orderDiscountType === 'percent'" class="text-muted">
@@ -269,201 +268,190 @@
             </span>
           </span>
         </div>
-        <div class="d-flex justify-content-between align-items-center pt-2 border-top">
-          <span class="fw-semibold">{{ t("common.total") }}</span>
-          <span class="fs-4 fw-bold">{{ fmt(cart.total) }}</span>
-        </div>
-      </div>
-
-      <div class="checkout-payment card-body border-top">
-        <div class="fw-semibold small mb-2">
-          <i class="bi bi-cash-coin me-1"></i>{{ t("checkout.payment") }}
+        <div class="t-total-row">
+          <span>{{ t("common.total") }}</span>
+          <span class="grand-total">{{ fmt(cart.total) }}</span>
         </div>
 
-        <div class="mb-2">
-          <label class="form-label mb-1 small text-muted" for="cash-received">{{ t("checkout.cashReceived") }}</label>
-          <div class="input-group input-group-sm">
-            <span class="input-group-text">{{ settings.currency || t("checkout.currencyFallback") }}</span>
-            <input
-              id="cash-received"
-              class="form-control text-end"
-              type="number"
-              min="0"
-              step="0.01"
-              :value="cart.cashReceived"
-              :aria-label="t('checkout.cashReceived')"
-              @input="onCashReceived"
-            />
-            <button
-              class="btn btn-outline-secondary"
-              type="button"
-              :title="t('checkout.exactTitle')"
-              @click="cart.syncCashToTotal()"
-            >
-              {{ t("checkout.exact") }}
-            </button>
-          </div>
-        </div>
-        <div class="d-flex flex-wrap gap-1 mb-2" :aria-label="t('checkout.quickCashAria')">
-          <button
-            v-for="amt in quickCashAmounts"
-            :key="amt"
-            class="btn btn-sm btn-outline-secondary"
-            type="button"
-            :title="`${t('checkout.cashReceived')} ${fmt(amt)}`"
-            @click="cart.cashReceived = amt"
-          >
-            {{ fmt(amt) }}
-          </button>
-        </div>
-
-        <div v-if="cart.splitLines.length" class="mb-2">
-          <div class="text-muted small mb-1">{{ t("checkout.splitPayments") }}</div>
-          <div
-            v-for="(line, i) in cart.splitLines"
-            :key="i"
-            class="payment-line"
-          >
-            <select
-              class="form-select form-select-sm payment-line-method"
-              :value="line.method"
-              :aria-label="`${t('common.method')} ${i + 1}`"
-              @change="
-                cart.setSplitLine(i, {
-                  method: ($event.target as HTMLSelectElement).value as PaymentLine['method'],
-                })
-              "
-            >
-              <option value="card">{{ t("checkout.card") }}</option>
-              <option value="credit">{{ t("checkout.customerCredit") }}</option>
-            </select>
-            <template v-if="line.method === 'credit'">
-              <select
-                class="form-select form-select-sm"
-                :value="line.customerId ?? ''"
-                :aria-label="`${t('checkout.customerCredit')} ${i + 1}`"
-                @change="
-                  cart.setSplitLine(i, {
-                    customerId: ($event.target as HTMLSelectElement).value
-                      ? Number(($event.target as HTMLSelectElement).value)
-                      : null,
-                  })
-                "
-              >
-                <option value="" disabled>{{ t("checkout.selectCustomer") }}</option>
-                <option v-for="c in customers" :key="c.id" :value="c.id">
-                  {{ customerLabel(c) }}
-                </option>
-              </select>
-            </template>
-            <template v-else>
-              <input
-                class="form-control form-control-sm"
-                type="text"
-                :value="line.reference ?? ''"
-                :placeholder="t('checkout.cardRef')"
-                :aria-label="`${t('checkout.cardRef')} ${i + 1}`"
-                @input="
-                  cart.setSplitLine(i, {
-                    reference: ($event.target as HTMLInputElement).value,
-                  })
-                "
-              />
-            </template>
-            <div class="input-group input-group-sm">
+        <div class="ticket-pay">
+          <div class="mb-2">
+            <label class="form-label mb-1 small text-muted" for="cash-received">{{ t("checkout.cashReceived") }}</label>
+            <div class="input-group">
               <span class="input-group-text">{{ settings.currency || t("checkout.currencyFallback") }}</span>
               <input
-                class="form-control text-end"
+                id="cash-received"
+                class="form-control text-end fs-5 fw-semibold"
                 type="number"
                 min="0"
                 step="0.01"
-                :value="line.amount"
-                :aria-label="`${t('common.amount')} ${i + 1}`"
-                @input="onSplitAmount(i, $event)"
+                :value="cart.cashReceived"
+                :aria-label="t('checkout.cashReceived')"
+                @input="onCashReceived"
               />
+              <button
+                class="btn btn-outline-secondary"
+                type="button"
+                :title="t('checkout.exactTitle')"
+                @click="cart.syncCashToTotal()"
+              >
+                {{ t("checkout.exact") }}
+              </button>
             </div>
+          </div>
+          <div v-if="quickCashAmounts.length" class="d-flex flex-wrap gap-1 mb-2" :aria-label="t('checkout.quickCashAria')">
             <button
-              class="btn btn-sm btn-outline-danger"
+              v-for="amt in quickCashAmounts"
+              :key="amt"
+              class="btn btn-sm btn-quick"
               type="button"
-              :title="t('common.remove')"
-              @click="cart.removeSplitLine(i)"
+              :title="`${t('checkout.cashReceived')} ${fmt(amt)}`"
+              @click="cart.cashReceived = amt"
             >
-              <i class="bi bi-x-lg"></i>
+              {{ fmt(amt) }}
             </button>
+          </div>
+
+          <details class="split-details mb-2" :open="cart.splitLines.length > 0">
+            <summary>
+              <i class="bi bi-credit-card-2-front me-1"></i>{{ t("checkout.splitPayments") }}
+              <span v-if="cart.splitLines.length" class="badge text-bg-secondary ms-1">{{ cart.splitLines.length }}</span>
+            </summary>
+            <div class="mt-2">
+              <div v-for="(line, i) in cart.splitLines" :key="i" class="payment-line">
+                <select
+                  class="form-select form-select-sm payment-line-method"
+                  :value="line.method"
+                  :aria-label="`${t('common.method')} ${i + 1}`"
+                  @change="
+                    cart.setSplitLine(i, {
+                      method: ($event.target as HTMLSelectElement).value as PaymentLine['method'],
+                    })
+                  "
+                >
+                  <option value="card">{{ t("checkout.card") }}</option>
+                  <option value="credit">{{ t("checkout.customerCredit") }}</option>
+                </select>
+                <template v-if="line.method === 'credit'">
+                  <select
+                    class="form-select form-select-sm"
+                    :value="line.customerId ?? ''"
+                    :aria-label="`${t('checkout.customerCredit')} ${i + 1}`"
+                    @change="
+                      cart.setSplitLine(i, {
+                        customerId: ($event.target as HTMLSelectElement).value
+                          ? Number(($event.target as HTMLSelectElement).value)
+                          : null,
+                      })
+                    "
+                  >
+                    <option value="" disabled>{{ t("checkout.selectCustomer") }}</option>
+                    <option v-for="c in customers" :key="c.id" :value="c.id">
+                      {{ customerLabel(c) }}
+                    </option>
+                  </select>
+                </template>
+                <template v-else>
+                  <input
+                    class="form-control form-control-sm"
+                    type="text"
+                    :value="line.reference ?? ''"
+                    :placeholder="t('checkout.cardRef')"
+                    :aria-label="`${t('checkout.cardRef')} ${i + 1}`"
+                    @input="
+                      cart.setSplitLine(i, {
+                        reference: ($event.target as HTMLInputElement).value,
+                      })
+                    "
+                  />
+                </template>
+                <div class="input-group input-group-sm">
+                  <span class="input-group-text">{{ settings.currency || t("checkout.currencyFallback") }}</span>
+                  <input
+                    class="form-control text-end"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    :value="line.amount"
+                    :aria-label="`${t('common.amount')} ${i + 1}`"
+                    @input="onSplitAmount(i, $event)"
+                  />
+                </div>
+                <button
+                  class="btn btn-sm btn-outline-danger"
+                  type="button"
+                  :title="t('common.remove')"
+                  @click="cart.removeSplitLine(i)"
+                >
+                  <i class="bi bi-x-lg"></i>
+                </button>
+              </div>
+
+              <button class="btn btn-sm btn-soft w-100 mt-1" type="button" @click="cart.addSplitLine()">
+                <i class="bi bi-plus-lg me-1"></i>{{ t("checkout.addPayment") }}
+              </button>
+
+              <div class="t-row mt-2">
+                <span>{{ t("checkout.splitPayments") }}</span>
+                <span class="fw-semibold">{{ fmt(cart.splitTotal) }}</span>
+              </div>
+            </div>
+          </details>
+
+          <div v-if="cart.cashReceived > 0" class="t-row">
+            <span>{{ t("checkout.cashTendered") }}</span>
+            <span class="fw-semibold">{{ fmt(cart.cashReceived) }}</span>
+          </div>
+          <div v-if="cart.shortfall > 0.005" class="pay-banner pay-banner-danger">
+            <i class="bi bi-exclamation-circle me-1"></i>
+            <span>{{ t("checkout.short") }}</span>
+            <strong class="ms-auto">−{{ fmt(cart.shortfall) }}</strong>
+          </div>
+          <div v-if="cart.change > 0.005" class="pay-banner pay-banner-success">
+            <i class="bi bi-arrow-return-left me-1"></i>
+            <span>{{ t("checkout.change") }}</span>
+            <strong class="ms-auto">{{ fmt(cart.change) }}</strong>
           </div>
         </div>
 
-        <button
-          class="btn btn-sm btn-outline-secondary w-100 mb-2"
-          type="button"
-          @click="cart.addSplitLine()"
-        >
-          <i class="bi bi-plus-lg me-1"></i>{{ t("checkout.addPayment") }}
-        </button>
+        <div class="ticket-actions">
+          <div class="d-flex align-items-center gap-2 mb-2">
+            <button
+              class="btn btn-soft flex-fill"
+              type="button"
+              :disabled="!cart.items.length || !openSession || holding || committing"
+              :title="t('checkout.hold')"
+              @click="holdCurrentSale"
+            >
+              <span v-if="holding" class="spinner-border spinner-border-sm me-1" role="status"></span>
+              <i v-else class="bi bi-pause-circle me-1"></i>{{ t("checkout.hold") }}
+            </button>
+            <button class="btn btn-soft flex-fill" type="button" @click="openHeldSales">
+              <i class="bi bi-clock-history me-1"></i>{{ t("checkout.heldSales") }}
+            </button>
+            <div class="form-check mb-0 text-nowrap">
+              <input
+                id="print-receipt"
+                v-model="printReceiptOnComplete"
+                class="form-check-input"
+                type="checkbox"
+              />
+              <label class="form-check-label small" for="print-receipt">{{ t("checkout.printReceiptAfter") }}</label>
+            </div>
+          </div>
 
-        <div class="d-flex justify-content-between mb-1">
-          <span class="text-muted">{{ t("checkout.splitPayments") }}</span>
-          <span>{{ fmt(cart.splitTotal) }}</span>
-        </div>
-        <div class="d-flex justify-content-between mb-1">
-          <span class="text-muted">{{ t("checkout.cashTendered") }}</span>
-          <span>{{ fmt(cart.cashReceived) }}</span>
-        </div>
-        <div
-          v-if="cart.shortfall > 0.005"
-          class="d-flex justify-content-between mb-1 text-danger fw-semibold"
-        >
-          <span>{{ t("checkout.short") }}</span>
-          <span>−{{ fmt(cart.shortfall) }}</span>
-        </div>
-        <div
-          v-if="cart.change > 0.005"
-          class="d-flex justify-content-between mb-2 text-success fw-semibold"
-        >
-          <span>{{ t("checkout.change") }}</span>
-          <span>{{ fmt(cart.change) }}</span>
-        </div>
-
-        <div class="form-check small mb-2">
-          <input
-            id="print-receipt"
-            v-model="printReceiptOnComplete"
-            class="form-check-input"
-            type="checkbox"
-          />
-          <label class="form-check-label" for="print-receipt">{{ t("checkout.printReceiptAfter") }}</label>
-        </div>
-
-        <div class="d-flex gap-2 mb-2">
           <button
-            class="btn btn-outline-secondary flex-fill"
+            class="btn btn-pay w-100"
             type="button"
-            :disabled="!cart.items.length || !openSession || holding || committing"
-            :title="t('checkout.hold')"
-            @click="holdCurrentSale"
+            :disabled="!cart.items.length || !cart.paymentValid || !openSession || committing"
+            @click="completeSale"
           >
-            <span v-if="holding" class="spinner-border spinner-border-sm me-1" role="status"></span>
-            <i v-else class="bi bi-pause-circle me-1"></i>{{ t("checkout.hold") }}
-          </button>
-          <button
-            class="btn btn-outline-secondary flex-fill"
-            type="button"
-            @click="openHeldSales"
-          >
-            <i class="bi bi-clock-history me-1"></i>{{ t("checkout.heldSales") }}
+            <span v-if="committing" class="spinner-border spinner-border-sm" role="status"></span>
+            <i v-else class="bi bi-cash-stack"></i>
+            <span>{{ t("checkout.completeSale") }}</span>
+            <span class="btn-pay-amt">{{ fmt(cart.total) }}</span>
           </button>
         </div>
-
-        <button
-          class="btn btn-lg btn-primary w-100"
-          type="button"
-          :disabled="!cart.items.length || !cart.paymentValid || !openSession || committing"
-          @click="completeSale"
-        >
-          <span v-if="committing" class="spinner-border spinner-border-sm me-2" role="status"></span>
-          <i v-else class="bi bi-cash-coin me-2"></i>{{ t("checkout.completeSale") }}
-        </button>
-      </div>
+      </footer>
     </aside>
 
     <div

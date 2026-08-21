@@ -110,6 +110,7 @@ export const ar = {
     stockLimit: "لا تتوفر سوى {stock} وحدة من {name} في المخزون",
     cart: "السلة",
     cartEmpty: "السلة فارغة — اضغط على المنتجات لإضافتها",
+    summary: "ملخص الطلب",
     eachUnit: "للقطعة",
     discountPerUnit: "الخصم / للوحدة",
     orderDiscount: "خصم الطلب",
