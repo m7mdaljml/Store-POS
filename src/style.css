@@ -1056,6 +1056,94 @@ body {
   padding-inline-start: 46px;
 }
 
+/* Customer attach strip on the ticket panel */
+.ticket-customer {
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--pos-border);
+  flex-shrink: 0;
+}
+
+.customer-picker {
+  position: relative;
+}
+
+.customer-picker summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  font-size: 0.9rem;
+}
+
+.customer-picker summary::-webkit-details-marker {
+  display: none;
+}
+
+.customer-picker summary .bi-person-circle {
+  color: var(--pos-accent-strong);
+  font-size: 1.05rem;
+}
+
+.cust-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.picker-caret {
+  font-size: 0.75rem;
+  color: var(--pos-text-muted);
+  transition: transform 0.15s ease;
+}
+
+.customer-picker[open] .picker-caret {
+  transform: rotate(180deg);
+}
+
+.customer-menu {
+  position: absolute;
+  inset-inline: 0;
+  top: calc(100% + 6px);
+  z-index: 30;
+  max-height: 300px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+}
+
+.customer-list {
+  overflow-y: auto;
+}
+
+.customer-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  border-radius: var(--pos-radius-sm);
+  background: transparent;
+  color: var(--pos-text);
+  text-align: start;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.customer-option:hover:not(:disabled) {
+  background: var(--pos-accent-soft);
+  color: var(--pos-accent-strong);
+}
+
+.customer-option.selected {
+  background: var(--pos-accent-soft);
+  color: var(--pos-accent-strong);
+  font-weight: 600;
+}
+
 .checkout-scan-icon {
   position: absolute;
   inset-inline-start: 15px;

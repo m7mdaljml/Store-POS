@@ -110,6 +110,8 @@ export const en = {
     cart: "Cart",
     cartEmpty: "Cart is empty — click products to add them",
     summary: "Order Summary",
+    walkIn: "Walk-in",
+    searchCustomers: "Search customers…",
     eachUnit: "each",
     discountPerUnit: "Discount / unit",
     orderDiscount: "Order discount",

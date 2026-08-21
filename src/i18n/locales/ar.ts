@@ -111,6 +111,8 @@ export const ar = {
     cart: "السلة",
     cartEmpty: "السلة فارغة — اضغط على المنتجات لإضافتها",
     summary: "ملخص الطلب",
+    walkIn: "عميل عابر",
+    searchCustomers: "ابحث عن عميل…",
     eachUnit: "للقطعة",
     discountPerUnit: "الخصم / للوحدة",
     orderDiscount: "خصم الطلب",

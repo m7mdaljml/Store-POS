@@ -152,6 +152,55 @@
         </button>
       </header>
 
+      <div class="ticket-customer">
+        <details ref="customerDetails" class="customer-picker">
+          <summary>
+            <i class="bi bi-person-circle"></i>
+            <span class="text-muted small">{{ t("common.customer") }}</span>
+            <strong v-if="selectedCustomer" class="cust-name">
+              {{ customerLabel(selectedCustomer) }}
+            </strong>
+            <strong v-else class="text-muted">{{ t("checkout.walkIn") }}</strong>
+            <i class="bi bi-chevron-down ms-auto picker-caret"></i>
+          </summary>
+          <div class="customer-menu card">
+            <input
+              v-model="customerQuery"
+              class="form-control form-control-sm mb-2"
+              type="search"
+              :placeholder="t('checkout.searchCustomers')"
+              :aria-label="t('checkout.searchCustomers')"
+            />
+            <div class="customer-list">
+              <button
+                v-if="!filteredPickCustomers.length"
+                class="customer-option text-muted"
+                type="button"
+                disabled
+              >
+                {{ t("customers.noMatching") }}
+              </button>
+              <button
+                v-for="c in filteredPickCustomers"
+                :key="c.id"
+                class="customer-option"
+                :class="{ selected: c.id === selectedCustomerId }"
+                type="button"
+                @click="pickCustomer(c.id)"
+              >
+                <span class="text-truncate">{{ customerLabel(c) }}</span>
+                <span
+                  v-if="c.balance > 0.005"
+                  class="badge text-bg-danger rounded-pill flex-shrink-0"
+                >
+                  {{ fmt(c.balance) }}
+                </span>
+              </button>
+            </div>
+          </div>
+        </details>
+      </div>
+
       <div class="ticket-items">
         <div v-if="!cart.items.length" class="ticket-empty">
           <i class="bi bi-basket2"></i>
@@ -756,6 +805,10 @@ const { t, locale } = useI18n();
 
 const customers = ref<CustomerLite[]>([]);
 
+const selectedCustomerId = ref<number | null>(null);
+const customerQuery = ref("");
+const customerDetails = ref<HTMLDetailsElement | null>(null);
+
 const search = ref("");
 const searchBox = ref<HTMLElement | null>(null);
 const activeCategory = ref<number | null>(null);
@@ -920,6 +973,26 @@ function customerLabel(c: CustomerLite): string {
   return c.phone ? `${c.name} (${c.phone})` : c.name;
 }
 
+const selectedCustomer = computed(
+  () => customers.value.find((c) => c.id === selectedCustomerId.value) ?? null
+);
+
+const filteredPickCustomers = computed(() => {
+  const q = customerQuery.value.trim().toLowerCase();
+  if (!q) return customers.value;
+  return customers.value.filter((c) =>
+    [c.name, c.phone]
+      .filter(Boolean)
+      .some((v) => (v as string).toLowerCase().includes(q))
+  );
+});
+
+function pickCustomer(id: number | null) {
+  selectedCustomerId.value = id;
+  customerQuery.value = "";
+  if (customerDetails.value) customerDetails.value.open = false;
+}
+
 const quickCashAmounts = computed(() => {
   const total = cart.total;
   if (total <= 0) return [] as number[];
@@ -975,7 +1048,7 @@ function completeSale() {
       ],
       discount: cart.orderDiscountAmount,
       tax: 0,
-      customerId: heldCustomerId.value,
+      customerId: heldCustomerId.value ?? selectedCustomerId.value,
       userId: auth.user?.id ?? null,
       heldSaleId: heldSaleId.value,
       sessionId: openSession.value?.id ?? null,
@@ -987,6 +1060,7 @@ function completeSale() {
       cart.clear();
       heldSaleId.value = null;
       heldCustomerId.value = null;
+      selectedCustomerId.value = null;
       catalog.load();
       loadOpenSession();
       if (printReceiptOnComplete.value) {
@@ -1099,6 +1173,7 @@ function holdCurrentSale() {
       cart.clear();
       heldSaleId.value = null;
       heldCustomerId.value = null;
+      selectedCustomerId.value = null;
     })
     .catch((e: string) => {
       error.value = String(e);
