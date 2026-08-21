@@ -183,7 +183,15 @@ pub struct SaleReceipt {
     pub store_address: String,
     pub store_phone: String,
     pub store_tax_id: String,
+    /// Optional header text overriding the store name banner.
+    pub receipt_header: String,
     pub receipt_footer: String,
+    /// Store logo as a data URL (empty when unset).
+    pub receipt_logo: String,
+    /// Where to draw the logo: "top" | "bottom".
+    pub receipt_logo_pos: String,
+    /// Paper format: "thermal" | "a4".
+    pub receipt_format: String,
     pub sale_id: i64,
     pub sale_no: String,
     pub created_at: String,
@@ -1066,7 +1074,11 @@ pub async fn fetch_receipt(
     let mut store_address = String::new();
     let mut store_phone = String::new();
     let mut store_tax_id = String::new();
+    let mut receipt_header = String::new();
     let mut receipt_footer = String::new();
+    let mut receipt_logo = String::new();
+    let mut receipt_logo_pos = String::from("top");
+    let mut receipt_format = String::from("thermal");
     for row in setting_rows {
         let key: String = row.try_get("key").map_err(|e| e.to_string())?;
         let value: String = row.try_get("value").map_err(|e| e.to_string())?;
@@ -1075,7 +1087,12 @@ pub async fn fetch_receipt(
             "store_address" => store_address = value,
             "store_phone" => store_phone = value,
             "store_tax_id" => store_tax_id = value,
+            "receipt_header" => receipt_header = value,
             "receipt_footer" => receipt_footer = value,
+            // The store logo (data URL) doubles as the receipt logo.
+            "store_logo" => receipt_logo = value,
+            "receipt_logo_pos" => receipt_logo_pos = value,
+            "receipt_format" => receipt_format = value,
             _ => {}
         }
     }
@@ -1085,7 +1102,11 @@ pub async fn fetch_receipt(
         store_address,
         store_phone,
         store_tax_id,
+        receipt_header,
         receipt_footer,
+        receipt_logo,
+        receipt_logo_pos,
+        receipt_format,
         sale_id: input.sale_id,
         sale_no,
         created_at,

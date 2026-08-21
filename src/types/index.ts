@@ -145,7 +145,12 @@ export interface SaleReceipt {
   storeAddress: string;
   storePhone: string;
   storeTaxId: string;
+  receiptHeader: string;
   receiptFooter: string;
+  /** Store logo as a data URL (empty when unset). */
+  receiptLogo: string;
+  receiptLogoPos: string;
+  receiptFormat: string;
   saleId: number;
   saleNo: string;
   createdAt: string;
@@ -161,6 +166,15 @@ export interface SaleReceipt {
   changeGiven: number;
   items: SaleReceiptItem[];
   payments: SaleReceiptPayment[];
+}
+
+export interface Currency {
+  id: number;
+  code: string;
+  name: string;
+  symbol: string;
+  rate: number;
+  is_base: number;
 }
 
 export interface Category {
@@ -191,6 +205,7 @@ export interface TaxProfile {
   id: number;
   name: string;
   rate: number;
+  is_default: number;
 }
 
 export interface Customer {

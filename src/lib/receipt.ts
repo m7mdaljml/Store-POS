@@ -87,7 +87,8 @@ export function buildReceiptHtml(r: SaleReceipt): string {
     ? `<div class="row"><span>${esc(t("common.cashier"))}</span><span>${esc(r.userName)}</span></div>`
     : "";
 
-  const storeHeader = r.storeName || t("receipt.receipt");
+  const storeHeader =
+    r.receiptHeader || r.storeName || t("receipt.receipt");
   const storeLine1 = r.storeAddress ? `<div class="center">${esc(r.storeAddress)}</div>` : "";
   const storeLine2 = r.storePhone ? `<div class="center">${esc(r.storePhone)}</div>` : "";
   const storeLine3 = r.storeTaxId
@@ -95,15 +96,24 @@ export function buildReceiptHtml(r: SaleReceipt): string {
     : "";
   const footer = r.receiptFooter || t("receipt.footer");
 
-  return `<!doctype html>
-<html>
-<head>
-<meta charset="utf-8">
-<title>${esc(t("receipt.receipt"))} ${esc(r.saleNo)}</title>
-<style>
-  @page { size: 80mm auto; margin: 2mm; }
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body { background: #fff; }
+  const logoTag = r.receiptLogo
+    ? `<div class="center"><img class="logo" src="${esc(r.receiptLogo)}" alt=""></div>`
+    : "";
+  const logoTop = r.receiptLogoPos !== "bottom" ? logoTag : "";
+  const logoBottom = r.receiptLogoPos === "bottom" ? logoTag : "";
+
+  const a4 = r.receiptFormat === "a4";
+  const pageCss = a4
+    ? `@page { size: A4 portrait; margin: 15mm; }
+  body {
+    width: 170mm;
+    margin: 0 auto;
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 13px;
+    line-height: 1.5;
+    color: #000;
+  }`
+    : `@page { size: 80mm auto; margin: 2mm; }
   body {
     width: 72mm;
     margin: 0 auto;
@@ -111,18 +121,38 @@ export function buildReceiptHtml(r: SaleReceipt): string {
     font-size: 11px;
     line-height: 1.35;
     color: #000;
-  }
+  }`;
+  const scaleCss = a4
+    ? `.banner { font-size: 22px; margin-bottom: 4px; }
+  .row.sub, .footer { font-size: 12px; }
+  .total-row { font-size: 17px !important; }
+  .logo { max-width: 55mm; max-height: 35mm; }`
+    : `.banner { font-size: 15px; margin-bottom: 2px; }
+  .row.sub, .footer { font-size: 10px; }
+  .total-row { font-size: 13px !important; }
+  .logo { max-width: 32mm; max-height: 20mm; }`;
+
+  return `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>${esc(t("receipt.receipt"))} ${esc(r.saleNo)}</title>
+<style>
+  ${pageCss}
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { background: #fff; }
   .center { text-align: center; }
   .b { font-weight: bold; }
-  .banner { font-size: 15px; margin-bottom: 2px; }
   .row { display: flex; justify-content: space-between; gap: 4px; }
-  .row.sub { font-size: 10px; }
   .hr { border-top: 1px dashed #000; margin: 5px 0; }
   .item-name { white-space: pre-wrap; }
-  .footer { margin-top: 6px; text-align: center; font-size: 10px; }
+  .footer { margin-top: 6px; text-align: center; }
+  .logo { display: block; margin: 0 auto 3px auto; }
+  ${scaleCss}
 </style>
 </head>
 <body>
+  ${logoTop}
   <div class="center b banner">${esc(storeHeader)}</div>
   ${storeLine1}
   ${storeLine2}
@@ -140,12 +170,13 @@ export function buildReceiptHtml(r: SaleReceipt): string {
   ${discountRows}
   ${orderDiscountRows}
   ${taxRows}
-  <div class="row b" style="font-size: 13px"><span>${esc(t("receipt.total"))}</span><span>${money(r.total)}</span></div>
+  <div class="row b total-row"><span>${esc(t("receipt.total"))}</span><span>${money(r.total)}</span></div>
   <div class="hr"></div>
   ${paymentRows}
   <div class="row"><span>${esc(t("receipt.paid"))}</span><span>${money(r.paidAmount)}</span></div>
   <div class="row"><span>${esc(t("receipt.change"))}</span><span>${money(r.changeGiven)}</span></div>
   <div class="hr"></div>
+  ${logoBottom}
   <div class="footer">${esc(footer)}</div>
 </body>
 </html>`;

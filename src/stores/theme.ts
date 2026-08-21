@@ -16,10 +16,14 @@ export const useThemeStore = defineStore("theme", () => {
   const isDark = computed(() => theme.value === "dark");
 
   function toggle() {
-    theme.value = isDark.value ? "light" : "dark";
-    localStorage.setItem(STORAGE_KEY, theme.value);
-    applyTheme(theme.value);
+    set(isDark.value ? "light" : "dark");
   }
 
-  return { theme, isDark, toggle };
+  function set(next: Theme) {
+    theme.value = next;
+    localStorage.setItem(STORAGE_KEY, next);
+    applyTheme(next);
+  }
+
+  return { theme, isDark, toggle, set };
 });

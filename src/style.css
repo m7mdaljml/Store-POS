@@ -843,6 +843,19 @@ body {
   font-weight: 600;
 }
 
+.t-conv-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.t-conv-row .form-select {
+  background-color: var(--pos-surface);
+  border-color: var(--pos-border);
+  color: var(--pos-text);
+}
+
 .ticket-pay {
   margin-top: 12px;
   padding-top: 12px;

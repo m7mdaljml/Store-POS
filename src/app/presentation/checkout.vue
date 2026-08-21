@@ -322,6 +322,21 @@
           <span class="grand-total">{{ fmt(cart.total) }}</span>
         </div>
 
+        <div v-if="currencies.length > 1" class="t-conv-row">
+          <select
+            v-model.number="displayCurrencyId"
+            class="form-select form-select-sm w-auto"
+            :aria-label="t('checkout.displayCurrency')"
+          >
+            <option v-for="c in currencies" :key="c.id" :value="c.id">
+              {{ c.code }} ({{ c.symbol }})
+            </option>
+          </select>
+          <span v-if="convertedTotal !== null" class="t-conv-note small text-muted ms-auto">
+            ≈ {{ selectedCurrency?.symbol }} {{ convertedTotal.toFixed(2) }}
+          </span>
+        </div>
+
         <div class="ticket-pay">
           <div class="mb-2">
             <label class="form-label mb-1 small text-muted" for="cash-received">{{ t("checkout.cashReceived") }}</label>
@@ -796,8 +811,10 @@ import { useCartStore } from "../../stores/cart";
 import { useAuth } from "../../composables/useAuth";
 import { useScanner } from "../../composables/useScanner";
 import { select } from "../../lib/db";
+import { playBeep } from "../../lib/sound";
 import { buildReceiptHtml, printReceipt } from "../../lib/receipt";
 import type {
+  Currency,
   CustomerLite,
   HoldSaleResult,
   PaymentLine,
@@ -816,6 +833,27 @@ const auth = useAuth();
 const { t, locale } = useI18n();
 
 const customers = ref<CustomerLite[]>([]);
+/** Currencies available for a display-only total conversion (F7.3). */
+const currencies = ref<Currency[]>([]);
+const displayCurrencyId = ref<number | null>(null);
+
+const selectedCurrency = computed(
+  () => currencies.value.find((c) => c.id === displayCurrencyId.value) ?? null,
+);
+const baseCurrency = computed(
+  () => currencies.value.find((c) => c.is_base === 1) ?? null,
+);
+/**
+ * Grand total expressed in the selected display currency. Rates are stored
+ * relative to the base currency (base rate = 1); sales are always recorded in
+ * the base currency, this is a read-only convenience conversion.
+ */
+const convertedTotal = computed(() => {
+  const cur = selectedCurrency.value;
+  if (!cur || cur.is_base === 1) return null;
+  const baseRate = baseCurrency.value?.rate || 1;
+  return (cart.total / baseRate) * cur.rate;
+});
 
 const selectedCustomerId = ref<number | null>(null);
 const customerQuery = ref("");
@@ -926,6 +964,7 @@ function addToCart(p: Product) {
     discount: 0,
     costPrice: p.cost_price ?? 0,
   });
+  playBeep("click");
 }
 
 function addSuggestion(p: Product) {
@@ -1090,6 +1129,7 @@ function completeSale() {
       const hadCredit = cart.splitLines.some((l) => l.method === "credit");
       const change = fmt(sale.changeGiven);
       notice.value = t("checkout.saleCompleted", { saleNo: sale.saleNo, change });
+      playBeep("success");
       cart.clear();
       heldSaleId.value = null;
       heldCustomerId.value = null;
@@ -1303,8 +1343,23 @@ onMounted(async () => {
     settings.loaded ? Promise.resolve() : settings.load(),
     loadOpenSession(),
     loadCustomers(),
+    loadCurrencies(),
   ]);
 });
+
+function loadCurrencies(): Promise<void> {
+  return select<Currency>(
+    "SELECT id, code, name, symbol, rate, is_base FROM currencies ORDER BY is_base DESC, code",
+  )
+    .then((rows) => {
+      currencies.value = rows;
+      if (displayCurrencyId.value === null) {
+        const base = rows.find((c) => c.is_base === 1);
+        if (base) displayCurrencyId.value = base.id;
+      }
+    })
+    .then(() => undefined);
+}
 
 function loadCustomers(): Promise<void> {
   return select<CustomerLite>(
