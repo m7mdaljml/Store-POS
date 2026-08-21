@@ -122,6 +122,7 @@ import { useSettingsStore } from "./stores/settings";
 import { useCatalogStore } from "./stores/catalog";
 import { useThemeStore } from "./stores/theme";
 import { seedIfNeeded } from "./lib/seed";
+import { startAutoBackup } from "./composables/useAutoBackup";
 import { toggleLocale } from "./i18n";
 
 const route = useRoute();
@@ -175,6 +176,7 @@ onMounted(async () => {
     console.error("Seeding failed:", e);
   }
   await Promise.allSettled([settings.load(), catalog.load()]);
+  startAutoBackup();
 });
 
 watch(

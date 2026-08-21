@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod backup;
 pub mod catalog;
 pub mod customers;
 pub mod expenses;

@@ -31,6 +31,15 @@ fn initial_migrations() -> Vec<Migration> {
       sql: "ALTER TABLE sale_sessions ADD COLUMN notes TEXT;",
       kind: MigrationKind::Up,
     },
+    // Applied releases must never drop entries from this list. v5 is kept for
+    // machines where it already ran; it is a no-op because `backups` ships
+    // with the initial schema (001_initial.sql) using file_path/status.
+    Migration {
+      version: 5,
+      description: "backups_table",
+      sql: "CREATE TABLE IF NOT EXISTS backups (\n  id         INTEGER PRIMARY KEY AUTOINCREMENT,\n  path       TEXT UNIQUE NOT NULL,\n  size_bytes INTEGER NOT NULL DEFAULT 0,\n  kind       TEXT NOT NULL DEFAULT 'manual',\n  created_at TEXT NOT NULL DEFAULT (datetime('now'))\n);",
+      kind: MigrationKind::Up,
+    },
   ]
 }
 
@@ -56,6 +65,14 @@ pub fn run() {
         match seed::seed_app(&handle).await {
           Ok(()) => log::info!("Seed data ready"),
           Err(e) => log::error!("Seeding failed: {e}"),
+        }
+        // F8.1: verify database health once at startup.
+        match db::db_path(&handle) {
+          Ok(path) => match db::integrity_check(&path).await {
+            Ok(result) => log::info!("DB integrity check: {result}"),
+            Err(e) => log::error!("DB integrity check failed: {e}"),
+          },
+          Err(e) => log::error!("Cannot resolve DB path for integrity check: {e}"),
         }
       });
       Ok(())
@@ -103,6 +120,12 @@ pub fn run() {
       commands::reports::export_sales_report,
       commands::reports::export_inventory,
       commands::reports::export_top_products,
+      commands::backup::create_backup,
+      commands::backup::list_backups,
+      commands::backup::delete_backup,
+      commands::backup::check_db_integrity,
+      commands::backup::restore_database,
+      commands::backup::export_full_workbook,
       commands::purchasing::create_supplier_invoice,
       commands::purchasing::list_supplier_invoices,
       commands::purchasing::add_supplier_payment,

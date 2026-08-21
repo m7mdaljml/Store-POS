@@ -5,9 +5,14 @@ const DB_PATH = "sqlite:store.db";
 let dbPromise: Promise<Database> | null = null;
 
 /** Lazily load (and cache) the SQLite connection. Migrations run on first load. */
-export function getDb(): Promise<Database> {
+export async function getDb(): Promise<Database> {
   if (!dbPromise) {
-    dbPromise = Database.load(DB_PATH);
+    dbPromise = Database.load(DB_PATH).then(async (client) => {
+      // Wait out lock contention with the Rust-side pools (backups, reports)
+      // instead of failing instantly with "database is locked".
+      await client.execute("PRAGMA busy_timeout = 10000").catch(() => undefined);
+      return client;
+    });
   }
   return dbPromise;
 }

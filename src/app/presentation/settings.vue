@@ -282,6 +282,119 @@
     </div>
   </div>
 
+  <!-- F8.1–F8.5 Backups & data safety -->
+  <template v-if="tab === 'backup'">
+    <div class="row g-3 mb-3">
+      <div class="col-md-6">
+        <div class="card h-100">
+          <div class="card-body">
+            <h6 class="card-title mb-1">{{ t("settings.integrityTitle") }}</h6>
+            <p class="text-muted small mb-2">{{ t("settings.integrityHint") }}</p>
+            <div v-if="integrity" class="small mb-2" :class="integrity.ok ? 'text-success' : 'text-danger'">
+              <i class="bi me-1" :class="integrity.ok ? 'bi-check-circle' : 'bi-exclamation-triangle'"></i>
+              {{ integrity.text }}
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-secondary" :disabled="checkingIntegrity" @click="runIntegrityCheck">
+              {{ t("settings.runCheck") }}
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="card h-100">
+          <div class="card-body">
+            <h6 class="card-title mb-1">{{ t("settings.manualTitle") }}</h6>
+            <p class="text-muted small mb-2">{{ backupDirDisplay }}</p>
+            <div class="btn-group btn-group-sm">
+              <button type="button" class="btn btn-outline-secondary" @click="chooseFolder">
+                {{ t("settings.chooseFolder") }}
+              </button>
+              <button type="button" class="btn btn-primary" :disabled="backingUp" @click="backupNow">
+                <i class="bi bi-database-add me-1"></i>{{ t("settings.backupNow") }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card mb-3">
+      <div class="card-body">
+        <h6 class="card-title mb-3">{{ t("settings.autoTitle") }}</h6>
+        <div class="row g-3 align-items-end">
+          <div class="col-md-4">
+            <span class="form-label d-block">{{ t("settings.autoTitle") }}</span>
+            <div class="form-check form-switch">
+              <input id="auto-backup" v-model="autoForm.enabled" class="form-check-input" type="checkbox" role="switch" />
+              <label class="form-check-label small text-muted" for="auto-backup">{{ t("settings.enabled") }}</label>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label" for="auto-freq">{{ t("settings.freqLabel") }}</label>
+            <select id="auto-freq" v-model="autoForm.freq" class="form-select">
+              <option value="daily">{{ t("settings.freqDaily") }}</option>
+              <option value="weekly">{{ t("settings.freqWeekly") }}</option>
+            </select>
+          </div>
+          <div class="col-md-2">
+            <label class="form-label" for="auto-retention">{{ t("settings.retentionLabel") }}</label>
+            <input id="auto-retention" v-model.number="autoForm.retention" class="form-control" type="number" min="1" max="100" />
+          </div>
+          <div class="col-md-2">
+            <button type="button" class="btn btn-primary" :disabled="saving" @click="saveAutoSettings">
+              {{ t("common.save") }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card mb-3">
+      <div class="card-header">{{ backups.length ? t("common.results", { count: backups.length }) : t("settings.noBackups") }}</div>
+      <div class="table-responsive">
+        <table class="table table-sm table-striped align-middle mb-0">
+          <thead>
+            <tr>
+              <th>{{ t("common.date") }}</th>
+              <th>{{ t("common.type") }}</th>
+              <th class="text-end">{{ t("settings.sizeCol") }}</th>
+              <th>{{ t("settings.backupFolderLabel") }}</th>
+              <th class="text-end">{{ t("common.actions") }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="b in backups" :key="b.id">
+              <td>{{ fmtDateTime(b.createdAt) }}</td>
+              <td><span class="badge text-bg-secondary">{{ b.kind }}</span></td>
+              <td class="text-end">{{ fmtSize(b.sizeBytes) }}</td>
+              <td class="text-truncate" style="max-width: 320px" :title="b.path">{{ b.path }}</td>
+              <td class="text-end text-nowrap">
+                <button type="button" class="btn btn-sm btn-outline-primary me-1" @click="restore(b.path)">
+                  {{ t("settings.restore") }}
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-danger" @click="removeBackup(b.path)">
+                  <i class="bi bi-trash"></i>
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card" v-can="'export.excel'">
+      <div class="card-body d-flex flex-wrap align-items-center gap-3">
+        <div class="me-auto">
+          <h6 class="card-title mb-1">{{ t("settings.exportWorkbook") }}</h6>
+          <p class="text-muted small mb-0">{{ t("settings.exportWorkbookHint") }}</p>
+        </div>
+        <button type="button" class="btn btn-outline-success" :disabled="saving" @click="exportWorkbook">
+          <i class="bi bi-file-earmark-spreadsheet me-1"></i>{{ t("settings.exportWorkbook") }}
+        </button>
+      </div>
+    </div>
+  </template>
+
   <!-- Tax profile modal -->
   <div v-if="showTaxModal" class="modal-backdrop show"></div>
   <div v-if="showTaxModal" class="modal d-block" tabindex="-1">
@@ -372,25 +485,28 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
+import { invoke } from "@tauri-apps/api/core";
+import { open as openFileDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { useI18n } from "vue-i18n";
-import { execute, insert, select, selectOne } from "../../lib/db";
+import { closeDb, execute, insert, select, selectOne } from "../../lib/db";
 import { useSettingsStore } from "../../stores/settings";
 import { useThemeStore } from "../../stores/theme";
 import { setLocale, type Locale } from "../../i18n";
-import type { Currency, TaxProfile } from "../../types";
+import type { BackupInfo, Currency, TaxProfile } from "../../types";
 
 const { t, locale } = useI18n();
 const settings = useSettingsStore();
 const theme = useThemeStore();
 
-type TabId = "store" | "tax" | "currency" | "receipt" | "prefs";
+type TabId = "store" | "tax" | "currency" | "receipt" | "prefs" | "backup";
 const tabs: Array<{ id: TabId; label: string; icon: string }> = [
   { id: "store", label: "settings.tabStore", icon: "bi-shop" },
   { id: "tax", label: "settings.tabTax", icon: "bi-percent" },
   { id: "currency", label: "settings.tabCurrency", icon: "bi-cash-coin" },
   { id: "receipt", label: "settings.tabReceipt", icon: "bi-receipt" },
   { id: "prefs", label: "settings.tabPrefs", icon: "bi-sliders" },
+  { id: "backup", label: "settings.tabBackup", icon: "bi-shield-check" },
 ];
 const tab = ref<TabId>("store");
 
@@ -430,6 +546,8 @@ onMounted(async () => {
   receiptForm.footer = settings.receiptFooter;
   receiptForm.logoPos = settings.receiptLogoPos;
   receiptForm.format = settings.receiptFormat;
+  initBackupForm();
+  void loadBackups();
 });
 
 async function saveStore() {
@@ -668,6 +786,143 @@ function onSoundToggle(e: Event) {
   void settings
     .setValue("sound_enabled", on ? "1" : "0")
     .catch((err: unknown) => fail(String(err)));
+}
+
+/* ---------------- Backups & data safety (F8.1–F8.5) ---------------- */
+
+const integrity = ref<{ ok: boolean; text: string } | null>(null);
+const checkingIntegrity = ref(false);
+const backups = ref<BackupInfo[]>([]);
+const backingUp = ref(false);
+const autoForm = reactive({
+  enabled: false,
+  freq: "daily" as "daily" | "weekly",
+  retention: 5,
+});
+
+const backupDirDisplay = computed(
+  () => settings.values["backup_dir"] || t("settings.defaultFolder"),
+);
+
+function initBackupForm() {
+  autoForm.enabled = settings.values["backup_auto"] === "1";
+  autoForm.freq = settings.values["backup_freq"] === "weekly" ? "weekly" : "daily";
+  const parsed = Number(settings.values["backup_retention"]);
+  autoForm.retention = !isNaN(parsed) || parsed >= 1 ? parsed : 5;
+}
+
+async function loadBackups() {
+  try {
+    backups.value = await invoke<BackupInfo[]>("list_backups");
+  } catch (e: unknown) {
+    console.error(e);
+  }
+}
+
+async function runIntegrityCheck() {
+  checkingIntegrity.value = true;
+  integrity.value = null;
+  try {
+    const res = (await invoke<string>("check_db_integrity")).trim();
+    const ok = res.toLowerCase() === "ok";
+    integrity.value = { ok, text: ok ? t("settings.integrityOk") : res };
+  } catch (e: unknown) {
+    integrity.value = { ok: false, text: String(e) };
+  } finally {
+    checkingIntegrity.value = false;
+  }
+}
+
+async function chooseFolder() {
+  const picked = await openFileDialog({ directory: true, multiple: false });
+  if (typeof picked === "string" && picked) {
+    await settings.setValue("backup_dir", picked).catch((e: unknown) => fail(String(e)));
+    flash(t("settings.saved"));
+  }
+}
+
+async function backupNow() {
+  backingUp.value = true;
+  try {
+    await invoke("create_backup", {
+      dir: settings.values["backup_dir"] || null,
+      kind: "manual",
+    });
+    flash(t("settings.backupDone"));
+    await loadBackups();
+  } catch (e: unknown) {
+    fail(String(e));
+  } finally {
+    backingUp.value = false;
+  }
+}
+
+async function saveAutoSettings() {
+  saving.value = true;
+  try {
+    await Promise.all([
+      settings.setValue("backup_auto", autoForm.enabled ? "1" : "0"),
+      settings.setValue("backup_freq", autoForm.freq),
+      settings.setValue("backup_retention", String(Math.max(1, Math.floor(autoForm.retention || 5)))),
+    ]);
+    flash(t("settings.saved"));
+  } catch (e: unknown) {
+    fail(String(e));
+  } finally {
+    saving.value = false;
+  }
+}
+
+/** SQLite UTC timestamps → local display. */
+function fmtDateTime(raw: string): string {
+  const normalized = raw.includes("T") ? raw : raw.replace(" ", "T");
+  const date = new Date(normalized.endsWith("Z") ? normalized : normalized + "Z");
+  return isNaN(date.getTime()) ? raw : date.toLocaleString(locale.value);
+}
+
+function fmtSize(n: number): string {
+  if (n > 1048576) return (n / 1048576).toFixed(1) + " MB";
+  return Math.max(1, Math.round(n / 1024)) + " KB";
+}
+
+async function restore(path: string) {
+  if (!window.confirm(t("settings.restoreConfirm"))) return;
+  try {
+    // Release the webview's SQL connections so the file can be replaced.
+    await closeDb();
+    await invoke("restore_database", { sourcePath: path });
+    flash(t("settings.restoreDone"));
+    window.setTimeout(() => window.location.reload(), 1200);
+  } catch (e: unknown) {
+    fail(String(e));
+  }
+}
+
+async function removeBackup(path: string) {
+  if (!window.confirm(t("settings.deleteConfirm"))) return;
+  try {
+    await invoke("delete_backup", { path });
+    await loadBackups();
+  } catch (e: unknown) {
+    fail(String(e));
+  }
+}
+
+async function exportWorkbook() {
+  const path = await saveDialog({
+    defaultPath: "store-export.xlsx",
+    filters: [{ name: "Excel", extensions: ["xlsx"] }],
+  });
+  if (!path) return;
+  saving.value = true;
+  try {
+    const sheets = await invoke<number>("export_full_workbook", { path });
+    flash(t("settings.exportDone", { count: sheets }));
+  } catch (e: unknown) {
+    fail(String(e));
+  } finally {
+    saving.value = false;
+  }
 }
 </script>
 

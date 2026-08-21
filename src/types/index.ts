@@ -177,6 +177,15 @@ export interface Currency {
   is_base: number;
 }
 
+/** One entry of the backups table (`list_backups`). */
+export interface BackupInfo {
+  id: number;
+  path: string;
+  sizeBytes: number;
+  kind: string;
+  createdAt: string;
+}
+
 export interface Category {
   id: number;
   name: string;
