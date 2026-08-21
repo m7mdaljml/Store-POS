@@ -1144,6 +1144,12 @@ body {
   font-weight: 600;
 }
 
+/* Debt collection list on the customers page */
+.debtor-list {
+  max-height: 240px;
+  overflow-y: auto;
+}
+
 .checkout-scan-icon {
   position: absolute;
   inset-inline-start: 15px;

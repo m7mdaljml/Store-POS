@@ -92,6 +92,7 @@ pub fn run() {
       commands::suppliers::create_supplier,
       commands::suppliers::update_supplier,
       commands::suppliers::delete_supplier,
+      commands::customers::record_customer_payment,
       commands::purchasing::create_supplier_invoice,
       commands::purchasing::list_supplier_invoices,
       commands::purchasing::add_supplier_payment,

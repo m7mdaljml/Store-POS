@@ -356,11 +356,23 @@
               :title="`${t('checkout.cashReceived')} ${fmt(amt)}`"
               @click="cart.cashReceived = amt"
             >
-              {{ fmt(amt) }}
-            </button>
-          </div>
+            {{ fmt(amt) }}
+          </button>
+        </div>
 
-          <details class="split-details mb-2" :open="cart.splitLines.length > 0">
+        <button
+          v-if="selectedCustomerId"
+          class="btn btn-soft w-100 mb-2"
+          type="button"
+          :disabled="cart.shortfall <= 0.005"
+          :title="`${t('customers.balance')}: ${fmt(selectedCustomer?.balance ?? 0)}`"
+          @click="chargeToTab"
+        >
+          <i class="bi bi-journal-plus me-1"></i>
+          {{ t("checkout.chargeToTab", { amount: fmt(cart.shortfall) }) }}
+        </button>
+
+        <details class="split-details mb-2" :open="cart.splitLines.length > 0">
             <summary>
               <i class="bi bi-credit-card-2-front me-1"></i>{{ t("checkout.splitPayments") }}
               <span v-if="cart.splitLines.length" class="badge text-bg-secondary ms-1">{{ cart.splitLines.length }}</span>
@@ -1013,10 +1025,30 @@ function onSplitAmount(index: number, e: Event) {
   cart.setSplitLine(index, { amount: isNaN(value) || value < 0 ? 0 : value });
 }
 
+function chargeToTab() {
+  if (!selectedCustomerId.value) return;
+  const amount = Number(cart.shortfall.toFixed(2));
+  if (amount <= 0.004) return;
+  const idx = cart.splitLines.findIndex((l) => l.method === "credit");
+  if (idx >= 0) {
+    cart.setSplitLine(idx, { customerId: selectedCustomerId.value, amount });
+  } else {
+    cart.addSplitLine({
+      method: "credit",
+      customerId: selectedCustomerId.value,
+      amount,
+    });
+  }
+}
+
 function completeSale() {
   if (!cart.items.length) return;
   if (!cart.paymentValid) {
     error.value = t("checkout.paymentShort", { amount: fmt(cart.shortfall) });
+    return;
+  }
+  if (cart.splitLines.some((l) => l.method === "credit" && !l.customerId)) {
+    error.value = t("checkout.creditNeedsCustomer");
     return;
   }
   if (!openSession.value) {
@@ -1055,6 +1087,7 @@ function completeSale() {
     },
   })
     .then((sale) => {
+      const hadCredit = cart.splitLines.some((l) => l.method === "credit");
       const change = fmt(sale.changeGiven);
       notice.value = t("checkout.saleCompleted", { saleNo: sale.saleNo, change });
       cart.clear();
@@ -1063,6 +1096,7 @@ function completeSale() {
       selectedCustomerId.value = null;
       catalog.load();
       loadOpenSession();
+      if (hadCredit) loadCustomers();
       if (printReceiptOnComplete.value) {
         printSaleReceipt(sale.saleId).catch((e: unknown) => {
           error.value = t("checkout.printFailed", { error: String(e) });
@@ -1268,11 +1302,17 @@ onMounted(async () => {
     catalog.loaded ? Promise.resolve() : catalog.load(),
     settings.loaded ? Promise.resolve() : settings.load(),
     loadOpenSession(),
-    select<CustomerLite>("SELECT id, name, phone, balance FROM customers ORDER BY name").then(
-      (rows) => (customers.value = rows)
-    ),
+    loadCustomers(),
   ]);
 });
+
+function loadCustomers(): Promise<void> {
+  return select<CustomerLite>(
+    "SELECT id, name, phone, balance FROM customers ORDER BY name"
+  )
+    .then((rows) => (customers.value = rows))
+    .then(() => undefined);
+}
 
 onBeforeUnmount(() => {
   document.removeEventListener("click", onDocClick);

@@ -204,6 +204,26 @@ export interface Customer {
   created_at: string;
 }
 
+/** Sale row shown in the customer detail view. */
+export interface CustomerSaleRow {
+  id: number;
+  sale_no: string;
+  created_at: string;
+  total: number;
+  paid_amount: number;
+  status: string;
+}
+
+/** Ledger entry (charge / payment / reversal) for the customer detail view. */
+export interface CustomerLedgerRow {
+  id: number;
+  type: string;
+  amount: number;
+  balance_after: number;
+  notes: string | null;
+  created_at: string;
+}
+
 export interface Supplier {
   id: number;
   name: string;
