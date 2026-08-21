@@ -224,6 +224,96 @@ export interface CustomerLedgerRow {
   created_at: string;
 }
 
+export interface SalesSummary {
+  revenue: number;
+  orders: number;
+  avgTicket: number;
+  grossProfit: number;
+  expensesTotal: number;
+  netPosition: number;
+}
+
+export interface TrendPoint {
+  bucket: string;
+  revenue: number;
+  orders: number;
+}
+
+export interface TopProductRow {
+  productId: number;
+  name: string;
+  category: string | null;
+  qty: number;
+  revenue: number;
+  profit: number;
+}
+
+export interface CategorySalesRow {
+  category: string;
+  qty: number;
+  revenue: number;
+  profit: number;
+}
+
+export interface SalesReportRow {
+  id: number;
+  saleNo: string;
+  createdAt: string;
+  cashier: string;
+  customer: string | null;
+  subtotal: number;
+  discount: number;
+  total: number;
+  status: string;
+}
+
+export interface SalesReportOutput {
+  rows: SalesReportRow[];
+  orders: number;
+  revenue: number;
+  avgTicket: number;
+}
+
+export interface InventoryRow {
+  id: number;
+  name: string;
+  sku: string | null;
+  category: string | null;
+  stockQty: number;
+  reorderLevel: number;
+  costPrice: number;
+  sellPrice: number;
+  stockValue: number;
+  lowStock: boolean;
+}
+
+export interface MarginRow {
+  id: number;
+  name: string;
+  category: string | null;
+  qtySold: number;
+  revenue: number;
+  cogs: number;
+  profit: number;
+  marginPct: number;
+}
+
+export interface MarginReport {
+  products: MarginRow[];
+  categories: MarginRow[];
+}
+
+export interface StockMovement {
+  id: number;
+  productId: number;
+  productName: string;
+  movementType: string;
+  qty: number;
+  notes: string | null;
+  userName: string | null;
+  createdAt: string;
+}
+
 export interface Supplier {
   id: number;
   name: string;

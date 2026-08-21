@@ -1049,6 +1049,26 @@ body {
 }
 
 /* ------------------------------------------------------------------ */
+/* Reports                                                             */
+/* ------------------------------------------------------------------ */
+.pos-tabs .nav-link {
+  color: var(--pos-text-muted);
+  border-radius: var(--pos-radius-sm);
+  font-weight: 600;
+  padding: 0.35rem 0.9rem;
+}
+
+.pos-tabs .nav-link.active {
+  background: var(--pos-accent);
+  color: #fff;
+}
+
+.chart-box {
+  position: relative;
+  height: 280px;
+}
+
+/* ------------------------------------------------------------------ */
 /* Checkout polish                                                     */
 /* ------------------------------------------------------------------ */
 /* Barcode scan hint inside the search field (RTL-aware) */
