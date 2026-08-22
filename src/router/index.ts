@@ -72,7 +72,6 @@ const routes = [
     path: "/settings",
     name: "settings",
     component: () => import("../app/presentation/settings.vue"),
-    meta: { permission: "settings.manage" },
   },
   {
     path: "/expenses",
@@ -93,21 +92,54 @@ const router = createRouter({
   routes,
 });
 
+interface RouteMetaLike {
+  public?: boolean;
+  adminOnly?: boolean;
+  permission?: string;
+}
+
+function isAdminRole(auth: ReturnType<typeof useAuthStore>): boolean {
+  return auth.role === "Admin";
+}
+
+function canAccess(
+  auth: ReturnType<typeof useAuthStore>,
+  meta: RouteMetaLike,
+): boolean {
+  if (isAdminRole(auth)) return true;
+  if (meta.adminOnly) return false;
+  return !meta.permission || auth.can(meta.permission);
+}
+
+function firstAllowedName(auth: ReturnType<typeof useAuthStore>): string | null {
+  for (const r of routes) {
+    const meta = (r.meta ?? {}) as RouteMetaLike;
+    if (meta.public) continue;
+    if (canAccess(auth, meta)) return r.name as string;
+  }
+  return null;
+}
+
 router.beforeEach((to) => {
   const auth = useAuthStore();
   if (!to.meta.public && !auth.isAuthenticated) {
     return { name: "login" };
   }
   if (to.name === "login" && auth.isAuthenticated) {
-    return { name: auth.role === "Cashier" ? "checkout" : "dashboard" };
+    const home = firstAllowedName(auth);
+    return home ? { name: home } : true;
   }
-  if (auth.role === "Cashier" && to.name !== "checkout") {
-    return { name: "checkout" };
+  if (
+    canAccess(auth, {
+      public: to.meta.public as boolean | undefined,
+      adminOnly: to.meta.adminOnly as boolean | undefined,
+      permission: to.meta.permission as string | undefined,
+    })
+  ) {
+    return true;
   }
-  if (to.meta.permission && !auth.can(to.meta.permission as string)) {
-    return { name: auth.role === "Cashier" ? "checkout" : "dashboard" };
-  }
-  return true;
+  const fallback = firstAllowedName(auth);
+  return fallback ? { name: fallback } : { name: "login" };
 });
 
 export default router;

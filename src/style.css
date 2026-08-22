@@ -34,7 +34,8 @@
   --pos-danger: #ef4444;
 
   /* Typography */
-  --pos-font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+  --pos-font:
+    "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
     "Helvetica Neue", Arial, sans-serif;
 
   /* Bootstrap theme overrides (dark) */
@@ -108,7 +109,7 @@ body {
 /* ------------------------------------------------------------------ */
 .app-shell {
   display: flex;
-  min-height: 100vh;
+  height: 100vh;
 }
 
 .sidebar {
@@ -120,7 +121,7 @@ body {
   width: 240px;
   flex-shrink: 0;
   background: var(--pos-surface);
-  border-right: 1px solid var(--pos-border);
+  border-inline-end: 1px solid var(--pos-border);
   transition: width 0.2s ease;
   overflow: hidden;
 }
@@ -152,6 +153,28 @@ body {
   font-size: 1.15rem;
 }
 
+.brand-logo {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: var(--pos-radius-sm);
+  object-fit: contain;
+  background: #fff;
+  border: 1px solid var(--pos-border);
+  padding: 2px;
+}
+
+.topbar-logo {
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border-radius: var(--pos-radius-sm);
+  object-fit: contain;
+  background: #fff;
+  border: 1px solid var(--pos-border);
+  padding: 2px;
+}
+
 .sidebar-nav {
   flex: 1;
   overflow-y: auto;
@@ -170,7 +193,9 @@ body {
   color: var(--pos-text-muted);
   text-decoration: none;
   white-space: nowrap;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
 }
 
 .sidebar-link:hover {
@@ -208,6 +233,7 @@ body {
 .main-area {
   flex: 1;
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
 }
@@ -221,8 +247,7 @@ body {
   gap: var(--pos-space-lg);
   height: 64px;
   padding: 0 var(--pos-space-xl);
-  background: color-mix(in srgb, var(--pos-bg) 85%, transparent);
-  backdrop-filter: blur(10px);
+  background: var(--pos-surface);
   border-bottom: 1px solid var(--pos-border);
 }
 
@@ -234,6 +259,7 @@ body {
 
 .content {
   flex: 1;
+  min-height: 0;
   padding: var(--pos-space-xl);
   overflow-y: auto;
 }
@@ -248,7 +274,9 @@ body {
   background: transparent;
   color: var(--pos-text-muted);
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
 }
 
 .sidebar-toggle:hover {
@@ -288,7 +316,7 @@ body {
   background: transparent;
   color: var(--pos-text-muted);
   font-size: 0.875rem;
-  text-align: left;
+  text-align: start;
   cursor: pointer;
 }
 
@@ -304,13 +332,13 @@ body {
 }
 
 .cat-item .badge {
-  margin-left: auto;
+  margin-inline-start: auto;
   font-weight: 500;
 }
 
 .cat-item .cat-actions {
   display: none;
-  margin-left: auto;
+  margin-inline-start: auto;
 }
 
 .cat-item:hover .cat-actions {
@@ -371,17 +399,72 @@ body {
 
 .checkout-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 430px;
+  grid-template-columns: 600px minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr);
   gap: var(--pos-space-lg);
-  height: calc(100vh - 64px - 48px - 52px);
+  height: 100%;
   min-height: 420px;
+}
+
+.checkout-search {
+  position: relative;
+  grid-column: 1 / -1;
+  grid-row: 1;
 }
 
 .checkout-left {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  grid-column: 2;
+  grid-row: 2;
+}
+
+/* Cart-only mode: no quick items to browse while idle, so the product panel
+   collapses and the cart spans the full width under the scan/search bar. */
+.checkout-grid.cart-only {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.checkout-grid.cart-only .checkout-left {
+  display: none;
+}
+
+.checkout-grid.cart-only .ticket-panel {
+  grid-column: 1 / -1;
+  grid-row: 2;
+}
+
+/* Quick items panel manually collapsed via the toggle beside the search bar:
+   the product grid hides and the cart spans the full width. */
+.checkout-grid.quick-collapsed {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.checkout-grid.quick-collapsed .checkout-left {
+  display: none;
+}
+
+.checkout-grid.quick-collapsed .ticket-panel {
+  grid-column: 1 / -1;
+}
+
+.checkout-search-row {
+  display: flex;
+  align-items: stretch;
+  gap: var(--pos-space-sm);
+}
+
+.checkout-search-row .checkout-search-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.quick-items-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.05rem;
 }
 
 .checkout-cat-tabs {
@@ -392,15 +475,10 @@ body {
   padding: 2px;
 }
 
-.checkout-search {
-  position: relative;
-}
-
 .checkout-search-dropdown {
   position: absolute;
   top: calc(100% + 4px);
-  left: 0;
-  right: 0;
+  inset-inline: 0;
   z-index: 20;
   max-height: 320px;
   overflow-y: auto;
@@ -418,7 +496,7 @@ body {
   background: transparent;
   color: var(--pos-text);
   font-size: 0.9rem;
-  text-align: left;
+  text-align: start;
   cursor: pointer;
 }
 
@@ -448,7 +526,10 @@ body {
   font-size: 0.85rem;
   line-height: 1.35;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease;
 }
 
 .cat-tab:hover {
@@ -467,8 +548,8 @@ body {
   flex: 1;
   overflow-y: auto;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(185px, 1fr));
-  gap: var(--pos-space-lg);
+  grid-template-columns: repeat(auto-fill, minmax(165px, 1fr));
+  gap: var(--pos-space-md);
   align-content: start;
   padding: 2px;
 }
@@ -476,16 +557,18 @@ body {
 .product-card {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: var(--pos-space-md);
+  gap: 4px;
+  padding: var(--pos-space-sm);
   background: var(--pos-surface);
   border: 1px solid var(--pos-border);
   border-radius: var(--pos-radius-lg);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
   color: var(--pos-text);
-  text-align: left;
+  text-align: start;
   cursor: pointer;
-  transition: transform 0.12s ease, border-color 0.12s ease,
+  transition:
+    transform 0.12s ease,
+    border-color 0.12s ease,
     box-shadow 0.12s ease;
 }
 
@@ -502,12 +585,12 @@ body {
 
 .product-card-img {
   position: relative;
-  height: 110px;
+  height: 80px;
   border-radius: var(--pos-radius-md);
   background: var(--pos-surface-2);
   display: grid;
   place-items: center;
-  font-size: 2rem;
+  font-size: 1.5rem;
   color: var(--pos-text-muted);
   overflow: hidden;
 }
@@ -529,18 +612,17 @@ body {
 }
 
 .product-card-badge {
-  position: absolute;
-  top: 6px;
-  left: 6px;
   display: inline-flex;
   align-items: center;
-  padding: 3px 8px;
+  justify-content: center;
+  min-width: 22px;
+  height: 20px;
+  padding: 0 7px;
   border-radius: 999px;
   background: var(--pos-accent);
   color: #fff;
   font-size: 0.72rem;
   font-weight: 700;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
 }
 
 .product-card-oos {
@@ -558,18 +640,31 @@ body {
 
 .product-card-name {
   font-weight: 600;
-  font-size: 0.875rem;
+  font-size: 1rem;
   line-height: 1.25;
-  min-height: 2.2em;
+  min-height: 2.5em;
+  margin-top: 10px;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
 
+.product-card-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
 .product-card-price {
   font-weight: 800;
-  font-size: 1.05rem;
+  font-size: 0.9rem;
+  margin-inline-end: auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .product-card-stock {
@@ -586,6 +681,7 @@ body {
   font-size: 0.72rem;
   font-weight: 600;
   line-height: 1.5;
+  white-space: nowrap;
 }
 
 .stock-pill::before {
@@ -635,6 +731,8 @@ body {
   border: 1px solid var(--pos-border);
   border-radius: var(--pos-radius-lg);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  grid-column: 1;
+  grid-row: 2;
 }
 
 .ticket-header {
@@ -731,7 +829,9 @@ body {
   line-height: 1;
   border-radius: 6px;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
 }
 
 .line-remove:hover {
@@ -765,7 +865,9 @@ body {
   display: grid;
   place-items: center;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
 }
 
 .line-stepper button:hover:not(:disabled) {
@@ -896,6 +998,7 @@ body {
   font-family: "bootstrap-icons";
   font-size: 0.7rem;
   transition: transform 0.15s ease;
+  display: inline-block;
 }
 
 .split-details[open] summary::before {
@@ -960,7 +1063,10 @@ body {
   font-weight: 800;
   letter-spacing: 0.01em;
   box-shadow: 0 4px 14px rgba(34, 197, 94, 0.35);
-  transition: filter 0.15s ease, transform 0.12s ease, box-shadow 0.15s ease;
+  transition:
+    filter 0.15s ease,
+    transform 0.12s ease,
+    box-shadow 0.15s ease;
 }
 
 .btn-pay:hover:not(:disabled) {
@@ -1220,4 +1326,249 @@ body {
   --bs-btn-active-border-color: transparent;
   --bs-btn-disabled-color: var(--pos-text-muted);
   --bs-btn-disabled-opacity: 0.55;
+}
+
+/* ------------------------------------------------------------------ */
+/* F9.2 Theme transition                                               */
+/* ------------------------------------------------------------------ */
+body,
+.card,
+.sidebar,
+.form-control,
+.form-select,
+.input-group-text,
+.table,
+.modal-content,
+.dropdown-menu {
+  transition:
+    background-color 0.25s ease,
+    color 0.25s ease,
+    border-color 0.25s ease;
+}
+
+/* ------------------------------------------------------------------ */
+/* F9.3 Toasts                                                         */
+/* ------------------------------------------------------------------ */
+.toast-host {
+  position: fixed;
+  bottom: 18px;
+  inset-inline-end: 18px;
+  z-index: 1090;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: min(420px, calc(100vw - 36px));
+}
+
+.toast-item {
+  display: flex;
+  align-items: flex-start;
+  padding: 10px 14px;
+  border-radius: var(--pos-radius-sm, 8px);
+  background: var(--pos-surface-2);
+  border: 1px solid var(--pos-border);
+  color: var(--pos-text);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+  font-size: 0.9rem;
+  cursor: pointer;
+  word-break: break-word;
+}
+
+.toast-success {
+  border-inline-start: 4px solid #22c55e;
+}
+.toast-error {
+  border-inline-start: 4px solid #ef4444;
+}
+.toast-info {
+  border-inline-start: 4px solid #38bdf8;
+}
+
+.toast-enter-active,
+.toast-leave-active {
+  transition: all 0.25s ease;
+}
+.toast-enter-from,
+.toast-leave-to {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+/* ------------------------------------------------------------------ */
+/* F9.4 Skeleton loaders                                               */
+/* ------------------------------------------------------------------ */
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--pos-border);
+  border-radius: 6px;
+  height: 0.85rem;
+}
+
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  inset-inline-start: -100%;
+  inset-inline-end: auto;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.12),
+    transparent
+  );
+  animation: skeleton-shimmer 1.3s infinite;
+}
+
+@keyframes skeleton-shimmer {
+  100% {
+    inset-inline-start: 100%;
+    inset-inline-end: -100%;
+  }
+}
+
+.modal.d-block {
+  overflow-y: auto;
+}
+.modal-dialog-scrollable .modal-body {
+  max-height: calc(100vh - 9rem);
+  overflow-y: auto;
+}
+.modal-dialog-scrollable .modal-content {
+  max-height: calc(100vh - 3.5rem);
+}
+
+/* ------------------------------------------------------------------ */
+/* RTL layout fixes                                                     */
+/* ------------------------------------------------------------------ */
+
+/* Fix modal header spacing between title and close button */
+.modal-header {
+  gap: var(--bs-modal-header-padding, 1rem);
+}
+
+.modal-header .btn-close {
+  flex-shrink: 0;
+}
+
+/*
+ * Fix Bootstrap btn-group geometry for RTL.
+ * Bootstrap's LTR build squares corners and overlaps borders by physical
+ * side, which is reversed once the group renders right-to-left: the outer
+ * ends end up square while seams between buttons show rounded double
+ * borders. Mirror the geometry instead: the DOM-first button sits at the
+ * RIGHT end, so its right side is the outer edge; the DOM-last button sits
+ * at the LEFT end with its left side outer.
+ */
+[dir="rtl"] .btn-group > .btn:first-child {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  border-top-right-radius: var(--bs-btn-border-radius, var(--bs-border-radius));
+  border-bottom-right-radius: var(
+    --bs-btn-border-radius,
+    var(--bs-border-radius)
+  );
+}
+
+[dir="rtl"] .btn-group > .btn:last-child {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  border-top-left-radius: var(--bs-btn-border-radius, var(--bs-border-radius));
+  border-bottom-left-radius: var(
+    --bs-btn-border-radius,
+    var(--bs-border-radius)
+  );
+}
+
+/* Overlap each button's border over its predecessor's so every seam shows a
+   single straight divider (Bootstrap's margin-left pulls the wrong way). */
+[dir="rtl"] .btn-group > .btn:not(:first-child) {
+  margin-left: 0;
+  margin-right: calc(-1 * var(--bs-border-width));
+}
+
+/* Fix sidebar toggle chevron direction in RTL */
+[dir="rtl"] .bi-chevron-double-left {
+  transform: scaleX(-1);
+}
+
+[dir="rtl"] .bi-chevron-double-right {
+  transform: scaleX(-1);
+}
+
+/* Ensure topbar controls stay at the end (RTL-aware) */
+.topbar {
+  flex-wrap: nowrap;
+}
+
+.topbar-controls {
+  margin-inline-start: auto;
+  flex-shrink: 0;
+}
+
+/* Fix split-details arrow direction in RTL */
+[dir="rtl"] .split-details summary::before {
+  transform: scaleX(-1);
+}
+
+[dir="rtl"] .split-details[open] summary::before {
+  transform: scaleX(-1) rotate(90deg);
+}
+
+/* Quick items panel sits on the left in RTL: mirror the collapse chevrons */
+[dir="rtl"] .quick-items-toggle .bi::before {
+  transform: scaleX(-1);
+}
+
+/* Fix picker caret in RTL */
+[dir="rtl"] .customer-picker[open] .picker-caret {
+  transform: rotate(-180deg);
+}
+
+/* Table alignment is already RTL-aware via Bootstrap 5.3's text-end/text-start (logical properties) */
+
+/* Fix checkout grid layout for RTL */
+[dir="rtl"] .checkout-left {
+  grid-column: 1;
+}
+
+[dir="rtl"] .ticket-panel {
+  grid-column: 2;
+}
+
+/* Ensure ticket discount row works in RTL */
+.ticket-discount {
+  flex-wrap: wrap;
+}
+
+/* Fix payment line grid for RTL */
+.payment-line {
+  grid-template-columns: 104px minmax(0, 1fr) 116px 30px;
+}
+
+/* Fix toast host positioning for RTL */
+.toast-host {
+  inset-inline-end: 18px;
+}
+
+/* Fix pay-banner alignment in RTL */
+.pay-banner strong.ms-auto {
+  margin-inline-start: auto;
+}
+
+/* Fix search dropdown border radius */
+.checkout-search-dropdown {
+  border-radius: 0 0 var(--bs-border-radius) var(--bs-border-radius);
+}
+
+/* Fix topbar flex direction awareness */
+.topbar > * {
+  flex-shrink: 0;
+}
+
+.topbar .topbar-title {
+  flex-shrink: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

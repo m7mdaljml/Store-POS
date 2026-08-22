@@ -77,13 +77,13 @@ export const useCartStore = defineStore("cart", () => {
   /** Amount that still needs to be paid after split payments. */
   const remainder = computed(() => Math.max(0, total.value - splitTotal.value));
   /** Cash change back to the customer. */
-  const change = computed(() => Math.max(0, cashReceived.value - remainder.value));
+  const change = computed(() => Math.max(0, +(cashReceived.value - remainder.value).toFixed(2)));
   /** Amount still outstanding on the order. */
-  const shortfall = computed(() => Math.max(0, remainder.value - cashReceived.value));
+  const shortfall = computed(() => Math.max(0, +(remainder.value - cashReceived.value).toFixed(2)));
   const paymentValid = computed(() => shortfall.value <= 0.005);
 
   function syncCashToTotal() {
-    cashReceived.value = total.value;
+    cashReceived.value = Number(total.value.toFixed(2));
   }
 
   function addSplitLine(patch: Partial<PaymentLine> = {}) {

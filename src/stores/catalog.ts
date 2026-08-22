@@ -11,7 +11,7 @@ export const useCatalogStore = defineStore("catalog", () => {
   async function load() {
     const [p, c] = await Promise.all([
       select<Product>(
-        "SELECT id, sku, barcode, name, description, category_id, cost_price, sell_price, tax_profile_id, unit, stock_qty, reorder_level, image_path, is_active FROM products"
+        "SELECT id, sku, barcode, name, description, category_id, cost_price, sell_price, tax_profile_id, unit, stock_qty, reorder_level, image_path, is_active, is_quick FROM products"
       ),
       select<Category>("SELECT id, name FROM categories"),
     ]);

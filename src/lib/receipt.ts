@@ -1,9 +1,11 @@
 import type { SaleReceipt } from "../types";
 import { i18n } from "../i18n";
+import { currencySuffix } from "./currency";
 
-/** Format a number as a plain currency string (no thousands grouping). */
+/** Format a number as a plain currency string (no thousands grouping),
+ * with the base currency symbol placed after the number. */
 function money(n: number): string {
-  return n.toFixed(2);
+  return n.toFixed(2) + currencySuffix();
 }
 
 /** Escape text for safe embedding in the receipt document. */

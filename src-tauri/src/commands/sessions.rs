@@ -23,7 +23,9 @@ pub struct CloseSessionInput {
 #[serde(rename_all = "camelCase")]
 pub struct ListSessionsInput {
     pub status: Option<String>,
+    pub search: Option<String>,
     pub limit: Option<i64>,
+    pub offset: Option<i64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -53,7 +55,8 @@ const SESSION_SELECT: &str = "
     SELECT ss.id, u.full_name, ss.opened_at, ss.closed_at,
            ss.opening_cash, ss.closing_cash, ss.expected_cash, ss.variance, ss.status,
            (SELECT COUNT(*) FROM sales s WHERE s.session_id = ss.id AND s.status = 'completed') AS sales_count,
-           (SELECT COALESCE(SUM(s.total), 0.0) FROM sales s WHERE s.session_id = ss.id AND s.status = 'completed') AS sales_total,
+           (SELECT COALESCE(SUM(s.total - COALESCE((SELECT SUM(r.amount) FROM refunds r WHERE r.sale_id = s.id), 0.0)), 0.0)
+              FROM sales s WHERE s.session_id = ss.id AND s.status = 'completed') AS sales_total,
            (SELECT COALESCE(SUM(p.amount), 0.0) FROM payments p JOIN sales s ON s.id = p.sale_id
              WHERE s.session_id = ss.id AND s.status = 'completed' AND p.method = 'cash') AS cash_paid,
            (SELECT COALESCE(SUM(s.change_given), 0.0) FROM sales s WHERE s.session_id = ss.id AND s.status = 'completed') AS change_given
@@ -238,13 +241,32 @@ pub async fn query_sessions(
     input: ListSessionsInput,
 ) -> Result<Vec<SaleSession>, String> {
     let limit = input.limit.unwrap_or(50).max(1).min(500);
+    let offset = input.offset.unwrap_or(0).max(0);
+
+    let pattern = input
+        .search
+        .as_deref()
+        .map(|s| format!("%{}%", s.trim()))
+        .filter(|p| p != "%%");
+    let search_cond = if pattern.is_some() {
+        " AND (COALESCE(u.full_name, '') LIKE ? OR COALESCE(u.username, '') LIKE ?
+              OR CAST(ss.id AS TEXT) LIKE ?)"
+    } else {
+        ""
+    };
     let sql = format!(
-        "{SESSION_SELECT} WHERE (? IS NULL OR ss.status = ?) ORDER BY ss.id DESC LIMIT ?"
+        "{SESSION_SELECT} WHERE (? IS NULL OR ss.status = ?){search_cond}
+         ORDER BY ss.id DESC LIMIT ? OFFSET ?"
     );
-    let rows = sqlx::query(&sql)
+    let mut query = sqlx::query(&sql)
         .bind(&input.status)
-        .bind(&input.status)
+        .bind(&input.status);
+    if let Some(p) = &pattern {
+        query = query.bind(p).bind(p).bind(p);
+    }
+    let rows = query
         .bind(limit)
+        .bind(offset)
         .fetch_all(pool)
         .await
         .map_err(|e| e.to_string())?;
@@ -287,7 +309,16 @@ pub async fn list_sessions<R: Runtime>(
     input: Option<ListSessionsInput>,
 ) -> Result<Vec<SaleSession>, String> {
     let pool = db::pool(&app).await?;
-    query_sessions(&pool, input.unwrap_or(ListSessionsInput { status: None, limit: None })).await
+    query_sessions(
+        &pool,
+        input.unwrap_or(ListSessionsInput {
+            status: None,
+            search: None,
+            limit: None,
+            offset: None,
+        }),
+    )
+    .await
 }
 
 #[cfg(test)]
@@ -334,6 +365,18 @@ mod tests {
           method TEXT NOT NULL,
           amount REAL NOT NULL,
           reference TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE TABLE refunds (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          sale_no TEXT UNIQUE NOT NULL,
+          sale_id INTEGER NOT NULL REFERENCES sales(id),
+          session_id INTEGER,
+          user_id INTEGER,
+          customer_id INTEGER,
+          method TEXT NOT NULL,
+          reason TEXT,
+          amount REAL NOT NULL,
           created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
         CREATE TABLE audit_log (
@@ -519,15 +562,84 @@ mod tests {
         let current = query_open_session(&pool).await.unwrap().unwrap();
         assert_eq!(current.id, s.id);
 
-        let all = query_sessions(&pool, ListSessionsInput { status: None, limit: None })
-            .await
-            .unwrap();
+        let all = query_sessions(
+            &pool,
+            ListSessionsInput {
+                status: None,
+                search: None,
+                limit: None,
+                offset: None,
+            },
+        )
+        .await
+        .unwrap();
         assert_eq!(all.len(), 1);
 
-        let closed_only =
-            query_sessions(&pool, ListSessionsInput { status: Some("closed".into()), limit: None })
-                .await
-                .unwrap();
+        let closed_only = query_sessions(
+            &pool,
+            ListSessionsInput {
+                status: Some("closed".into()),
+                search: None,
+                limit: None,
+                offset: None,
+            },
+        )
+        .await
+        .unwrap();
         assert!(closed_only.is_empty());
+    }
+
+    /// A refund issued during the session reduces its net sales total; a cash
+    /// refund also lowers the expected drawer through the negative payment row.
+    #[tokio::test]
+    async fn refund_reduces_session_sales_total_and_cash() {
+        let pool = mem_pool().await;
+        let s = open(&pool).await;
+
+        // Cash sale of 40.
+        sqlx::query(
+            "INSERT INTO sales (sale_no, session_id, user_id, total, paid_amount, change_given, status)
+             VALUES ('S-000001', ?, 1, 40, 40, 0, 'completed')",
+        )
+        .bind(s.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query("INSERT INTO payments (sale_id, method, amount) VALUES (1, 'cash', 40)")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        // Cash refund of 15 against it: negative payment row + refunds row.
+        sqlx::query(
+            "INSERT INTO refunds (sale_no, sale_id, session_id, method, amount) VALUES ('R-000001', 1, ?, 'cash', 15)",
+        )
+        .bind(s.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query("INSERT INTO payments (sale_id, method, amount) VALUES (1, 'cash', -15)")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let current = query_open_session(&pool).await.unwrap().unwrap();
+        assert!((current.sales_total - 25.0).abs() < 0.001);
+        assert!((current.cash_paid - 25.0).abs() < 0.001);
+
+        // expected = 100 + 40 - 15 = 125
+        let closed = finalize_session(
+            &pool,
+            CloseSessionInput {
+                session_id: s.id,
+                closing_cash: 125.0,
+                user_id: 1,
+            },
+        )
+        .await
+        .unwrap();
+        assert!((closed.expected_cash.unwrap() - 125.0).abs() < 0.001);
+        assert!((closed.variance.unwrap()).abs() < 0.001);
+        assert!((closed.sales_total - 25.0).abs() < 0.001);
     }
 }

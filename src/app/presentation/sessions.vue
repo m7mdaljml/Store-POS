@@ -1,12 +1,13 @@
 <template>
-  <div class="page-container">
-    <div class="page-heading d-flex flex-wrap align-items-center gap-3">
-      <div>
-        <h2 class="mb-0">{{ t("sessions.title") }}</h2>
-        <span class="text-muted small">{{ t("sessions.subtitle") }}</span>
-      </div>
-      <div class="ms-auto d-flex align-items-center gap-2">
-        <div class="btn-group btn-group-sm" role="group" :aria-label="t('sales.filterStatusAria')">
+  <div>
+    <div class="d-flex align-items-center justify-content-between mb-3">
+      <h1 class="h4 mb-0">{{ t("sessions.title") }}</h1>
+      <div class="d-flex align-items-center gap-2">
+        <div
+          class="btn-group btn-group-sm"
+          role="group"
+          :aria-label="t('sales.filterStatusAria')"
+        >
           <button
             type="button"
             class="btn btn-outline-secondary"
@@ -32,20 +33,30 @@
             {{ t("sessions.closed") }}
           </button>
         </div>
-        <button class="btn btn-sm btn-outline-primary" type="button" @click="load">
-          <i class="bi bi-arrow-clockwise me-1"></i>{{ t("common.refresh") }}
+        <button
+          class="btn btn-sm btn-outline-primary"
+          type="button"
+          @click="reload"
+        >
+          <i class="bi bi-arrow-clockwise mx-1"></i>{{ t("common.refresh") }}
         </button>
       </div>
     </div>
 
-    <div v-if="error" class="alert alert-warning py-1 px-2 small" role="alert">
-      <i class="bi bi-exclamation-triangle me-1"></i>{{ error }}
-    </div>
+
 
     <div class="card">
+      <div class="p-2 border-bottom">
+        <input
+          v-model="search"
+          class="form-control form-control-sm"
+          type="search"
+          :placeholder="t('sessions.searchPlaceholder')"
+        />
+      </div>
       <div class="table-responsive">
         <table class="table table-hover align-middle mb-0">
-          <thead>
+          <thead v-if="sessions.length">
             <tr>
               <th>#</th>
               <th>{{ t("sessions.opened") }}</th>
@@ -60,73 +71,138 @@
               <th>{{ t("common.status") }}</th>
             </tr>
           </thead>
-          <tbody>
-            <tr v-if="loading">
+          <tbody v-if="loading">
+            <tr>
               <td colspan="11" class="text-center py-4 text-muted">
-                <span class="spinner-border spinner-border-sm me-2" role="status"></span>{{ t("common.loading") }}
+                <span
+                  class="spinner-border spinner-border-sm mx-2"
+                  role="status"
+                ></span
+                >{{ t("common.loading") }}
               </td>
             </tr>
-            <tr v-else-if="!filteredSessions.length">
-              <td colspan="11" class="text-center py-4 text-muted">{{ t("sessions.noSessions") }}</td>
+          </tbody>
+          <tbody v-else-if="!sessions.length">
+            <tr>
+              <td colspan="11" class="p-0 border-0">
+                <EmptyState
+                  :image="emptySessions"
+                  :message="t('sessions.noSessions')"
+                />
+              </td>
             </tr>
-            <tr v-for="s in filteredSessions" :key="s.id">
+          </tbody>
+          <tbody v-for="s in sessions" :key="s.id">
+            <tr>
               <td class="text-muted">{{ s.id }}</td>
               <td class="text-muted">{{ dateLabel(s.openedAt) }}</td>
-              <td class="text-muted">{{ s.closedAt ? dateLabel(s.closedAt) : "—" }}</td>
+              <td class="text-muted">
+                {{ s.closedAt ? dateLabel(s.closedAt) : "—" }}
+              </td>
               <td>{{ s.userName || "—" }}</td>
               <td class="text-end">{{ fmt(s.openingCash) }}</td>
               <td class="text-end">{{ s.salesCount }}</td>
               <td class="text-end">{{ fmt(s.salesTotal) }}</td>
-              <td class="text-end">{{ s.expectedCash != null ? fmt(s.expectedCash) : "—" }}</td>
-              <td class="text-end">{{ s.closingCash != null ? fmt(s.closingCash) : "—" }}</td>
+              <td class="text-end">
+                {{ s.expectedCash != null ? fmt(s.expectedCash) : "—" }}
+              </td>
+              <td class="text-end">
+                {{ s.closingCash != null ? fmt(s.closingCash) : "—" }}
+              </td>
               <td
                 class="text-end fw-semibold"
-                :class="s.status === 'closed' && (s.variance ?? 0) < -0.005
-                  ? 'text-danger'
-                  : s.status === 'closed' && (s.variance ?? 0) > 0.005
-                    ? 'text-warning'
-                    : 'text-success'"
+                :class="
+                  s.status === 'closed' && (s.variance ?? 0) < -0.005
+                    ? 'text-danger'
+                    : s.status === 'closed' && (s.variance ?? 0) > 0.005
+                      ? 'text-warning'
+                      : 'text-success'
+                "
               >
                 {{ s.variance != null ? fmt(s.variance) : "—" }}
               </td>
               <td>
                 <span
                   class="badge"
-                  :class="s.status === 'open' ? 'text-bg-primary' : 'text-bg-secondary'"
+                  :class="
+                    s.status === 'open'
+                      ? 'text-bg-primary'
+                      : 'text-bg-secondary'
+                  "
                 >
-                  {{ s.status === "open" ? t("sessions.open") : t("sessions.closed") }}
+                  {{
+                    s.status === "open"
+                      ? t("sessions.open")
+                      : t("sessions.closed")
+                  }}
                 </span>
               </td>
             </tr>
           </tbody>
         </table>
       </div>
+      <div
+        v-if="hasMore && !loading"
+        class="text-center border-top py-2"
+      >
+        <button
+          class="btn btn-sm btn-outline-secondary"
+          type="button"
+          :disabled="loadingMore"
+          @click="loadMore"
+        >
+          <span
+            v-if="loadingMore"
+            class="spinner-border spinner-border-sm mx-1"
+            role="status"
+          ></span>
+          {{ t("common.loadMore") }}
+        </button>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { onMounted, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { useI18n } from "vue-i18n";
-import { useSettingsStore } from "../../stores/settings";
+import EmptyState from "../../components/EmptyState.vue";
+import { usePagedList } from "../../composables/usePagedList";
+import { useToast } from "../../composables/useToast";
 import type { SaleSession } from "../../types";
+import { formatMoney } from "../../lib/currency";
+import emptySessions from "../../assets/empty/sessions.svg";
 
-const settings = useSettingsStore();
+const toast = useToast();
 const { t, locale } = useI18n();
 
-const sessions = ref<SaleSession[]>([]);
-const loading = ref(false);
-const error = ref("");
+const search = ref("");
 const filter = ref("");
 
+const {
+  items: sessions,
+  loading,
+  loadingMore,
+  hasMore,
+  reload,
+  loadMore,
+} = usePagedList<SaleSession>(
+  (limit, offset) =>
+    invoke<SaleSession[]>("list_sessions", {
+      input: {
+        status: filter.value || null,
+        search: search.value.trim() || null,
+        limit,
+        offset,
+      },
+    }),
+  [filter, search],
+  (e) => toast.error(String(e)),
+);
+
 function fmt(n: number): string {
-  if (!settings.currency) return n.toFixed(2);
-  return new Intl.NumberFormat(locale.value, {
-    style: "currency",
-    currency: settings.currency,
-    currencyDisplay: "narrowSymbol",
-  }).format(n);
+  return formatMoney(n);
 }
 
 function dateLabel(d: string): string {
@@ -135,23 +211,5 @@ function dateLabel(d: string): string {
   return date.toLocaleString(locale.value);
 }
 
-const filteredSessions = computed(() =>
-  filter.value ? sessions.value.filter((s) => s.status === filter.value) : sessions.value
-);
-
-async function load() {
-  loading.value = true;
-  error.value = "";
-  try {
-    sessions.value = await invoke<SaleSession[]>("list_sessions", {
-      input: { status: null, limit: 200 },
-    });
-  } catch (e) {
-    error.value = String(e);
-  } finally {
-    loading.value = false;
-  }
-}
-
-onMounted(load);
+onMounted(reload);
 </script>

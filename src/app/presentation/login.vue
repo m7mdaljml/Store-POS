@@ -3,7 +3,14 @@
     <div class="card shadow-sm login-card">
       <div class="card-body">
         <div class="text-center mb-4">
+          <img
+            v-if="settings.storeLogo"
+            :src="settings.storeLogo"
+            class="login-logo mb-3"
+            alt=""
+          />
           <div
+            v-else
             class="d-inline-flex align-items-center justify-content-center rounded-3 text-white mb-3"
             style="
               width: 56px;
@@ -14,13 +21,15 @@
           >
             <i class="bi bi-shop"></i>
           </div>
-          <h1 class="h5 mb-1">{{ settings.storeName || t("app.storeName") }}</h1>
+          <h1 class="h5 mb-1">
+            {{ settings.storeName || t("app.storeName") }}
+          </h1>
           <div class="text-muted small">{{ t("login.subtitle") }}</div>
         </div>
 
         <form novalidate @submit.prevent="submit">
           <div v-if="error" class="alert alert-danger py-2 small" role="alert">
-            <i class="bi bi-exclamation-triangle me-1"></i>{{ error }}
+            <i class="bi bi-exclamation-triangle mx-1"></i>{{ error }}
           </div>
 
           <div class="mb-3">
@@ -61,11 +70,16 @@
                 type="button"
                 tabindex="-1"
                 :aria-label="
-                  showPassword ? t('login.hidePassword') : t('login.showPassword')
+                  showPassword
+                    ? t('login.hidePassword')
+                    : t('login.showPassword')
                 "
                 @click="showPassword = !showPassword"
               >
-                <i class="bi" :class="showPassword ? 'bi-eye-slash' : 'bi-eye'"></i>
+                <i
+                  class="bi"
+                  :class="showPassword ? 'bi-eye-slash' : 'bi-eye'"
+                ></i>
               </button>
             </div>
             <div v-if="fieldErrors.password" class="invalid-feedback d-block">
@@ -80,7 +94,7 @@
           >
             <span
               v-if="submitting"
-              class="spinner-border spinner-border-sm me-2"
+              class="spinner-border spinner-border-sm mx-2"
             ></span>
             {{ t("login.signIn") }}
           </button>
@@ -146,6 +160,12 @@ async function submit() {
 </script>
 
 <style scoped>
+.login-logo {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+}
+
 /* Card sits slightly above center (~46% of viewport height) */
 .login-wrap {
   min-height: calc(100vh - 64px - var(--pos-space-xl) * 2);

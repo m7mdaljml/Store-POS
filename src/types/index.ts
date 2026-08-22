@@ -74,6 +74,27 @@ export interface SaleRecord {
   paidAmount: number;
   status: "completed" | "voided" | "held" | "cancelled";
   voidReason: string | null;
+  refundedAmount: number;
+}
+
+/** One invoice line offered for refund (`get_sale_for_refund`). */
+export interface RefundableItem {
+  saleItemId: number;
+  name: string;
+  qty: number;
+  refundedQty: number;
+  price: number;
+  discount: number;
+}
+
+/** A completed sale prepared for full or partial refund. */
+export interface RefundableSale {
+  saleId: number;
+  saleNo: string;
+  total: number;
+  refundedAmount: number;
+  fullyRefunded: boolean;
+  items: RefundableItem[];
 }
 
 /** A cash register session (shift). */
@@ -195,7 +216,6 @@ export interface Category {
 
 export interface Product {
   id: number;
-  sku: string | null;
   barcode: string | null;
   name: string;
   description: string | null;
@@ -208,6 +228,7 @@ export interface Product {
   reorder_level: number;
   image_path: string | null;
   is_active: number;
+  is_quick: number;
 }
 
 export interface TaxProfile {
@@ -233,7 +254,8 @@ export interface CustomerSaleRow {
   id: number;
   sale_no: string;
   created_at: string;
-  total: number;
+  /** Net of any refunds issued against this invoice. */
+  net_total: number;
   paid_amount: number;
   status: string;
 }
@@ -288,6 +310,7 @@ export interface SalesReportRow {
   subtotal: number;
   discount: number;
   total: number;
+  refunded: number;
   status: string;
 }
 
@@ -301,7 +324,6 @@ export interface SalesReportOutput {
 export interface InventoryRow {
   id: number;
   name: string;
-  sku: string | null;
   category: string | null;
   stockQty: number;
   reorderLevel: number;

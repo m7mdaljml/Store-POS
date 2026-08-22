@@ -5,7 +5,6 @@ use tauri::{AppHandle, Runtime};
 use crate::db;
 
 #[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct SupplierRecord {
     pub id: i64,
     pub name: String,
@@ -48,21 +47,49 @@ fn optional_field(value: &Option<String>) -> Option<String> {
 }
 
 #[tauri::command]
-pub async fn list_suppliers<R: Runtime>(app: AppHandle<R>) -> Result<Vec<SupplierRecord>, String> {
+pub async fn list_suppliers<R: Runtime>(
+    app: AppHandle<R>,
+    search: Option<String>,
+    limit: Option<i64>,
+    offset: Option<i64>,
+) -> Result<Vec<SupplierRecord>, String> {
     let pool = db::pool(&app).await?;
-    let rows = sqlx::query(
+
+    let pattern = search
+        .as_deref()
+        .map(|s| format!("%{}%", s.trim()))
+        .filter(|p| p != "%%");
+    let search_cond = if pattern.is_some() {
+        " WHERE (s.name LIKE ? OR COALESCE(s.contact, '') LIKE ? OR COALESCE(s.phone, '') LIKE ?
+               OR COALESCE(s.email, '') LIKE ? OR COALESCE(s.tax_id, '') LIKE ?)"
+    } else {
+        ""
+    };
+    let sql = format!(
         "SELECT s.id, s.name, s.contact, s.phone, s.email, s.address, s.tax_id, s.created_at,
                 COUNT(si.id) AS invoice_count,
                 COALESCE(SUM(si.total), 0.0) AS total_purchased,
                 COALESCE(SUM(si.due_amount), 0.0) AS total_due
          FROM suppliers s
          LEFT JOIN supplier_invoices si ON si.supplier_id = s.id
+         {search_cond}
          GROUP BY s.id
-         ORDER BY s.name",
-    )
-    .fetch_all(&pool)
-    .await
-    .map_err(|e| e.to_string())?;
+         ORDER BY s.name
+         LIMIT ? OFFSET ?"
+    );
+
+    let mut query = sqlx::query(&sql);
+    if let Some(p) = &pattern {
+        for _ in 0..5 {
+            query = query.bind(p);
+        }
+    }
+    let rows = query
+        .bind(limit.map(|l| l.max(1)).unwrap_or(-1))
+        .bind(offset.unwrap_or(0).max(0))
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
 
     rows.into_iter()
         .map(|row| {
@@ -84,7 +111,6 @@ pub async fn list_suppliers<R: Runtime>(app: AppHandle<R>) -> Result<Vec<Supplie
 }
 
 #[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct SupplierInvoiceSummary {
     pub id: i64,
     pub invoice_no: String,
@@ -96,9 +122,7 @@ pub struct SupplierInvoiceSummary {
 }
 
 #[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct SupplierDetail {
-    #[serde(flatten)]
     pub supplier: SupplierRecord,
     pub invoices: Vec<SupplierInvoiceSummary>,
 }
@@ -112,8 +136,8 @@ pub async fn get_supplier<R: Runtime>(
     let row = sqlx::query(
         "SELECT s.id, s.name, s.contact, s.phone, s.email, s.address, s.tax_id, s.created_at,
                 (SELECT COUNT(*) FROM supplier_invoices WHERE supplier_id = s.id) AS invoice_count,
-                COALESCE((SELECT SUM(total) FROM supplier_invoices WHERE supplier_id = s.id), 0) AS total_purchased,
-                COALESCE((SELECT SUM(due_amount) FROM supplier_invoices WHERE supplier_id = s.id), 0) AS total_due
+                COALESCE((SELECT SUM(total) FROM supplier_invoices WHERE supplier_id = s.id), 0.0) AS total_purchased,
+                COALESCE((SELECT SUM(due_amount) FROM supplier_invoices WHERE supplier_id = s.id), 0.0) AS total_due
          FROM suppliers s
          WHERE s.id = ?",
     )

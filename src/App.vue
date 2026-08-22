@@ -1,8 +1,16 @@
 <template>
+  <ToastHost />
+  <ConfirmHost />
   <div class="app-shell">
     <aside v-if="!isLoginRoute" class="sidebar" :class="{ collapsed }">
       <div class="sidebar-brand">
-        <div class="sidebar-brand-icon">
+        <img
+          v-if="settings.storeLogo"
+          :src="settings.storeLogo"
+          class="brand-logo"
+          alt=""
+        />
+        <div v-else class="sidebar-brand-icon">
           <i class="bi bi-shop"></i>
         </div>
         <span v-if="!collapsed" class="fw-semibold fs-6">
@@ -46,15 +54,19 @@
           {{ settings.storeName || t("app.storeName") }}
         </h1>
 
-        <div class="ms-auto d-flex align-items-center gap-3">
+        <div class="topbar-controls d-flex align-items-center gap-3">
           <span class="text-muted small fw-medium">
-            <i class="bi bi-clock me-1"></i>{{ clock }}
+            <i class="bi bi-clock mx-1"></i>{{ clock }}
           </span>
 
           <button
             class="btn btn-sm btn-outline-secondary"
             type="button"
-            :title="theme.isDark ? t('app.switchThemeLight') : t('app.switchThemeDark')"
+            :title="
+              theme.isDark
+                ? t('app.switchThemeLight')
+                : t('app.switchThemeDark')
+            "
             @click="theme.toggle()"
           >
             <i class="bi" :class="theme.isDark ? 'bi-sun' : 'bi-moon'"></i>
@@ -71,7 +83,13 @@
 
           <template v-if="auth.isAuthenticated">
             <span class="role-badge">
-              {{ t(auth.user?.roleName === "Admin" ? "roles.admin" : "roles.cashier") }}
+              {{
+                t(
+                  auth.user?.roleName === "Admin"
+                    ? "roles.admin"
+                    : "roles.cashier",
+                )
+              }}
             </span>
             <div class="d-flex align-items-center gap-2">
               <div
@@ -92,7 +110,7 @@
               type="button"
               @click="auth.logout()"
             >
-              <i class="bi bi-box-arrow-right me-1"></i>{{ t("app.logout") }}
+              <i class="bi bi-box-arrow-right mx-1"></i>{{ t("app.logout") }}
             </button>
           </template>
 
@@ -101,7 +119,7 @@
             to="/login"
             class="btn btn-sm btn-primary"
           >
-            <i class="bi bi-box-arrow-in-right me-1"></i>{{ t("app.login") }}
+            <i class="bi bi-box-arrow-in-right mx-1"></i>{{ t("app.login") }}
           </RouterLink>
         </div>
       </header>
@@ -123,6 +141,8 @@ import { useCatalogStore } from "./stores/catalog";
 import { useThemeStore } from "./stores/theme";
 import { seedIfNeeded } from "./lib/seed";
 import { startAutoBackup } from "./composables/useAutoBackup";
+import ToastHost from "./components/ToastHost.vue";
+import ConfirmHost from "./components/ConfirmHost.vue";
 import { toggleLocale } from "./i18n";
 
 const route = useRoute();
@@ -141,19 +161,83 @@ const isLoginRoute = computed(() => route.name === "login");
 
 const navItems = computed(() => {
   const items = [
-    { to: "/", label: t("nav.dashboard"), icon: "bi-speedometer2", adminOnly: true },
-    { to: "/checkout", label: t("nav.checkout"), icon: "bi-basket", permission: "sales.checkout" },
-    { to: "/sales", label: t("nav.sales"), icon: "bi-receipt", permission: "sales.void" },
-    { to: "/products", label: t("nav.products"), icon: "bi-box-seam", permission: "inventory.view" },
-    { to: "/stock", label: t("nav.stock"), icon: "bi-boxes", permission: "inventory.view" },
-    { to: "/purchases", label: t("nav.purchases"), icon: "bi-truck", permission: "inventory.view" },
-    { to: "/suppliers", label: t("nav.suppliers"), icon: "bi-person-lines-fill", permission: "expenses.manage" },
-    { to: "/customers", label: t("nav.customers"), icon: "bi-people", adminOnly: true },
-    { to: "/reports", label: t("nav.reports"), icon: "bi-graph-up-arrow", permission: "reports.view" },
-    { to: "/sessions", label: t("nav.sessions"), icon: "bi-cash-stack", permission: "reports.view" },
-    { to: "/expenses", label: t("nav.expenses"), icon: "bi-cash-coin", permission: "expenses.manage" },
-    { to: "/users", label: t("nav.users"), icon: "bi-person-gear", permission: "users.manage" },
-    { to: "/settings", label: t("nav.settings"), icon: "bi-gear", permission: "settings.manage" },
+    {
+      to: "/",
+      label: t("nav.dashboard"),
+      icon: "bi-speedometer2",
+      adminOnly: true,
+    },
+    {
+      to: "/checkout",
+      label: t("nav.checkout"),
+      icon: "bi-basket",
+      permission: "sales.checkout",
+    },
+    {
+      to: "/sales",
+      label: t("nav.sales"),
+      icon: "bi-receipt",
+      permission: "sales.void",
+    },
+    {
+      to: "/products",
+      label: t("nav.products"),
+      icon: "bi-box-seam",
+      permission: "inventory.view",
+    },
+    {
+      to: "/stock",
+      label: t("nav.stock"),
+      icon: "bi-boxes",
+      permission: "inventory.view",
+    },
+    {
+      to: "/purchases",
+      label: t("nav.purchases"),
+      icon: "bi-truck",
+      permission: "inventory.view",
+    },
+    {
+      to: "/suppliers",
+      label: t("nav.suppliers"),
+      icon: "bi-person-lines-fill",
+      permission: "expenses.manage",
+    },
+    {
+      to: "/customers",
+      label: t("nav.customers"),
+      icon: "bi-people",
+      adminOnly: true,
+    },
+    {
+      to: "/reports",
+      label: t("nav.reports"),
+      icon: "bi-graph-up-arrow",
+      permission: "reports.view",
+    },
+    {
+      to: "/sessions",
+      label: t("nav.sessions"),
+      icon: "bi-cash-stack",
+      permission: "reports.view",
+    },
+    {
+      to: "/expenses",
+      label: t("nav.expenses"),
+      icon: "bi-cash-coin",
+      permission: "expenses.manage",
+    },
+    {
+      to: "/users",
+      label: t("nav.users"),
+      icon: "bi-person-gear",
+      permission: "users.manage",
+    },
+    {
+      to: "/settings",
+      label: t("nav.settings"),
+      icon: "bi-gear",
+    },
   ];
   return items.filter((item) => {
     if (item.adminOnly) return auth.role === "Admin";
@@ -185,7 +269,7 @@ watch(
     if (!authenticated && route.name !== "login") {
       router.push({ name: "login" });
     }
-  }
+  },
 );
 
 onBeforeUnmount(() => {

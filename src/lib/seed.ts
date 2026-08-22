@@ -24,6 +24,13 @@ export async function seedIfNeeded(): Promise<void> {
     await execute("INSERT INTO settings (key, value) VALUES ('discount_threshold', '10')");
   }
 
+  const soundSetting = await selectOne<{ value: string }>(
+    "SELECT value FROM settings WHERE key = 'sound_enabled'",
+  );
+  if (!soundSetting) {
+    await execute("INSERT INTO settings (key, value) VALUES ('sound_enabled', '1')");
+  }
+
   const baseCurrency = await selectOne<{ id: number }>(
     "SELECT id FROM currencies WHERE is_base = 1 LIMIT 1",
   );

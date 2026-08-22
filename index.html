@@ -12,7 +12,50 @@
     <title>Store POS</title>
   </head>
   <body>
-    <div id="app"></div>
+    <div id="app">
+      <div id="splash">
+        <img
+          src="/src/assets/logo.svg"
+          alt=""
+          onerror="this.style.display = 'none'"
+        />
+        <div class="splash-title">Store POS</div>
+        <div class="splash-spinner"></div>
+      </div>
+    </div>
+    <style>
+      #splash {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 18px;
+        background: #0f172a;
+        color: #e2e8f0;
+        z-index: 9999;
+        font-family: Inter, system-ui, sans-serif;
+      }
+      .splash-title {
+        font-size: 1.4rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+      }
+      .splash-spinner {
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        border: 3px solid rgba(226, 232, 240, 0.25);
+        border-top-color: #38bdf8;
+        animation: splash-spin 0.8s linear infinite;
+      }
+      @keyframes splash-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

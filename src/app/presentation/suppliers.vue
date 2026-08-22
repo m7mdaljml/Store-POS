@@ -3,15 +3,8 @@
     <div class="d-flex align-items-center justify-content-between mb-3">
       <h1 class="h4 mb-0">{{ t("suppliers.title") }}</h1>
       <button class="btn btn-primary" type="button" @click="openAdd">
-        <i class="bi bi-plus-lg me-1"></i>{{ t("suppliers.addSupplier") }}
+        <i class="bi bi-plus-lg mx-1"></i>{{ t("suppliers.addSupplier") }}
       </button>
-    </div>
-
-    <div v-if="error" class="alert alert-danger py-2 small" role="alert">
-      <i class="bi bi-exclamation-triangle me-1"></i>{{ error }}
-    </div>
-    <div v-if="notice" class="alert alert-success py-2 small" role="alert">
-      <i class="bi bi-check-circle me-1"></i>{{ notice }}
     </div>
 
     <div class="card">
@@ -25,7 +18,7 @@
       </div>
       <div class="table-responsive">
         <table class="table align-middle mb-0">
-          <thead>
+          <thead v-if="suppliers.length">
             <tr>
               <th>{{ t("suppliers.supplier") }}</th>
               <th>{{ t("suppliers.contact") }}</th>
@@ -37,16 +30,29 @@
               <th class="text-end">{{ t("common.actions") }}</th>
             </tr>
           </thead>
-          <tbody>
-            <tr v-if="loading">
-              <td colspan="8" class="text-center text-muted py-4">{{ t("common.loading") }}</td>
-            </tr>
-            <tr v-else-if="!filteredSuppliers.length">
+          <tbody v-if="loading">
+            <tr>
               <td colspan="8" class="text-center text-muted py-4">
-                {{ t("suppliers.noSuppliers") }}
+                {{ t("common.loading") }}
               </td>
             </tr>
-            <tr v-for="s in filteredSuppliers" :key="s.id">
+          </tbody>
+          <tbody v-else-if="!suppliers.length">
+            <tr>
+              <td colspan="8" class="p-0 border-0">
+                <EmptyState
+                  :image="emptySuppliers"
+                  :message="
+                    search
+                      ? t('suppliers.noMatching')
+                      : t('suppliers.noSuppliers')
+                  "
+                />
+              </td>
+            </tr>
+          </tbody>
+          <tbody v-for="s in suppliers" :key="s.id">
+            <tr>
               <td class="fw-semibold">{{ s.name }}</td>
               <td class="text-muted">{{ s.contact ?? "—" }}</td>
               <td class="text-muted">{{ s.phone ?? "—" }}</td>
@@ -61,7 +67,7 @@
               </td>
               <td class="text-end text-nowrap">
                 <button
-                  class="btn btn-sm btn-outline-secondary me-1"
+                  class="btn btn-sm btn-outline-secondary mx-1"
                   type="button"
                   :title="t('suppliers.viewDetailsTitle')"
                   @click="openDetail(s)"
@@ -69,7 +75,7 @@
                   <i class="bi bi-eye"></i>
                 </button>
                 <button
-                  class="btn btn-sm btn-outline-primary me-1"
+                  class="btn btn-sm btn-outline-primary mx-1"
                   type="button"
                   :title="t('common.edit')"
                   @click="openEdit(s)"
@@ -89,6 +95,21 @@
           </tbody>
         </table>
       </div>
+      <div v-if="hasMore && !loading" class="text-center border-top py-2">
+        <button
+          class="btn btn-sm btn-outline-secondary"
+          type="button"
+          :disabled="loadingMore"
+          @click="loadMore"
+        >
+          <span
+            v-if="loadingMore"
+            class="spinner-border spinner-border-sm mx-1"
+            role="status"
+          ></span>
+          {{ t("common.loadMore") }}
+        </button>
+      </div>
     </div>
 
     <div v-if="showModal" class="modal-backdrop show"></div>
@@ -98,41 +119,83 @@
           <form @submit.prevent="save">
             <div class="modal-header">
               <h5 class="modal-title">
-                {{ editingId == null ? t("suppliers.addSupplierTitle") : t("suppliers.editSupplierTitle") }}
+                {{
+                  editingId == null
+                    ? t("suppliers.addSupplierTitle")
+                    : t("suppliers.editSupplierTitle")
+                }}
               </h5>
-              <button type="button" class="btn-close" @click="showModal = false"></button>
+              <button
+                type="button"
+                class="btn-close"
+                @click="showModal = false"
+              ></button>
             </div>
             <div class="modal-body">
-              <div v-if="formError" class="alert alert-danger py-2 small" role="alert">
-                <i class="bi bi-exclamation-triangle me-1"></i>{{ formError }}
+              <div
+                v-if="formError"
+                class="alert alert-danger py-2 small"
+                role="alert"
+              >
+                <i class="bi bi-exclamation-triangle mx-1"></i>{{ formError }}
               </div>
               <div class="mb-3">
-                <label class="form-label" for="s-name">{{ t("suppliers.nameRequired") }}</label>
+                <label class="form-label" for="s-name">{{
+                  t("suppliers.nameRequired")
+                }}</label>
                 <input
                   id="s-name"
                   v-model="form.name"
                   class="form-control"
+                  :class="{ 'is-invalid': errors.name }"
                   type="text"
                   autofocus
-                  required
+                  @input="clearFieldError(errors, 'name')"
                 />
+                <div class="invalid-feedback">{{ errors.name }}</div>
               </div>
               <div class="mb-3">
-                <label class="form-label" for="s-contact">{{ t("suppliers.contactPerson") }}</label>
-                <input id="s-contact" v-model="form.contact" class="form-control" type="text" />
+                <label class="form-label" for="s-contact">{{
+                  t("suppliers.contactPerson")
+                }}</label>
+                <input
+                  id="s-contact"
+                  v-model="form.contact"
+                  class="form-control"
+                  type="text"
+                />
               </div>
               <div class="row g-3">
                 <div class="col-md-6">
-                  <label class="form-label" for="s-phone">{{ t("suppliers.phone") }}</label>
-                  <input id="s-phone" v-model="form.phone" class="form-control" type="text" />
+                  <label class="form-label" for="s-phone">{{
+                    t("suppliers.phone")
+                  }}</label>
+                  <input
+                    id="s-phone"
+                    v-model="form.phone"
+                    class="form-control"
+                    type="text"
+                  />
                 </div>
                 <div class="col-md-6">
-                  <label class="form-label" for="s-email">{{ t("suppliers.email") }}</label>
-                  <input id="s-email" v-model="form.email" class="form-control" type="email" />
+                  <label class="form-label" for="s-email">{{
+                    t("suppliers.email")
+                  }}</label>
+                  <input
+                    id="s-email"
+                    v-model="form.email"
+                    class="form-control"
+                    :class="{ 'is-invalid': errors.email }"
+                    type="email"
+                    @input="clearFieldError(errors, 'email')"
+                  />
+                  <div class="invalid-feedback">{{ errors.email }}</div>
                 </div>
               </div>
               <div class="mt-3 mb-3">
-                <label class="form-label" for="s-address">{{ t("suppliers.address") }}</label>
+                <label class="form-label" for="s-address">{{
+                  t("suppliers.address")
+                }}</label>
                 <textarea
                   id="s-address"
                   v-model="form.address"
@@ -141,18 +204,34 @@
                 ></textarea>
               </div>
               <div class="mb-0">
-                <label class="form-label" for="s-tax">{{ t("suppliers.taxId") }}</label>
-                <input id="s-tax" v-model="form.taxId" class="form-control" type="text" />
+                <label class="form-label" for="s-tax">{{
+                  t("suppliers.taxId")
+                }}</label>
+                <input
+                  id="s-tax"
+                  v-model="form.taxId"
+                  class="form-control"
+                  type="text"
+                />
               </div>
-            </div>
-            <div class="modal-footer">
-              <button type="button" class="btn btn-outline-secondary" @click="showModal = false">
-                {{ t("common.cancel") }}
-              </button>
-              <button type="submit" class="btn btn-primary" :disabled="saving">
-                <span v-if="saving" class="spinner-border spinner-border-sm me-2"></span>
-                {{ editingId == null ? t("common.add") : t("common.save") }}
-              </button>
+              <div
+                class="d-flex justify-content-end gap-2 mt-3 pt-3 border-top"
+              >
+                <button
+                  type="button"
+                  class="btn btn-outline-secondary"
+                  @click="showModal = false"
+                >
+                  {{ t("common.cancel") }}
+                </button>
+                <AsyncButton
+                  type="submit"
+                  :loading="saving"
+                  :disabled="!canSave"
+                >
+                  {{ editingId == null ? t("common.add") : t("common.save") }}
+                </AsyncButton>
+              </div>
             </div>
           </form>
         </div>
@@ -161,22 +240,42 @@
 
     <div v-if="detail || detailLoading" class="modal-backdrop show"></div>
     <div v-if="detail || detailLoading" class="modal d-block" tabindex="-1">
-      <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+      <div
+        class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable"
+      >
         <div class="modal-content">
           <div class="modal-header">
-            <h5 class="modal-title">{{ t("suppliers.supplierDetailTitle", { name: detail?.supplier.name }) }}</h5>
-            <button type="button" class="btn-close" @click="detail = null"></button>
+            <h5 class="modal-title">
+              {{
+                t("suppliers.supplierDetailTitle", {
+                  name: detail?.supplier.name,
+                })
+              }}
+            </h5>
+            <button
+              type="button"
+              class="btn-close"
+              @click="detail = null"
+            ></button>
           </div>
           <div class="modal-body">
-            <div v-if="detailLoading" class="text-center text-muted py-4">{{ t("common.loading") }}</div>
-            <div v-else-if="detailError" class="alert alert-danger py-2 small" role="alert">
-              <i class="bi bi-exclamation-triangle me-1"></i>{{ detailError }}
+            <div v-if="detailLoading" class="text-center text-muted py-4">
+              {{ t("common.loading") }}
+            </div>
+            <div
+              v-else-if="detailError"
+              class="alert alert-danger py-2 small"
+              role="alert"
+            >
+              <i class="bi bi-exclamation-triangle mx-1"></i>{{ detailError }}
             </div>
             <template v-else-if="detail">
               <div class="row g-3 mb-3">
                 <div class="col-md-6">
                   <div class="detail-item">
-                    <span class="detail-label">{{ t("suppliers.contact") }}</span>
+                    <span class="detail-label">{{
+                      t("suppliers.contact")
+                    }}</span>
                     <span>{{ detail.supplier.contact ?? "—" }}</span>
                   </div>
                   <div class="detail-item">
@@ -190,7 +289,9 @@
                 </div>
                 <div class="col-md-6">
                   <div class="detail-item">
-                    <span class="detail-label">{{ t("suppliers.address") }}</span>
+                    <span class="detail-label">{{
+                      t("suppliers.address")
+                    }}</span>
                     <span>{{ detail.supplier.address ?? "—" }}</span>
                   </div>
                   <div class="detail-item">
@@ -198,7 +299,9 @@
                     <span>{{ detail.supplier.tax_id ?? "—" }}</span>
                   </div>
                   <div class="detail-item">
-                    <span class="detail-label">{{ t("suppliers.memberSince") }}</span>
+                    <span class="detail-label">{{
+                      t("suppliers.memberSince")
+                    }}</span>
                     <span>{{ dateLabel(detail.supplier.created_at) }}</span>
                   </div>
                 </div>
@@ -207,22 +310,34 @@
               <div class="row g-3 mb-3">
                 <div class="col">
                   <div class="card text-center p-3">
-                    <div class="text-muted small text-uppercase">{{ t("common.invoices") }}</div>
-                    <div class="fs-5 fw-semibold">{{ detail.supplier.invoice_count }}</div>
+                    <div class="text-muted small text-uppercase">
+                      {{ t("common.invoices") }}
+                    </div>
+                    <div class="fs-5 fw-semibold">
+                      {{ detail.supplier.invoice_count }}
+                    </div>
                   </div>
                 </div>
                 <div class="col">
                   <div class="card text-center p-3">
-                    <div class="text-muted small text-uppercase">{{ t("suppliers.totalPurchased") }}</div>
-                    <div class="fs-5 fw-semibold">{{ fmt(detail.supplier.total_purchased) }}</div>
+                    <div class="text-muted small text-uppercase">
+                      {{ t("suppliers.totalPurchased") }}
+                    </div>
+                    <div class="fs-5 fw-semibold">
+                      {{ fmt(detail.supplier.total_purchased) }}
+                    </div>
                   </div>
                 </div>
                 <div class="col">
                   <div class="card text-center p-3">
-                    <div class="text-muted small text-uppercase">{{ t("suppliers.amountDue") }}</div>
+                    <div class="text-muted small text-uppercase">
+                      {{ t("suppliers.amountDue") }}
+                    </div>
                     <div
                       class="fs-5 fw-semibold"
-                      :class="detail.supplier.total_due > 0 ? 'text-danger' : ''"
+                      :class="
+                        detail.supplier.total_due > 0 ? 'text-danger' : ''
+                      "
                     >
                       {{ fmt(detail.supplier.total_due) }}
                     </div>
@@ -230,7 +345,9 @@
                 </div>
               </div>
 
-              <div class="fw-semibold small text-muted text-uppercase mb-2">{{ t("suppliers.recentInvoices") }}</div>
+              <div class="fw-semibold small text-muted text-uppercase mb-2">
+                {{ t("suppliers.recentInvoices") }}
+              </div>
               <div v-if="!detail.invoices.length" class="text-muted small py-2">
                 {{ t("suppliers.noInvoicesYet") }}
               </div>
@@ -271,20 +388,48 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { useI18n } from "vue-i18n";
+import EmptyState from "../../components/EmptyState.vue";
+import AsyncButton from "../../components/AsyncButton.vue";
+import {
+  applyFieldRules,
+  clearFieldError,
+  useFormGuard,
+} from "../../composables/useFormGuard";
+import { usePagedList } from "../../composables/usePagedList";
+import { useToast } from "../../composables/useToast";
+import { useConfirm } from "../../composables/useConfirm";
 import { useSettingsStore } from "../../stores/settings";
 import type { Supplier, SupplierDetail } from "../../types";
+import { formatMoney } from "../../lib/currency";
+import emptySuppliers from "../../assets/empty/suppliers.svg";
 
 const settings = useSettingsStore();
+const toast = useToast();
+const { confirmDialog } = useConfirm();
 const { t, locale } = useI18n();
 
-const suppliers = ref<Supplier[]>([]);
 const search = ref("");
-const loading = ref(false);
-const error = ref("");
-const notice = ref("");
+
+const {
+  items: suppliers,
+  loading,
+  loadingMore,
+  hasMore,
+  reload: load,
+  loadMore,
+} = usePagedList<Supplier>(
+  (limit, offset) =>
+    invoke<Supplier[]>("list_suppliers", {
+      search: search.value.trim() || null,
+      limit,
+      offset,
+    }),
+  [search],
+  (e) => toast.error(e instanceof Error ? e.message : String(e)),
+);
 
 const showModal = ref(false);
 const saving = ref(false);
@@ -298,54 +443,25 @@ const form = ref({
   address: "",
   taxId: "",
 });
+const errors = reactive<Record<string, string>>({});
+const guard = useFormGuard(form);
+const canSave = computed(() => guard.isDirty.value && !saving.value);
+
+function resetErrors() {
+  for (const key of Object.keys(errors)) delete errors[key];
+}
 
 const detail = ref<SupplierDetail | null>(null);
 const detailLoading = ref(false);
 const detailError = ref("");
 
 function fmt(n: number): string {
-  if (!settings.currency) return n.toFixed(2);
-  return new Intl.NumberFormat(locale.value, {
-    style: "currency",
-    currency: settings.currency,
-    currencyDisplay: "narrowSymbol",
-  }).format(n);
+  return formatMoney(n ?? 0);
 }
 
 function dateLabel(iso: string): string {
   const d = new Date(iso + "Z");
-  return Number.isNaN(d.getTime())
-    ? iso
-    : d.toLocaleDateString(locale.value);
-}
-
-const filteredSuppliers = computed(() => {
-  const q = search.value.trim().toLowerCase();
-  if (!q) return suppliers.value;
-  return suppliers.value.filter((s) =>
-    [
-      s.name,
-      s.contact,
-      s.phone,
-      s.email,
-      s.address,
-      s.tax_id,
-    ]
-      .filter(Boolean)
-      .some((v) => (v as string).toLowerCase().includes(q))
-  );
-});
-
-async function load() {
-  loading.value = true;
-  error.value = "";
-  try {
-    suppliers.value = await invoke<Supplier[]>("list_suppliers");
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e);
-  } finally {
-    loading.value = false;
-  }
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString(locale.value);
 }
 
 function openAdd() {
@@ -359,6 +475,8 @@ function openAdd() {
     address: "",
     taxId: "",
   };
+  resetErrors();
+  guard.capture();
   showModal.value = true;
 }
 
@@ -373,14 +491,21 @@ function openEdit(s: Supplier) {
     address: s.address ?? "",
     taxId: s.tax_id ?? "",
   };
+  resetErrors();
+  guard.capture();
   showModal.value = true;
 }
 
-function validate(): string {
-  if (!form.value.name.trim()) return t("suppliers.supplierNameRequired");
-  if (form.value.email.trim() && !form.value.email.trim().includes("@"))
-    return t("suppliers.emailInvalid");
-  return "";
+function validate(): boolean {
+  const ok = applyFieldRules(errors, [
+    ["name", !!form.value.name.trim(), t("common.name")],
+  ]);
+  if (form.value.email.trim() && !form.value.email.trim().includes("@")) {
+    errors.email = t("suppliers.emailInvalid");
+  } else if (ok) {
+    delete errors.email;
+  }
+  return ok && !errors.email;
 }
 
 function payload() {
@@ -396,20 +521,23 @@ function payload() {
 
 async function save() {
   formError.value = "";
-  const err = validate();
-  if (err) {
-    formError.value = err;
+  if (!validate()) {
+    toast.error(t("common.fixErrors"));
     return;
   }
   saving.value = true;
   try {
     if (editingId.value == null) {
       await invoke<number>("create_supplier", { input: payload() });
-      notice.value = t("suppliers.supplierAdded");
+      toast.success(t("suppliers.supplierAdded"));
     } else {
-      await invoke("update_supplier", { supplierId: editingId.value, input: payload() });
-      notice.value = t("suppliers.supplierUpdated");
+      await invoke("update_supplier", {
+        supplierId: editingId.value,
+        input: payload(),
+      });
+      toast.success(t("suppliers.supplierUpdated"));
     }
+    guard.markSaved();
     showModal.value = false;
     await load();
   } catch (e) {
@@ -424,7 +552,9 @@ async function openDetail(s: Supplier) {
   detail.value = null;
   detailLoading.value = true;
   try {
-    detail.value = await invoke<SupplierDetail>("get_supplier", { supplierId: s.id });
+    detail.value = await invoke<SupplierDetail>("get_supplier", {
+      supplierId: s.id,
+    });
   } catch (e) {
     detailError.value = e instanceof Error ? e.message : String(e);
   } finally {
@@ -433,14 +563,18 @@ async function openDetail(s: Supplier) {
 }
 
 async function remove(s: Supplier) {
-  error.value = "";
-  if (!window.confirm(t("suppliers.deleteSupplierConfirm", { name: s.name }))) return;
+  if (
+    !(await confirmDialog({
+      message: t("suppliers.deleteSupplierConfirm", { name: s.name }),
+    }))
+  )
+    return;
   try {
     await invoke("delete_supplier", { supplierId: s.id });
-    notice.value = t("suppliers.supplierDeleted", { name: s.name });
+    toast.success(t("suppliers.supplierDeleted", { name: s.name }));
     await load();
   } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e);
+    toast.error(e instanceof Error ? e.message : String(e));
   }
 }
 

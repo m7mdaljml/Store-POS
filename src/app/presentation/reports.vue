@@ -1,9 +1,13 @@
 <template>
-  <div class="page-container">
-    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+  <div>
+    <div class="d-flex align-items-center justify-content-between mb-3">
       <h1 class="h4 mb-0">{{ t("reports.title") }}</h1>
       <div class="d-flex flex-wrap align-items-center gap-2">
-        <div class="btn-group btn-group-sm" role="group" :aria-label="t('reports.period')">
+        <div
+          class="btn-group btn-group-sm"
+          role="group"
+          :aria-label="t('reports.period')"
+        >
           <button
             v-for="p in presets"
             :key="p.key"
@@ -45,14 +49,8 @@
       </li>
     </ul>
 
-    <div v-if="error" class="alert alert-danger py-2 small" role="alert">
-      <i class="bi bi-exclamation-triangle me-1"></i>{{ error }}
-    </div>
-    <div v-if="notice" class="alert alert-success py-2 small" role="alert">
-      <i class="bi bi-check-circle me-1"></i>{{ notice }}
-    </div>
     <div v-if="loading && !anyLoaded" class="text-center text-muted py-5">
-      <span class="spinner-border me-2"></span>{{ t("common.loading") }}
+      <span class="spinner-border mx-2"></span>{{ t("common.loading") }}
     </div>
 
     <!-- ============ F6.2 Overview ============ -->
@@ -99,7 +97,9 @@
             <div class="kpi-icon"><i class="bi bi-wallet2"></i></div>
             <div>
               <div class="kpi-label">{{ t("reports.kpiExpenses") }}</div>
-              <div class="kpi-value text-danger">{{ fmt(summary.expensesTotal) }}</div>
+              <div class="kpi-value text-danger">
+                {{ fmt(summary.expensesTotal) }}
+              </div>
             </div>
           </div>
         </div>
@@ -108,7 +108,12 @@
             <div class="kpi-icon"><i class="bi bi-speedometer2"></i></div>
             <div>
               <div class="kpi-label">{{ t("reports.kpiNet") }}</div>
-              <div class="kpi-value" :class="summary.netPosition >= 0 ? 'text-success' : 'text-danger'">
+              <div
+                class="kpi-value"
+                :class="
+                  summary.netPosition >= 0 ? 'text-success' : 'text-danger'
+                "
+              >
                 {{ fmt(summary.netPosition) }}
               </div>
             </div>
@@ -119,14 +124,22 @@
       <div class="row g-3 mb-3">
         <div class="col-lg-8">
           <div class="card h-100">
-            <div class="card-header d-flex align-items-center justify-content-between py-2">
-              <span class="fw-semibold small text-uppercase text-muted">{{ t("reports.trendTitle") }}</span>
+            <div
+              class="card-header d-flex align-items-center justify-content-between py-2"
+            >
+              <span class="fw-semibold small text-uppercase text-muted">{{
+                t("reports.trendTitle")
+              }}</span>
               <div class="btn-group btn-group-sm" role="group">
                 <button
                   v-for="g in granularities"
                   :key="g.key"
                   class="btn"
-                  :class="granularity === g.key ? 'btn-primary' : 'btn-outline-secondary'"
+                  :class="
+                    granularity === g.key
+                      ? 'btn-primary'
+                      : 'btn-outline-secondary'
+                  "
                   type="button"
                   @click="granularity = g.key"
                 >
@@ -135,32 +148,52 @@
               </div>
             </div>
             <div class="card-body chart-box">
-              <canvas ref="trendCanvas"></canvas>
+              <EmptyState
+                v-if="!trendPoints.length"
+                :image="emptySales"
+                :message="t('reports.noData')"
+              />
+              <canvas v-else ref="trendCanvas"></canvas>
             </div>
           </div>
         </div>
         <div class="col-lg-4">
           <div class="card h-100">
             <div class="card-header py-2">
-              <span class="fw-semibold small text-uppercase text-muted">{{ t("reports.catBreakdown") }}</span>
+              <span class="fw-semibold small text-uppercase text-muted">{{
+                t("reports.catBreakdown")
+              }}</span>
             </div>
             <div class="card-body chart-box">
-              <canvas ref="catCanvas"></canvas>
+              <EmptyState
+                v-if="!categories.length"
+                :image="emptySales"
+                :message="t('reports.noData')"
+              />
+              <canvas v-else ref="catCanvas"></canvas>
             </div>
           </div>
         </div>
       </div>
 
       <div class="card">
-        <div class="card-header d-flex align-items-center justify-content-between py-2">
-          <span class="fw-semibold small text-uppercase text-muted">{{ t("reports.topProductsMini") }}</span>
-          <button class="btn btn-sm btn-outline-secondary" type="button" @click="activeTab = 'products'">
+        <div
+          class="card-header d-flex align-items-center justify-content-between py-2"
+        >
+          <span class="fw-semibold small text-uppercase text-muted">{{
+            t("reports.topProductsMini")
+          }}</span>
+          <button
+            class="btn btn-sm btn-outline-secondary"
+            type="button"
+            @click="activeTab = 'products'"
+          >
             {{ t("reports.viewAll") }} <i class="bi bi-arrow-right ms-1"></i>
           </button>
         </div>
         <div class="table-responsive">
           <table class="table table-sm align-middle mb-0">
-            <thead>
+            <thead v-if="topProducts.length">
               <tr>
                 <th style="width: 40px">#</th>
                 <th>{{ t("common.name") }}</th>
@@ -170,17 +203,27 @@
                 <th class="text-end">{{ t("reports.profit") }}</th>
               </tr>
             </thead>
-            <tbody>
-              <tr v-if="!topProducts.length">
-                <td colspan="6" class="text-center text-muted py-4">{{ t("reports.noData") }}</td>
+            <tbody v-if="!topProducts.length">
+              <tr>
+                <td colspan="6" class="p-0 border-0">
+                  <EmptyState
+                    :image="emptySales"
+                    :message="t('reports.noData')"
+                  />
+                </td>
               </tr>
-              <tr v-for="(p, i) in topProducts.slice(0, 5)" :key="p.productId">
+            </tbody>
+            <tbody v-for="(p, i) in topProducts.slice(0, 5)" :key="p.productId">
+              <tr>
                 <td class="fw-semibold">{{ i + 1 }}</td>
                 <td class="fw-semibold">{{ p.name }}</td>
                 <td class="text-muted">{{ p.category ?? "—" }}</td>
                 <td class="text-end">{{ num(p.qty) }}</td>
                 <td class="text-end">{{ fmt(p.revenue) }}</td>
-                <td class="text-end" :class="p.profit >= 0 ? 'text-success' : 'text-danger'">
+                <td
+                  class="text-end"
+                  :class="p.profit >= 0 ? 'text-success' : 'text-danger'"
+                >
                   {{ fmt(p.profit) }}
                 </td>
               </tr>
@@ -196,13 +239,21 @@
         <div class="card-body py-2">
           <div class="row g-2 align-items-center">
             <div class="col-auto">
-              <select v-model.number="salesFilters.cashierId" class="form-select form-select-sm">
+              <select
+                v-model.number="salesFilters.cashierId"
+                class="form-select form-select-sm"
+              >
                 <option :value="null">{{ t("reports.cashierAll") }}</option>
-                <option v-for="u in cashiers" :key="u.id" :value="u.id">{{ u.fullName }}</option>
+                <option v-for="u in cashiers" :key="u.id" :value="u.id">
+                  {{ u.fullName }}
+                </option>
               </select>
             </div>
             <div class="col-auto">
-              <select v-model.number="salesFilters.customerId" class="form-select form-select-sm">
+              <select
+                v-model.number="salesFilters.customerId"
+                class="form-select form-select-sm"
+              >
                 <option :value="null">{{ t("reports.customerAll") }}</option>
                 <option v-for="c in customerOptions" :key="c.id" :value="c.id">
                   {{ customerLabel(c) }}
@@ -211,15 +262,27 @@
             </div>
             <div class="col-auto">
               <div class="form-check mb-0">
-                <input id="inc-voided" v-model="salesFilters.includeVoided" class="form-check-input" type="checkbox" />
-                <label class="form-check-label small" for="inc-voided">{{ t("reports.includeVoided") }}</label>
+                <input
+                  id="inc-voided"
+                  v-model="salesFilters.includeVoided"
+                  class="form-check-input"
+                  type="checkbox"
+                />
+                <label class="form-check-label small" for="inc-voided">{{
+                  t("reports.includeVoided")
+                }}</label>
               </div>
             </div>
             <div class="col-auto ms-auto" v-can="'export.excel'">
-              <button class="btn btn-sm btn-outline-primary" type="button" :disabled="exporting" @click="exportSales">
-                <span v-if="exporting" class="spinner-border spinner-border-sm me-1"></span>
-                <i v-else class="bi bi-file-earmark-excel me-1"></i>{{ t("common.export") }}
-              </button>
+              <AsyncButton
+                size="sm"
+                variant="outline-primary"
+                :loading="exporting"
+                @click="exportSales"
+              >
+                <i v-if="!exporting" class="bi bi-file-earmark-excel mx-1"></i
+                >{{ t("common.export") }}
+              </AsyncButton>
             </div>
           </div>
         </div>
@@ -258,7 +321,7 @@
       <div class="card">
         <div class="table-responsive">
           <table class="table table-sm align-middle mb-0">
-            <thead>
+            <thead v-if="salesRows.length">
               <tr>
                 <th>{{ t("sales.saleNo") }}</th>
                 <th>{{ t("common.date") }}</th>
@@ -270,24 +333,46 @@
                 <th>{{ t("common.status") }}</th>
               </tr>
             </thead>
-            <tbody>
-              <tr v-if="!salesRows.length">
-                <td colspan="8" class="text-center text-muted py-4">{{ t("reports.noData") }}</td>
+            <tbody v-if="!salesRows.length">
+              <tr>
+                <td colspan="8" class="p-0 border-0">
+                  <EmptyState
+                    :image="emptySales"
+                    :message="t('reports.noData')"
+                  />
+                </td>
               </tr>
-              <tr v-for="r in salesRows" :key="r.id">
+            </tbody>
+            <tbody v-for="r in salesRows" :key="r.id">
+              <tr>
                 <td class="fw-semibold">{{ r.saleNo }}</td>
                 <td class="text-muted">{{ dateLabel(r.createdAt) }}</td>
                 <td>{{ r.cashier }}</td>
                 <td>{{ r.customer ?? "—" }}</td>
                 <td class="text-end">{{ fmt(r.subtotal) }}</td>
-                <td class="text-end text-danger">{{ r.discount ? `−${fmt(r.discount)}` : "—" }}</td>
-                <td class="text-end fw-semibold">{{ fmt(r.total) }}</td>
+                <td class="text-end text-danger">
+                  {{ r.discount ? `−${fmt(r.discount)}` : "—" }}
+                </td>
+                <td
+                  class="text-end fw-semibold"
+                  :title="r.refunded ? `${fmt(r.total)} − ${fmt(r.refunded)}` : undefined"
+                >
+                  {{ fmt(r.total - Math.min(r.refunded, r.total)) }}
+                </td>
                 <td>
                   <span
                     class="badge"
-                    :class="r.status === 'completed' ? 'text-bg-success' : 'text-bg-secondary'"
+                    :class="
+                      r.status === 'completed'
+                        ? 'text-bg-success'
+                        : 'text-bg-secondary'
+                    "
                   >
-                    {{ r.status === "completed" ? t("customers.statusCompleted") : t("customers.statusVoided") }}
+                    {{
+                      r.status === "completed"
+                        ? t("customers.statusCompleted")
+                        : t("customers.statusVoided")
+                    }}
                   </span>
                 </td>
               </tr>
@@ -300,22 +385,26 @@
     <!-- ============ F6.4 Top products ============ -->
     <template v-if="activeTab === 'products'">
       <div class="card">
-        <div class="card-header d-flex align-items-center justify-content-between py-2">
-          <span class="fw-semibold small text-uppercase text-muted">{{ t("reports.topProductsMini") }}</span>
-          <button
+        <div
+          class="card-header d-flex align-items-center justify-content-between py-2"
+        >
+          <span class="fw-semibold small text-uppercase text-muted">{{
+            t("reports.topProductsMini")
+          }}</span>
+          <AsyncButton
             v-can="'export.excel'"
-            class="btn btn-sm btn-outline-primary"
-            type="button"
-            :disabled="exporting"
+            size="sm"
+            variant="outline-primary"
+            :loading="exporting"
             @click="exportTopProducts"
           >
-            <span v-if="exporting" class="spinner-border spinner-border-sm me-1"></span>
-            <i v-else class="bi bi-file-earmark-excel me-1"></i>{{ t("common.export") }}
-          </button>
+            <i v-if="!exporting" class="bi bi-file-earmark-excel mx-1"></i
+            >{{ t("common.export") }}
+          </AsyncButton>
         </div>
         <div class="table-responsive">
           <table class="table table-sm align-middle mb-0">
-            <thead>
+            <thead v-if="topProducts.length">
               <tr>
                 <th style="width: 40px">{{ t("reports.rank") }}</th>
                 <th>{{ t("common.name") }}</th>
@@ -325,17 +414,27 @@
                 <th class="text-end">{{ t("reports.profit") }}</th>
               </tr>
             </thead>
-            <tbody>
-              <tr v-if="!topProducts.length">
-                <td colspan="6" class="text-center text-muted py-4">{{ t("reports.noData") }}</td>
+            <tbody v-if="!topProducts.length">
+              <tr>
+                <td colspan="6" class="p-0 border-0">
+                  <EmptyState
+                    :image="emptySales"
+                    :message="t('reports.noData')"
+                  />
+                </td>
               </tr>
-              <tr v-for="(p, i) in topProducts" :key="p.productId">
+            </tbody>
+            <tbody v-for="(p, i) in topProducts" :key="p.productId">
+              <tr>
                 <td class="fw-semibold">{{ i + 1 }}</td>
                 <td class="fw-semibold">{{ p.name }}</td>
                 <td class="text-muted">{{ p.category ?? "—" }}</td>
                 <td class="text-end">{{ num(p.qty) }}</td>
                 <td class="text-end">{{ fmt(p.revenue) }}</td>
-                <td class="text-end" :class="p.profit >= 0 ? 'text-success' : 'text-danger'">
+                <td
+                  class="text-end"
+                  :class="p.profit >= 0 ? 'text-success' : 'text-danger'"
+                >
                   {{ fmt(p.profit) }}
                 </td>
               </tr>
@@ -368,10 +467,15 @@
         </div>
         <div class="col-md-4">
           <div class="kpi-card">
-            <div class="kpi-icon"><i class="bi bi-exclamation-triangle"></i></div>
+            <div class="kpi-icon">
+              <i class="bi bi-exclamation-triangle"></i>
+            </div>
             <div>
               <div class="kpi-label">{{ t("reports.lowStockCount") }}</div>
-              <div class="kpi-value" :class="lowStockItems.length ? 'text-warning' : ''">
+              <div
+                class="kpi-value"
+                :class="lowStockItems.length ? 'text-warning' : ''"
+              >
                 {{ lowStockItems.length }}
               </div>
             </div>
@@ -386,13 +490,23 @@
       >
         <i class="bi bi-exclamation-triangle-fill"></i>
         {{ t("reports.lowStockAlert", { count: lowStockItems.length }) }}
-        <button class="btn btn-sm btn-outline-dark ms-auto" type="button" @click="invLowOnly = true">
+        <button
+          class="btn btn-sm btn-outline-dark ms-auto"
+          type="button"
+          @click="invLowOnly = true"
+        >
           {{ t("reports.lowStockOnly") }}
         </button>
       </div>
 
       <div class="card">
-        <div class="card-body d-flex gap-2 py-2 flex-wrap" style="border-bottom: var(--bs-card-border-width) solid var(--bs-card-border-color)">
+        <div
+          class="card-body d-flex gap-2 py-2 flex-wrap"
+          style="
+            border-bottom: var(--bs-card-border-width) solid
+              var(--bs-card-border-color);
+          "
+        >
           <input
             v-model="invSearch"
             class="form-control form-control-sm w-auto flex-grow-1"
@@ -400,29 +514,40 @@
             :placeholder="t('reports.searchInventory')"
           />
           <div class="form-check mb-0 align-self-center">
-            <input id="low-only" v-model="invLowOnly" class="form-check-input" type="checkbox" />
-            <label class="form-check-label small" for="low-only">{{ t("reports.lowStockOnly") }}</label>
+            <input
+              id="low-only"
+              v-model="invLowOnly"
+              class="form-check-input"
+              type="checkbox"
+            />
+            <label class="form-check-label small" for="low-only">{{
+              t("reports.lowStockOnly")
+            }}</label>
           </div>
-          <button class="btn btn-sm btn-outline-secondary" type="button" @click="showMovements = true">
-            <i class="bi bi-arrow-left-right me-1"></i>{{ t("reports.movementsTitle") }}
-          </button>
           <button
-            v-can="'export.excel'"
-            class="btn btn-sm btn-outline-primary"
+            class="btn btn-sm btn-outline-secondary"
             type="button"
-            :disabled="exporting"
+            @click="showMovements = true"
+          >
+            <i class="bi bi-arrow-left-right mx-1"></i
+            >{{ t("reports.movementsTitle") }}
+          </button>
+          <AsyncButton
+            v-can="'export.excel'"
+            size="sm"
+            variant="outline-primary"
+            :loading="exporting"
             @click="exportInventory"
           >
-            <span v-if="exporting" class="spinner-border spinner-border-sm me-1"></span>
-            <i v-else class="bi bi-file-earmark-excel me-1"></i>{{ t("common.export") }}
-          </button>
+            <i v-if="!exporting" class="bi bi-file-earmark-excel mx-1"></i
+            >{{ t("common.export") }}
+          </AsyncButton>
         </div>
         <div class="table-responsive">
           <table class="table table-sm align-middle mb-0">
-            <thead>
+            <thead v-if="visibleInventory.length">
               <tr>
                 <th>{{ t("common.name") }}</th>
-                <th>SKU</th>
                 <th>{{ t("reports.category") }}</th>
                 <th class="text-end">{{ t("reports.stockCol") }}</th>
                 <th class="text-end">{{ t("reports.reorderCol") }}</th>
@@ -431,18 +556,29 @@
                 <th class="text-end">{{ t("reports.stockValueCol") }}</th>
               </tr>
             </thead>
-            <tbody>
-              <tr v-if="!filteredInventory.length">
-                <td colspan="8" class="text-center text-muted py-4">{{ t("reports.noData") }}</td>
+            <tbody v-if="!visibleInventory.length">
+              <tr>
+                <td colspan="8" class="p-0 border-0">
+                  <EmptyState
+                    :image="emptyProducts"
+                    :message="t('reports.noData')"
+                  />
+                </td>
               </tr>
-              <tr v-for="i in filteredInventory" :key="i.id">
+            </tbody>
+            <tbody v-for="i in visibleInventory" :key="i.id">
+              <tr>
                 <td class="fw-semibold">
                   {{ i.name }}
-                  <span v-if="i.lowStock" class="badge text-bg-warning ms-1">{{ t("reports.low") }}</span>
+                  <span v-if="i.lowStock" class="badge text-bg-warning ms-1">{{
+                    t("reports.low")
+                  }}</span>
                 </td>
-                <td class="text-muted">{{ i.sku ?? "—" }}</td>
                 <td class="text-muted">{{ i.category ?? "—" }}</td>
-                <td class="text-end fw-semibold" :class="{ 'text-warning': i.lowStock }">
+                <td
+                  class="text-end fw-semibold"
+                  :class="{ 'text-warning': i.lowStock }"
+                >
                   {{ num(i.stockQty) }}
                 </td>
                 <td class="text-end text-muted">{{ num(i.reorderLevel) }}</td>
@@ -453,6 +589,21 @@
             </tbody>
           </table>
         </div>
+        <div
+          v-if="visibleInventory.length < filteredInventory.length"
+          class="text-center border-top py-2"
+        >
+          <button
+            class="btn btn-sm btn-outline-secondary"
+            type="button"
+            @click="showMoreInventory"
+          >
+            {{ t("common.loadMore") }}
+            <span class="text-muted small mx-1">
+              ({{ visibleInventory.length }}/{{ filteredInventory.length }})
+            </span>
+          </button>
+        </div>
       </div>
     </template>
 
@@ -460,11 +611,13 @@
     <template v-if="activeTab === 'margins'">
       <div class="card mb-3">
         <div class="card-header py-2">
-          <span class="fw-semibold small text-uppercase text-muted">{{ t("reports.marginByCategory") }}</span>
+          <span class="fw-semibold small text-uppercase text-muted">{{
+            t("reports.marginByCategory")
+          }}</span>
         </div>
         <div class="table-responsive">
           <table class="table table-sm align-middle mb-0">
-            <thead>
+            <thead v-if="marginData?.categories.length">
               <tr>
                 <th>{{ t("reports.category") }}</th>
                 <th class="text-end">{{ t("reports.qtySold") }}</th>
@@ -474,20 +627,39 @@
                 <th class="text-end">{{ t("reports.marginPct") }}</th>
               </tr>
             </thead>
-            <tbody>
-              <tr v-if="!marginData?.categories.length">
-                <td colspan="6" class="text-center text-muted py-4">{{ t("reports.noData") }}</td>
+            <tbody v-if="!marginData?.categories.length">
+              <tr>
+                <td colspan="6" class="p-0 border-0">
+                  <EmptyState
+                    :image="emptyExpenses"
+                    :message="t('reports.noData')"
+                  />
+                </td>
               </tr>
-              <tr v-for="c in marginData?.categories ?? []" :key="c.name">
+            </tbody>
+            <tbody v-for="c in marginData?.categories ?? []" :key="c.name">
+              <tr>
                 <td class="fw-semibold">{{ c.name }}</td>
                 <td class="text-end">{{ num(c.qtySold) }}</td>
                 <td class="text-end">{{ fmt(c.revenue) }}</td>
                 <td class="text-end text-muted">{{ fmt(c.cogs) }}</td>
-                <td class="text-end" :class="c.profit >= 0 ? 'text-success' : 'text-danger'">
+                <td
+                  class="text-end"
+                  :class="c.profit >= 0 ? 'text-success' : 'text-danger'"
+                >
                   {{ fmt(c.profit) }}
                 </td>
                 <td class="text-end">
-                  <span class="badge rounded-pill" :class="c.marginPct >= 20 ? 'text-bg-success' : c.marginPct > 0 ? 'text-bg-warning' : 'text-bg-danger'">
+                  <span
+                    class="badge rounded-pill"
+                    :class="
+                      c.marginPct >= 20
+                        ? 'text-bg-success'
+                        : c.marginPct > 0
+                          ? 'text-bg-warning'
+                          : 'text-bg-danger'
+                    "
+                  >
                     {{ c.marginPct.toFixed(1) }}%
                   </span>
                 </td>
@@ -499,11 +671,13 @@
 
       <div class="card">
         <div class="card-header py-2">
-          <span class="fw-semibold small text-uppercase text-muted">{{ t("reports.marginByProduct") }}</span>
+          <span class="fw-semibold small text-uppercase text-muted">{{
+            t("reports.marginByProduct")
+          }}</span>
         </div>
         <div class="table-responsive">
           <table class="table table-sm align-middle mb-0">
-            <thead>
+            <thead v-if="marginData?.products.length">
               <tr>
                 <th>{{ t("common.name") }}</th>
                 <th>{{ t("reports.category") }}</th>
@@ -514,21 +688,40 @@
                 <th class="text-end">{{ t("reports.marginPct") }}</th>
               </tr>
             </thead>
-            <tbody>
-              <tr v-if="!marginData?.products.length">
-                <td colspan="7" class="text-center text-muted py-4">{{ t("reports.noData") }}</td>
+            <tbody v-if="!marginData?.products.length">
+              <tr>
+                <td colspan="7" class="p-0 border-0">
+                  <EmptyState
+                    :image="emptyProducts"
+                    :message="t('reports.noData')"
+                  />
+                </td>
               </tr>
-              <tr v-for="p in marginData?.products ?? []" :key="p.id">
+            </tbody>
+            <tbody v-for="p in marginData?.products ?? []" :key="p.id">
+              <tr>
                 <td class="fw-semibold">{{ p.name }}</td>
                 <td class="text-muted">{{ p.category ?? "—" }}</td>
                 <td class="text-end">{{ num(p.qtySold) }}</td>
                 <td class="text-end">{{ fmt(p.revenue) }}</td>
                 <td class="text-end text-muted">{{ fmt(p.cogs) }}</td>
-                <td class="text-end" :class="p.profit >= 0 ? 'text-success' : 'text-danger'">
+                <td
+                  class="text-end"
+                  :class="p.profit >= 0 ? 'text-success' : 'text-danger'"
+                >
                   {{ fmt(p.profit) }}
                 </td>
                 <td class="text-end">
-                  <span class="badge rounded-pill" :class="p.marginPct >= 20 ? 'text-bg-success' : p.marginPct > 0 ? 'text-bg-warning' : 'text-bg-danger'">
+                  <span
+                    class="badge rounded-pill"
+                    :class="
+                      p.marginPct >= 20
+                        ? 'text-bg-success'
+                        : p.marginPct > 0
+                          ? 'text-bg-warning'
+                          : 'text-bg-danger'
+                    "
+                  >
                     {{ p.marginPct.toFixed(1) }}%
                   </span>
                 </td>
@@ -542,15 +735,27 @@
     <!-- Stock movements modal (F6.6) -->
     <div v-if="showMovements" class="modal-backdrop show"></div>
     <div v-if="showMovements" class="modal d-block" tabindex="-1">
-      <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+      <div
+        class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable"
+      >
         <div class="modal-content">
           <div class="modal-header">
             <h5 class="modal-title">{{ t("reports.movementsTitle") }}</h5>
-            <button type="button" class="btn-close" @click="showMovements = false"></button>
+            <button
+              type="button"
+              class="btn-close"
+              @click="showMovements = false"
+            ></button>
           </div>
           <div class="modal-body">
-            <div v-if="movementsLoading" class="text-center text-muted py-4">{{ t("common.loading") }}</div>
-            <div v-else-if="!movements.length" class="text-center text-muted py-4">{{ t("reports.noData") }}</div>
+            <div v-if="movementsLoading" class="text-center text-muted py-4">
+              {{ t("common.loading") }}
+            </div>
+            <EmptyState
+              v-else-if="!movements.length"
+              :image="emptyMovements"
+              :message="t('reports.noData')"
+            />
             <table v-else class="table table-sm align-middle mb-0">
               <thead>
                 <tr>
@@ -566,8 +771,15 @@
                 <tr v-for="m in movements" :key="m.id">
                   <td class="text-muted">{{ dateLabel(m.createdAt) }}</td>
                   <td class="fw-semibold">{{ m.productName }}</td>
-                  <td><span class="badge text-bg-light border">{{ m.movementType }}</span></td>
-                  <td class="text-end" :class="m.qty >= 0 ? 'text-success' : 'text-danger'">
+                  <td>
+                    <span class="badge text-bg-light border">{{
+                      m.movementType
+                    }}</span>
+                  </td>
+                  <td
+                    class="text-end"
+                    :class="m.qty >= 0 ? 'text-success' : 'text-danger'"
+                  >
                     {{ m.qty >= 0 ? "+" : "" }}{{ num(m.qty) }}
                   </td>
                   <td class="text-muted">{{ m.userName ?? "—" }}</td>
@@ -583,13 +795,28 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  watch,
+} from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import Chart from "chart.js/auto";
 import { useI18n } from "vue-i18n";
+import EmptyState from "../../components/EmptyState.vue";
+import AsyncButton from "../../components/AsyncButton.vue";
 import { useSettingsStore } from "../../stores/settings";
+import { useToast } from "../../composables/useToast";
 import { select } from "../../lib/db";
+import { formatMoney } from "../../lib/currency";
+import emptySales from "../../assets/empty/sales.svg";
+import emptyProducts from "../../assets/empty/products.svg";
+import emptyExpenses from "../../assets/empty/expenses.svg";
+import emptyMovements from "../../assets/empty/movements.svg";
 import type {
   CategorySalesRow,
   CustomerLite,
@@ -604,11 +831,18 @@ import type {
 } from "../../types";
 
 const settings = useSettingsStore();
-const { t, locale } = useI18n();
+const toast = useToast();
+const { t } = useI18n();
 
 type TabKey = "overview" | "sales" | "products" | "inventory" | "margins";
 
-const tabs: TabKey[] = ["overview", "sales", "products", "inventory", "margins"];
+const tabs: TabKey[] = [
+  "overview",
+  "sales",
+  "products",
+  "inventory",
+  "margins",
+];
 
 const presets = [
   { key: "today", label: "reports.today" },
@@ -625,8 +859,6 @@ const granularities = [
 
 const loading = ref(false);
 const exporting = ref(false);
-const error = ref("");
-const notice = ref("");
 
 const preset = ref<(typeof presets)[number]["key"]>("today");
 const from = ref("");
@@ -641,7 +873,11 @@ const categories = ref<CategorySalesRow[]>([]);
 const topProducts = ref<TopProductRow[]>([]);
 
 const salesData = ref<SalesReportOutput | null>(null);
-const salesFilters = ref({ cashierId: null as number | null, customerId: null as number | null, includeVoided: false });
+const salesFilters = ref({
+  cashierId: null as number | null,
+  customerId: null as number | null,
+  includeVoided: false,
+});
 const cashiers = ref<UserRecord[]>([]);
 const customerOptions = ref<CustomerLite[]>([]);
 
@@ -655,7 +891,13 @@ const showMovements = ref(false);
 const movements = ref<StockMovement[]>([]);
 const movementsLoading = ref(false);
 
-const anyLoaded = computed(() => summary.value !== null || salesData.value !== null || inventory.value.length > 0 || marginData.value !== null);
+const anyLoaded = computed(
+  () =>
+    summary.value !== null ||
+    salesData.value !== null ||
+    inventory.value.length > 0 ||
+    marginData.value !== null,
+);
 
 function pad(n: number): string {
   return String(n).padStart(2, "0");
@@ -690,20 +932,19 @@ function customerLabel(c: CustomerLite): string {
 }
 
 function fmt(n: number): string {
-  if (!settings.currency) return n.toFixed(2);
-  return new Intl.NumberFormat(locale.value, {
-    style: "currency",
-    currency: settings.currency,
-    currencyDisplay: "narrowSymbol",
-  }).format(n);
+  return formatMoney(n);
 }
 
 function num(n: number): string {
-  return Number.isInteger(n) ? String(n) : n.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
+  return Number.isInteger(n)
+    ? String(n)
+    : n.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
 }
 
 function dateLabel(value: string): string {
-  const d = new Date(value.replace(" ", "T") + (value.includes("Z") ? "" : "Z"));
+  const d = new Date(
+    value.replace(" ", "T") + (value.includes("Z") ? "" : "Z"),
+  );
   return Number.isNaN(d.getTime())
     ? value
     : `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
@@ -715,9 +956,20 @@ async function loadOverview() {
   try {
     const [s, tr, cats, tops] = await Promise.all([
       invoke<SalesSummary>("sales_summary", { from: from.value, to: to.value }),
-      invoke<TrendPoint[]>("revenue_trend", { from: from.value, to: to.value, granularity: granularity.value }),
-      invoke<CategorySalesRow[]>("category_breakdown", { from: from.value, to: to.value }),
-      invoke<TopProductRow[]>("top_products", { from: from.value, to: to.value, limit: 100 }),
+      invoke<TrendPoint[]>("revenue_trend", {
+        from: from.value,
+        to: to.value,
+        granularity: granularity.value,
+      }),
+      invoke<CategorySalesRow[]>("category_breakdown", {
+        from: from.value,
+        to: to.value,
+      }),
+      invoke<TopProductRow[]>("top_products", {
+        from: from.value,
+        to: to.value,
+        limit: 100,
+      }),
     ]);
     summary.value = s;
     trendPoints.value = tr;
@@ -726,7 +978,7 @@ async function loadOverview() {
     await nextTick();
     renderCharts();
   } catch (e) {
-    error.value = String(e);
+    toast.error(String(e));
   } finally {
     loading.value = false;
   }
@@ -743,7 +995,7 @@ async function loadSales() {
       includeVoided: salesFilters.value.includeVoided,
     });
   } catch (e) {
-    error.value = String(e);
+    toast.error(String(e));
   } finally {
     loading.value = false;
   }
@@ -754,7 +1006,7 @@ async function loadInventory() {
   try {
     inventory.value = await invoke<InventoryRow[]>("inventory_report");
   } catch (e) {
-    error.value = String(e);
+    toast.error(String(e));
   } finally {
     loading.value = false;
   }
@@ -763,9 +1015,12 @@ async function loadInventory() {
 async function loadMargins() {
   loading.value = true;
   try {
-    marginData.value = await invoke<MarginReport>("margin_report", { from: from.value, to: to.value });
+    marginData.value = await invoke<MarginReport>("margin_report", {
+      from: from.value,
+      to: to.value,
+    });
   } catch (e) {
-    error.value = String(e);
+    toast.error(String(e));
   } finally {
     loading.value = false;
   }
@@ -776,7 +1031,7 @@ async function loadMovements() {
   try {
     movements.value = await invoke<StockMovement[]>("list_stock_movements");
   } catch (e) {
-    error.value = String(e);
+    toast.error(String(e));
   } finally {
     movementsLoading.value = false;
   }
@@ -784,8 +1039,6 @@ async function loadMovements() {
 
 function loadActiveTab() {
   if (!from.value || !to.value) return;
-  error.value = "";
-  notice.value = "";
   if (activeTab.value === "overview") loadOverview();
   else if (activeTab.value === "sales") loadSales();
   else if (activeTab.value === "inventory") loadInventory();
@@ -810,7 +1063,9 @@ let trendChart: Chart | null = null;
 let catChart: Chart | null = null;
 
 function cssVar(name: string, fallback: string): string {
-  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const v = getComputedStyle(document.documentElement)
+    .getPropertyValue(name)
+    .trim();
   return v || fallback;
 }
 
@@ -852,7 +1107,15 @@ function renderCharts() {
   }
 
   if (catCanvas.value) {
-    const palette = ["#6366f1", "#10b981", "#f59e0b", "#ef4444", "#06b6d4", "#a855f7", "#84cc16"];
+    const palette = [
+      "#6366f1",
+      "#10b981",
+      "#f59e0b",
+      "#ef4444",
+      "#06b6d4",
+      "#a855f7",
+      "#84cc16",
+    ];
     if (catChart) {
       catChart.destroy();
       catChart = null;
@@ -860,11 +1123,15 @@ function renderCharts() {
     catChart = new Chart(catCanvas.value, {
       type: "doughnut",
       data: {
-        labels: categories.value.map((c) => c.category),
+        labels: categories.value.map((c) =>
+          c.category === "—" ? t("reports.uncategorized") : c.category,
+        ),
         datasets: [
           {
             data: categories.value.map((c) => Number(c.revenue.toFixed(2))),
-            backgroundColor: categories.value.map((_, i) => palette[i % palette.length]),
+            backgroundColor: categories.value.map(
+              (_, i) => palette[i % palette.length],
+            ),
             borderWidth: 0,
           },
         ],
@@ -879,9 +1146,12 @@ function renderCharts() {
 }
 
 // ---------- exports (F6.8) ----------
-async function runExport(defaultName: string, command: string, args: Record<string, unknown>) {
+async function runExport(
+  defaultName: string,
+  command: string,
+  args: Record<string, unknown>,
+) {
   exporting.value = true;
-  error.value = "";
   try {
     const path = await saveDialog({
       title: t("common.export"),
@@ -890,9 +1160,9 @@ async function runExport(defaultName: string, command: string, args: Record<stri
     });
     if (!path) return;
     await invoke(command, { path, ...args });
-    notice.value = t("reports.exportedTo", { path });
+    toast.success(t("reports.exportedTo", { path }));
   } catch (e) {
-    error.value = String(e);
+    toast.error(String(e));
   } finally {
     exporting.value = false;
   }
@@ -915,11 +1185,16 @@ function exportInventory() {
 }
 
 function exportTopProducts() {
-  runExport(`top-products-${stamp()}.xlsx`, "export_top_products", { from: from.value, to: to.value });
+  runExport(`top-products-${stamp()}.xlsx`, "export_top_products", {
+    from: from.value,
+    to: to.value,
+  });
 }
 
 // ---------- computed views ----------
-const totalStockValue = computed(() => inventory.value.reduce((sum, i) => sum + i.stockValue, 0));
+const totalStockValue = computed(() =>
+  inventory.value.reduce((sum, i) => sum + i.stockValue, 0),
+);
 const lowStockItems = computed(() => inventory.value.filter((i) => i.lowStock));
 
 const filteredInventory = computed(() => {
@@ -928,10 +1203,28 @@ const filteredInventory = computed(() => {
   const q = invSearch.value.trim().toLowerCase();
   if (q) {
     rows = rows.filter((i) =>
-      [i.name, i.sku, i.category].filter(Boolean).some((v) => (v as string).toLowerCase().includes(q))
+      [i.name, i.category]
+        .filter(Boolean)
+        .some((v) => (v as string).toLowerCase().includes(q)),
     );
   }
   return rows;
+});
+
+// Client-side windowing: the whole report is fetched at once, so paginate in
+// the UI to keep the table light.
+const INV_PAGE_SIZE = 20;
+const invVisibleCount = ref(INV_PAGE_SIZE);
+const visibleInventory = computed(() =>
+  filteredInventory.value.slice(0, invVisibleCount.value),
+);
+
+function showMoreInventory() {
+  invVisibleCount.value += INV_PAGE_SIZE;
+}
+
+watch([invSearch, invLowOnly], () => {
+  invVisibleCount.value = INV_PAGE_SIZE;
 });
 
 const salesRows = computed(() => salesData.value?.rows ?? []);
@@ -940,9 +1233,9 @@ onMounted(async () => {
   applyPreset("today");
   await Promise.allSettled([settings.load()]);
   loadActiveTab();
-  select<CustomerLite>("SELECT id, name, phone FROM customers ORDER BY name").then(
-    (rows) => (customerOptions.value = rows)
-  );
+  select<CustomerLite>(
+    "SELECT id, name, phone FROM customers ORDER BY name",
+  ).then((rows) => (customerOptions.value = rows));
   invoke<UserRecord[]>("list_users")
     .then((rows) => (cashiers.value = rows.filter((u) => u.isActive)))
     .catch(() => undefined);

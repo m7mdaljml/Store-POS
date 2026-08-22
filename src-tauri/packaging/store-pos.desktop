@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Store POS
+GenericName=Point of Sale
+Comment=Offline-first point of sale for small stores
+Exec=store-pos
+Icon=store-pos
+Terminal=false
+Type=Application
+Categories=Office;Finance;

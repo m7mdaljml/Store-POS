@@ -416,19 +416,43 @@ pub async fn list_permissions<R: Runtime>(app: AppHandle<R>) -> Result<Vec<Strin
 }
 
 #[tauri::command]
-pub async fn list_users<R: Runtime>(app: AppHandle<R>) -> Result<Vec<UserRecord>, String> {
+pub async fn list_users<R: Runtime>(
+    app: AppHandle<R>,
+    search: Option<String>,
+    limit: Option<i64>,
+    offset: Option<i64>,
+) -> Result<Vec<UserRecord>, String> {
     let pool = db::pool(&app).await?;
 
-    let user_rows = sqlx::query(
+    let pattern = search
+        .as_deref()
+        .map(|s| format!("%{}%", s.trim()))
+        .filter(|p| p != "%%");
+    let search_cond = if pattern.is_some() {
+        " AND (u.username LIKE ? OR u.full_name LIKE ?)"
+    } else {
+        ""
+    };
+    let sql = format!(
         "SELECT u.id, u.username, u.full_name, u.role_id, u.is_active,
                 r.name AS role_name
          FROM users u
          JOIN roles r ON r.id = u.role_id
-         ORDER BY u.is_active DESC, u.username ASC",
-    )
-    .fetch_all(&pool)
-    .await
-    .map_err(|e| e.to_string())?;
+         WHERE 1=1{search_cond}
+         ORDER BY u.is_active DESC, u.username ASC
+         LIMIT ? OFFSET ?"
+    );
+
+    let mut query = sqlx::query(&sql);
+    if let Some(p) = &pattern {
+        query = query.bind(p).bind(p);
+    }
+    let user_rows = query
+        .bind(limit.map(|l| l.max(1)).unwrap_or(-1))
+        .bind(offset.unwrap_or(0).max(0))
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
 
     let perm_rows = sqlx::query(
         "SELECT rp.role_id, p.code

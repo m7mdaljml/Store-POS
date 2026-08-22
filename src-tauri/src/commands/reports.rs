@@ -7,6 +7,15 @@ use crate::db;
 const SALES_PERIOD_FILTER: &str =
     "s.status = 'completed' AND date(s.created_at) BETWEEN ?1 AND ?2";
 
+/// Net invoice value: original total minus every refund issued against the sale.
+/// Requires the sales table to be aliased as `s`.
+const NET_SALE_TOTAL: &str =
+    "(s.total - COALESCE((SELECT SUM(r.amount) FROM refunds r WHERE r.sale_id = s.id), 0.0))";
+
+/// Net units sold on a line: original qty minus what was already returned.
+/// Requires the sale_items table to be aliased as `si`.
+const NET_ITEM_QTY: &str = "(si.qty - si.refunded_qty)";
+
 // TOTAL() (unlike SUM) always returns REAL — even on empty sets — so sqlx can
 // decode the value into f64 without an INTEGER/REAL mismatch.
 
@@ -32,13 +41,13 @@ pub struct SalesSummary {
     pub net_position: f64,
 }
 
-pub(crate) async fn compute_summary(
+pub async fn compute_summary(
     pool: &sqlx::SqlitePool,
     from: &str,
     to: &str,
 ) -> Result<SalesSummary, String> {
     let agg: (f64, i64) = sqlx::query_as(
-        "SELECT TOTAL(s.total), COUNT(*) FROM sales s WHERE s.status = 'completed' AND date(s.created_at) BETWEEN ?1 AND ?2",
+        "SELECT TOTAL(s.total - COALESCE((SELECT SUM(r.amount) FROM refunds r WHERE r.sale_id = s.id), 0.0)), COUNT(*) FROM sales s WHERE s.status = 'completed' AND date(s.created_at) BETWEEN ?1 AND ?2",
     )
     .bind(from)
     .bind(to)
@@ -46,10 +55,10 @@ pub(crate) async fn compute_summary(
     .await
     .map_err(|e| e.to_string())?;
 
-    let profit: (f64,) = sqlx::query_as(
-        "SELECT TOTAL((si.price * si.qty) - si.discount - (si.cost_price * si.qty))
-         FROM sale_items si JOIN sales s ON s.id = si.sale_id WHERE s.status = 'completed' AND date(s.created_at) BETWEEN ?1 AND ?2",
-    )
+    let profit: (f64,) = sqlx::query_as(&format!(
+        "SELECT TOTAL((si.price - si.discount - si.cost_price) * {NET_ITEM_QTY})
+         FROM sale_items si JOIN sales s ON s.id = si.sale_id WHERE s.status = 'completed' AND date(s.created_at) BETWEEN ?1 AND ?2"
+    ))
     .bind(from)
     .bind(to)
     .fetch_one(pool)
@@ -116,9 +125,11 @@ pub(crate) async fn compute_trend(
 ) -> Result<Vec<TrendPoint>, String> {
     let expr = bucket_expr(granularity)?;
     let sql = format!(
-        "SELECT {expr} AS bucket, TOTAL(s.total) AS revenue, COUNT(*) AS orders
+        "SELECT {expr} AS bucket, TOTAL({NET_SALE_TOTAL}) AS revenue, COUNT(*) AS orders
          FROM sales s WHERE {SALES_PERIOD_FILTER}
-         GROUP BY bucket ORDER BY bucket"
+         GROUP BY bucket
+         HAVING TOTAL({NET_SALE_TOTAL}) > 0.005
+         ORDER BY bucket"
     );
     let rows: Vec<(String, f64, i64)> = sqlx::query_as(&sql)
         .bind(from)
@@ -166,15 +177,15 @@ fn top_products_sql(limit: Option<i64>) -> String {
     };
     format!(
         "SELECT p.id AS product_id, p.name AS name, c.name AS category,
-                SUM(si.qty) AS qty,
-                TOTAL((si.price * si.qty) - si.discount) AS revenue,
-                TOTAL((si.price * si.qty) - si.discount - (si.cost_price * si.qty)) AS profit
+                SUM(si.qty - si.refunded_qty) AS qty,
+                TOTAL((si.price - si.discount) * {NET_ITEM_QTY}) AS revenue,
+                TOTAL((si.price - si.discount - si.cost_price) * {NET_ITEM_QTY}) AS profit
          FROM sale_items si
          JOIN sales s ON s.id = si.sale_id
          JOIN products p ON p.id = si.product_id
          LEFT JOIN categories c ON c.id = p.category_id
          WHERE {SALES_PERIOD_FILTER}
-         GROUP BY p.id ORDER BY revenue DESC {limit_clause}"
+         GROUP BY p.id HAVING SUM(si.qty - si.refunded_qty) > 0 ORDER BY revenue DESC {limit_clause}"
     )
 }
 
@@ -234,15 +245,15 @@ pub(crate) async fn compute_category_breakdown(
 ) -> Result<Vec<CategorySalesRow>, String> {
     let rows: Vec<(Option<String>, f64, f64, f64)> = sqlx::query_as(&format!(
         "SELECT COALESCE(c.name, '—') AS category,
-                SUM(si.qty) AS qty,
-                TOTAL((si.price * si.qty) - si.discount) AS revenue,
-                TOTAL((si.price * si.qty) - si.discount - (si.cost_price * si.qty)) AS profit
+                SUM(si.qty - si.refunded_qty) AS qty,
+                TOTAL((si.price - si.discount) * {NET_ITEM_QTY}) AS revenue,
+                TOTAL((si.price - si.discount - si.cost_price) * {NET_ITEM_QTY}) AS profit
          FROM sale_items si
          JOIN sales s ON s.id = si.sale_id
          JOIN products p ON p.id = si.product_id
          LEFT JOIN categories c ON c.id = p.category_id
          WHERE {SALES_PERIOD_FILTER}
-         GROUP BY c.name HAVING SUM(si.qty) > 0
+         GROUP BY c.name HAVING SUM(si.qty - si.refunded_qty) > 0
          ORDER BY revenue DESC"
     ))
     .bind(from)
@@ -287,6 +298,8 @@ pub struct SalesReportRow {
     pub subtotal: f64,
     pub discount: f64,
     pub total: f64,
+    /// Amount already refunded against this invoice.
+    pub refunded: f64,
     pub status: String,
 }
 
@@ -336,7 +349,9 @@ pub(crate) async fn compute_sales_report(
 
     let sql = format!(
         "SELECT s.id, s.sale_no, s.created_at, u.full_name AS cashier, c.name AS customer,
-                s.subtotal, s.discount, s.total, s.status
+                s.subtotal, s.discount, s.total,
+                COALESCE((SELECT SUM(r.amount) FROM refunds r WHERE r.sale_id = s.id), 0.0) AS refunded,
+                s.status
          FROM sales s
          JOIN users u ON u.id = s.user_id
          LEFT JOIN customers c ON c.id = s.customer_id
@@ -344,9 +359,9 @@ pub(crate) async fn compute_sales_report(
          ORDER BY s.created_at DESC, s.id DESC"
     );
     let totals_sql =
-        format!("SELECT COUNT(*), TOTAL(s.total) FROM sales s WHERE {where_sql}");
+        format!("SELECT COUNT(*), TOTAL({NET_SALE_TOTAL}) FROM sales s WHERE {where_sql}");
 
-    let mut query = sqlx::query_as::<_, (i64, String, String, String, Option<String>, f64, f64, f64, String)>(
+    let mut query = sqlx::query_as::<_, (i64, String, String, String, Option<String>, f64, f64, f64, f64, String)>(
         &sql,
     )
     .bind(filter.from)
@@ -369,7 +384,7 @@ pub(crate) async fn compute_sales_report(
     let rows = rows
         .into_iter()
         .map(
-            |(id, sale_no, created_at, cashier, customer, subtotal, discount, total, status)| {
+            |(id, sale_no, created_at, cashier, customer, subtotal, discount, total, refunded, status)| {
                 SalesReportRow {
                     id,
                     sale_no,
@@ -379,6 +394,7 @@ pub(crate) async fn compute_sales_report(
                     subtotal,
                     discount,
                     total,
+                    refunded,
                     status,
                 }
             },
@@ -503,9 +519,9 @@ pub struct MarginReport {
 }
 
 const MARGIN_EXPR: &str =
-    "TOTAL((si.price * si.qty) - si.discount) AS revenue,
-     TOTAL(si.cost_price * si.qty) AS cogs,
-     TOTAL((si.price * si.qty) - si.discount - (si.cost_price * si.qty)) AS profit";
+    "TOTAL((si.price - si.discount) * (si.qty - si.refunded_qty)) AS revenue,
+     TOTAL(si.cost_price * (si.qty - si.refunded_qty)) AS cogs,
+     TOTAL((si.price - si.discount - si.cost_price) * (si.qty - si.refunded_qty)) AS profit";
 
 fn pct(profit: f64, revenue: f64) -> f64 {
     if revenue.abs() < f64::EPSILON {
@@ -521,13 +537,13 @@ pub(crate) async fn compute_margins(
     to: &str,
 ) -> Result<MarginReport, String> {
     let product_rows: Vec<(i64, String, Option<String>, f64, f64, f64, f64)> = sqlx::query_as(&format!(
-        "SELECT p.id, p.name, c.name, SUM(si.qty) AS qty_sold, {MARGIN_EXPR}
+        "SELECT p.id, p.name, c.name, SUM(si.qty - si.refunded_qty) AS qty_sold, {MARGIN_EXPR}
          FROM sale_items si
          JOIN sales s ON s.id = si.sale_id
          JOIN products p ON p.id = si.product_id
          LEFT JOIN categories c ON c.id = p.category_id
          WHERE {SALES_PERIOD_FILTER}
-         GROUP BY p.id HAVING SUM(si.qty) > 0
+         GROUP BY p.id HAVING SUM(si.qty - si.refunded_qty) > 0
          ORDER BY profit DESC"
     ))
     .bind(from)
@@ -537,13 +553,13 @@ pub(crate) async fn compute_margins(
     .map_err(|e| e.to_string())?;
 
     let category_rows: Vec<(String, f64, f64, f64, f64)> = sqlx::query_as(&format!(
-        "SELECT COALESCE(c.name, '—') AS name, SUM(si.qty) AS qty_sold, {MARGIN_EXPR}
+        "SELECT COALESCE(c.name, '—') AS name, SUM(si.qty - si.refunded_qty) AS qty_sold, {MARGIN_EXPR}
          FROM sale_items si
          JOIN sales s ON s.id = si.sale_id
          JOIN products p ON p.id = si.product_id
          LEFT JOIN categories c ON c.id = p.category_id
          WHERE {SALES_PERIOD_FILTER}
-         GROUP BY c.name HAVING SUM(si.qty) > 0
+         GROUP BY c.name HAVING SUM(si.qty - si.refunded_qty) > 0
          ORDER BY profit DESC"
     ))
     .bind(from)
@@ -645,7 +661,7 @@ pub async fn export_sales_report<R: Runtime>(
     )
     .await?;
 
-    let headers = ["Sale No", "Date", "Cashier", "Customer", "Subtotal", "Discount", "Total", "Status"];
+    let headers = ["Sale No", "Date", "Cashier", "Customer", "Subtotal", "Discount", "Total", "Refunded", "Net", "Status"];
     let rows: Vec<Vec<String>> = report
         .rows
         .iter()
@@ -658,6 +674,8 @@ pub async fn export_sales_report<R: Runtime>(
                 money(r.subtotal),
                 money(r.discount),
                 money(r.total),
+                money(r.refunded),
+                money(r.total - r.refunded),
                 r.status.clone(),
             ]
         })
@@ -738,6 +756,7 @@ mod tests {
         CREATE TABLE products (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           name TEXT NOT NULL,
+          sku TEXT,
           category_id INTEGER REFERENCES categories(id),
           cost_price REAL NOT NULL DEFAULT 0,
           sell_price REAL NOT NULL DEFAULT 0,
@@ -776,7 +795,20 @@ mod tests {
           cost_price REAL NOT NULL,
           discount REAL NOT NULL DEFAULT 0,
           tax REAL NOT NULL DEFAULT 0,
-          subtotal REAL NOT NULL
+          subtotal REAL NOT NULL,
+          refunded_qty REAL NOT NULL DEFAULT 0
+        );
+        CREATE TABLE refunds (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          sale_no TEXT UNIQUE NOT NULL,
+          sale_id INTEGER NOT NULL REFERENCES sales(id),
+          session_id INTEGER,
+          user_id INTEGER,
+          customer_id INTEGER,
+          method TEXT NOT NULL,
+          reason TEXT,
+          amount REAL NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
         CREATE TABLE expense_out (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1028,5 +1060,129 @@ mod tests {
 
         assert_eq!(m.categories.len(), 1);
         assert!((m.categories[0].cogs - 5.0).abs() < 0.001);
+    }
+
+    /// Partial refund of one coffee on sale 1 (10 → 5 net) must shrink every
+    /// revenue/qty/profit aggregate accordingly.
+    #[tokio::test]
+    async fn refunds_reduce_all_report_aggregates() {
+        let pool = mem_pool().await;
+        let (from, to) = today();
+
+        // Refund one of the two coffees: money back 5, unit returned.
+        sqlx::query(
+            "INSERT INTO refunds (sale_no, sale_id, method, amount) VALUES ('R-000001', 1, 'cash', 5.0)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query("UPDATE sale_items SET refunded_qty = 1 WHERE sale_id = 1 AND product_id = 1")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let s = compute_summary(&pool, &from, &to).await.unwrap();
+        assert_eq!(s.orders, 2); // invoice count unchanged
+        assert!((s.revenue - 8.0).abs() < 0.001); // 10 − 5 + 3
+        assert!((s.avg_ticket - 4.0).abs() < 0.001);
+        assert!((s.gross_profit - 5.0).abs() < 0.001); // 3 + 2
+        assert!((s.net_position - 4.0).abs() < 0.001); // 8 − 4
+
+        let points = compute_trend(&pool, &from, &to, "day").await.unwrap();
+        assert_eq!(points.len(), 1);
+        assert!((points[0].revenue - 8.0).abs() < 0.001);
+
+        let top = compute_top_products(&pool, &from, &to, None).await.unwrap();
+        let coffee = top.iter().find(|p| p.name == "Coffee").unwrap();
+        assert!((coffee.qty - 1.0).abs() < 0.001);
+        assert!((coffee.revenue - 5.0).abs() < 0.001);
+        assert!((coffee.profit - 3.0).abs() < 0.001);
+
+        let cats = compute_category_breakdown(&pool, &from, &to).await.unwrap();
+        assert_eq!(cats.len(), 1);
+        assert!((cats[0].revenue - 8.0).abs() < 0.001);
+
+        let m = compute_margins(&pool, &from, &to).await.unwrap();
+        let coffee = m.products.iter().find(|p| p.name == "Coffee").unwrap();
+        assert!((coffee.qty_sold - 1.0).abs() < 0.001);
+        assert!((coffee.cogs - 2.0).abs() < 0.001);
+        assert!((coffee.profit - 3.0).abs() < 0.001);
+
+        let report = compute_sales_report(
+            &pool,
+            &SalesFilter {
+                from: &from,
+                to: &to,
+                cashier_id: None,
+                customer_id: None,
+                include_voided: false,
+            },
+        )
+        .await
+        .unwrap();
+        assert!((report.revenue - 8.0).abs() < 0.001);
+        let row1 = report.rows.iter().find(|r| r.sale_no == "S-000001").unwrap();
+        assert!((row1.refunded - 5.0).abs() < 0.001);
+    }
+
+    /// A fully refunded line drops out of item-level aggregates entirely.
+    #[tokio::test]
+    async fn fully_refunded_line_disappears_from_item_reports() {
+        let pool = mem_pool().await;
+        let (from, to) = today();
+
+        sqlx::query(
+            "INSERT INTO refunds (sale_no, sale_id, method, amount) VALUES ('R-000002', 1, 'cash', 10.0)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query("UPDATE sale_items SET refunded_qty = qty WHERE sale_id = 1 AND product_id = 1")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let top = compute_top_products(&pool, &from, &to, None).await.unwrap();
+        assert!(top.iter().all(|p| p.name != "Coffee"));
+
+        let s = compute_summary(&pool, &from, &to).await.unwrap();
+        assert!((s.revenue - 3.0).abs() < 0.001); // only the tea remains
+    }
+
+    /// Trend buckets whose invoices are all fully refunded vanish so the UI
+    /// shows the empty state instead of an all-zero chart; partial refunds
+    /// keep the bucket at the reduced net revenue.
+    #[tokio::test]
+    async fn trend_drops_fully_refunded_buckets_keeps_partial() {
+        // Everything refunded: no trend points at all.
+        let pool = mem_pool().await;
+        let (from, to) = today();
+        sqlx::query(
+            "INSERT INTO refunds (sale_no, sale_id, method, amount) VALUES ('R-000005', 1, 'cash', 10.0)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO refunds (sale_no, sale_id, method, amount) VALUES ('R-000006', 2, 'cash', 3.0)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let points = compute_trend(&pool, &from, &to, "day").await.unwrap();
+        assert!(points.is_empty());
+
+        // Partial refund: bucket stays with the reduced revenue.
+        let pool2 = mem_pool().await;
+        sqlx::query(
+            "INSERT INTO refunds (sale_no, sale_id, method, amount) VALUES ('R-000007', 1, 'cash', 5.0)",
+        )
+        .execute(&pool2)
+        .await
+        .unwrap();
+        let points = compute_trend(&pool2, &from, &to, "day").await.unwrap();
+        assert_eq!(points.len(), 1);
+        assert!((points[0].revenue - 8.0).abs() < 0.001);
+        assert_eq!(points[0].orders, 2);
     }
 }

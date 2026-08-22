@@ -413,13 +413,23 @@ fn cell_to_string(row: &sqlx::sqlite::SqliteRow, i: usize) -> String {
 mod tests {
     use super::*;
     use crate::db;
-    use std::sync::atomic::AtomicUsize;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     static SEQ: AtomicUsize = AtomicUsize::new(0);
 
     fn unique_tmp(tag: &str) -> PathBuf {
         std::env::temp_dir().join(format!(
             "pos8_{tag}_{}_{}.db",
+            std::process::id(),
+            SEQ.fetch_add(1, Ordering::SeqCst)
+        ))
+    }
+
+    /// Temp path whose file name carries the managed backup prefix, so
+    /// prune_backups is allowed to delete it.
+    fn managed_tmp(tag: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "store-backup-pos8_{tag}_{}_{}.db",
             std::process::id(),
             SEQ.fetch_add(1, Ordering::SeqCst)
         ))
@@ -478,7 +488,7 @@ mod tests {
 
         let mut paths = Vec::new();
         for i in 0..4 {
-            let p = unique_tmp(&format!("bk{i}"));
+            let p = managed_tmp(&format!("bk{i}"));
             fs::write(&p, b"x").unwrap();
             sqlx::query("INSERT INTO backups (file_path, size_bytes, status) VALUES (?, 1, 'manual')")
                 .bind(p.to_string_lossy().to_string())

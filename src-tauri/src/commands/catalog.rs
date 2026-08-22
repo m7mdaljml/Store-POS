@@ -157,6 +157,8 @@ pub struct ProductInput {
     pub reorder_level: f64,
     pub image_path: Option<String>,
     pub is_active: bool,
+    #[serde(default)]
+    pub is_quick: bool,
 }
 
 fn validate_product(input: &ProductInput) -> Result<(), String> {
@@ -232,8 +234,8 @@ pub async fn create_product<R: Runtime>(
     let result = sqlx::query(
         "INSERT INTO products
             (sku, barcode, name, description, category_id, cost_price, sell_price,
-             tax_profile_id, unit, reorder_level, image_path, is_active)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+             tax_profile_id, unit, reorder_level, image_path, is_active, is_quick)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(empty_to_none(&input.sku))
     .bind(empty_to_none(&input.barcode))
@@ -247,6 +249,7 @@ pub async fn create_product<R: Runtime>(
     .bind(input.reorder_level)
     .bind(empty_to_none(&input.image_path))
     .bind(i64::from(input.is_active))
+    .bind(i64::from(input.is_quick))
     .execute(&pool)
     .await
     .map_err(|e| e.to_string())?;
@@ -267,7 +270,7 @@ pub async fn update_product<R: Runtime>(
         "UPDATE products SET
             sku = ?, barcode = ?, name = ?, description = ?, category_id = ?,
             cost_price = ?, sell_price = ?, tax_profile_id = ?, unit = ?,
-            reorder_level = ?, image_path = ?, is_active = ?
+            reorder_level = ?, image_path = ?, is_active = ?, is_quick = ?
          WHERE id = ?",
     )
     .bind(empty_to_none(&input.sku))
@@ -282,6 +285,7 @@ pub async fn update_product<R: Runtime>(
     .bind(input.reorder_level)
     .bind(empty_to_none(&input.image_path))
     .bind(i64::from(input.is_active))
+    .bind(i64::from(input.is_quick))
     .bind(product_id)
     .execute(&pool)
     .await
@@ -441,18 +445,61 @@ pub struct StockMovement {
 }
 
 #[tauri::command]
-pub async fn list_stock_movements<R: Runtime>(app: AppHandle<R>) -> Result<Vec<StockMovement>, String> {
+pub async fn list_stock_movements<R: Runtime>(
+    app: AppHandle<R>,
+    movement_type: Option<String>,
+    product_id: Option<i64>,
+    search: Option<String>,
+    limit: Option<i64>,
+    offset: Option<i64>,
+) -> Result<Vec<StockMovement>, String> {
     let pool = db::pool(&app).await?;
-    let rows = sqlx::query(
+
+    let pattern = search
+        .as_deref()
+        .map(|s| format!("%{}%", s.trim()))
+        .filter(|p| p != "%%");
+    let mut conds: Vec<&str> = Vec::new();
+    if movement_type.is_some() {
+        conds.push("sm.type = ?");
+    }
+    if product_id.is_some() {
+        conds.push("sm.product_id = ?");
+    }
+    if pattern.is_some() {
+        conds.push("(p.name LIKE ? OR COALESCE(sm.notes, '') LIKE ? OR COALESCE(u.full_name, '') LIKE ?)");
+    }
+    let where_clause = if conds.is_empty() {
+        String::new()
+    } else {
+        format!(" WHERE {}", conds.join(" AND "))
+    };
+    let sql = format!(
         "SELECT sm.id, sm.product_id, p.name, sm.type, sm.qty, sm.notes, u.full_name, sm.created_at
          FROM stock_movements sm
          JOIN products p ON p.id = sm.product_id
          LEFT JOIN users u ON u.id = sm.user_id
-         ORDER BY sm.created_at DESC, sm.id DESC",
-    )
-    .fetch_all(&pool)
-    .await
-    .map_err(|e| e.to_string())?;
+         {where_clause}
+         ORDER BY sm.created_at DESC, sm.id DESC
+         LIMIT ? OFFSET ?"
+    );
+
+    let mut query = sqlx::query(&sql);
+    if let Some(t) = &movement_type {
+        query = query.bind(t);
+    }
+    if let Some(pid) = &product_id {
+        query = query.bind(pid);
+    }
+    if let Some(p) = &pattern {
+        query = query.bind(p).bind(p).bind(p);
+    }
+    let rows = query
+        .bind(limit.map(|l| l.max(1)).unwrap_or(-1))
+        .bind(offset.unwrap_or(0).max(0))
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
 
     Ok(rows
         .into_iter()

@@ -24,7 +24,6 @@ pub struct OutgoingExpenseInput {
 }
 
 #[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct OutgoingExpenseRecord {
     pub id: i64,
     pub category_id: Option<i64>,
@@ -124,7 +123,7 @@ pub async fn list_expenses_out<R: Runtime>(
 ) -> Result<Vec<OutgoingExpenseRecord>, String> {
     let pool = db::pool(&app).await?;
     let rows = sqlx::query(
-        "SELECT e.id, e.category_id, c.name, e.amount, e.date, e.description, e.reference_no, u.full_name
+        "SELECT e.id, e.category_id, c.name AS category_name, e.amount, e.date, e.description, e.reference_no, u.full_name AS user_name
          FROM expense_out e
          LEFT JOIN expense_categories c ON c.id = e.category_id
          LEFT JOIN users u ON u.id = e.user_id
@@ -150,8 +149,7 @@ pub async fn list_expenses_out<R: Runtime>(
         .collect()
 }
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug, Serialize)]
 pub struct ExpenseRecord {
     pub kind: String, // 'in' (supplier invoice) or 'out' (outgoing expense)
     pub id: i64,
@@ -167,7 +165,6 @@ pub struct ExpenseRecord {
 }
 
 #[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct ExpenseSummary {
     pub total_in: f64,
     pub total_out: f64,
@@ -193,15 +190,21 @@ async fn list_in_expenses(
     status: &Option<String>,
     from: &Option<String>,
     to: &Option<String>,
+    pattern: &Option<String>,
 ) -> Result<Vec<ExpenseRecord>, String> {
     let range_cond = date_range_cond(from, to, "si.date");
+    let search_cond = if pattern.is_some() {
+        " AND (si.invoice_no LIKE ? OR s.name LIKE ? OR COALESCE(si.notes, '') LIKE ?)"
+    } else {
+        ""
+    };
     let sql = format!(
         "SELECT si.id, si.invoice_no, si.supplier_id, s.name, si.date, si.total,
                 si.paid_amount, si.due_amount, si.status, si.notes
          FROM supplier_invoices si
          JOIN suppliers s ON s.id = si.supplier_id
          WHERE (? IS NULL OR si.supplier_id = ?)
-           AND (? IS NULL OR si.status = ?){range_cond}
+           AND (? IS NULL OR si.status = ?){search_cond}{range_cond}
          ORDER BY si.date DESC, si.id DESC"
     );
 
@@ -210,6 +213,9 @@ async fn list_in_expenses(
         .bind(supplier_id)
         .bind(status)
         .bind(status);
+    if let Some(p) = pattern {
+        query = query.bind(p).bind(p).bind(p);
+    }
     if let Some(f) = from {
         query = query.bind(f);
     }
@@ -241,16 +247,25 @@ async fn list_out_expenses(
     pool: &sqlx::SqlitePool,
     from: &Option<String>,
     to: &Option<String>,
+    pattern: &Option<String>,
 ) -> Result<Vec<ExpenseRecord>, String> {
     let range_cond = date_range_cond(from, to, "e.date");
+    let search_cond = if pattern.is_some() {
+        " AND (COALESCE(e.description, '') LIKE ? OR COALESCE(e.reference_no, '') LIKE ?)"
+    } else {
+        ""
+    };
     let sql = format!(
         "SELECT e.id, e.date, e.amount, e.description, e.reference_no
          FROM expense_out e
-         WHERE 1=1{range_cond}
+         WHERE 1=1{search_cond}{range_cond}
          ORDER BY e.date DESC, e.id DESC"
     );
 
     let mut query = sqlx::query(&sql);
+    if let Some(p) = pattern {
+        query = query.bind(p).bind(p);
+    }
     if let Some(f) = from {
         query = query.bind(f);
     }
@@ -285,19 +300,45 @@ pub async fn query_expenses(
     status: &Option<String>,
     from: &Option<String>,
     to: &Option<String>,
+    search: &Option<String>,
+    limit: Option<i64>,
+    offset: Option<i64>,
 ) -> Result<Vec<ExpenseRecord>, String> {
     let show_in = kind.as_deref().map_or(true, |k| k == "in");
     let show_out = kind.as_deref().map_or(true, |k| k == "out");
 
+    // The list unions incoming invoices and outgoing expenses, so the page
+    // window is applied in Rust after merging and sorting.
+    let pattern = search
+        .as_deref()
+        .map(|s| format!("%{}%", s.trim()))
+        .filter(|p| p != "%%");
+
     let mut records = Vec::new();
     if show_in {
-        records.extend(list_in_expenses(pool, supplier_id, status, from, to).await?);
+        records.extend(
+            list_in_expenses(pool, supplier_id, status, from, to, &pattern).await?,
+        );
     }
     if show_out {
-        records.extend(list_out_expenses(pool, from, to).await?);
+        records.extend(list_out_expenses(pool, from, to, &pattern).await?);
     }
     records.sort_by(|a, b| b.date.cmp(&a.date).then(b.id.cmp(&a.id)));
-    Ok(records)
+
+    if limit.is_none() && offset.unwrap_or(0) == 0 {
+        return Ok(records);
+    }
+    let start = offset.unwrap_or(0).max(0) as usize;
+    if start >= records.len() {
+        return Ok(Vec::new());
+    }
+    match limit {
+        Some(l) => {
+            let end = (start + l.max(1) as usize).min(records.len());
+            Ok(records[start..end].to_vec())
+        }
+        None => Ok(records[start..].to_vec()),
+    }
 }
 
 #[tauri::command]
@@ -308,6 +349,9 @@ pub async fn list_expenses<R: Runtime>(
     status: Option<String>,
     from: Option<String>,
     to: Option<String>,
+    search: Option<String>,
+    limit: Option<i64>,
+    offset: Option<i64>,
 ) -> Result<Vec<ExpenseRecord>, String> {
     let kind = kind.map(|k| k.to_lowercase());
     if let Some(k) = &kind {
@@ -316,7 +360,10 @@ pub async fn list_expenses<R: Runtime>(
         }
     }
     let pool = db::pool(&app).await?;
-    query_expenses(&pool, &kind, &supplier_id, &status, &from, &to).await
+    query_expenses(
+        &pool, &kind, &supplier_id, &status, &from, &to, &search, limit, offset,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -502,7 +549,9 @@ pub async fn export_expenses<R: Runtime>(
         }
     }
     let pool = db::pool(&app).await?;
-    let records = query_expenses(&pool, &kind, &supplier_id, &status, &from, &to).await?;
+    let records =
+        query_expenses(&pool, &kind, &supplier_id, &status, &from, &to, &None, None, None)
+            .await?;
     let rows = expense_records_to_rows(&records);
     crate::export::write_xlsx(
         std::path::Path::new(&path),
@@ -696,7 +745,9 @@ pub(crate) mod tests {
         .await
         .unwrap();
 
-        let all_in = list_in_expenses(&pool, &None, &None, &None, &None).await.unwrap();
+        let all_in = list_in_expenses(&pool, &None, &None, &None, &None, &None)
+            .await
+            .unwrap();
         assert_eq!(all_in.len(), 3);
 
         let by_supplier = list_in_expenses(
@@ -705,14 +756,22 @@ pub(crate) mod tests {
             &None,
             &None,
             &None,
+            &None,
         )
         .await
         .unwrap();
         assert_eq!(by_supplier.len(), 2);
 
-        let paid_only = list_in_expenses(&pool, &None, &Some("paid".into()), &None, &None)
-            .await
-            .unwrap();
+        let paid_only = list_in_expenses(
+            &pool,
+            &None,
+            &Some("paid".into()),
+            &None,
+            &None,
+            &None,
+        )
+        .await
+        .unwrap();
         assert_eq!(paid_only.len(), 1);
         assert_eq!(paid_only[0].ref_no.as_deref(), Some("PI-000001"));
 
@@ -722,6 +781,7 @@ pub(crate) mod tests {
             &None,
             &Some("2026-08-01".into()),
             &Some("2026-08-31".into()),
+            &None,
         )
         .await
         .unwrap();
@@ -731,6 +791,7 @@ pub(crate) mod tests {
             &pool,
             &Some("2026-08-01".into()),
             &Some("2026-08-31".into()),
+            &None,
         )
         .await
         .unwrap();
@@ -782,9 +843,10 @@ pub(crate) mod tests {
         .await
         .unwrap();
 
-        let records = query_expenses(&pool, &None, &None, &None, &None, &None)
-            .await
-            .unwrap();
+        let records =
+            query_expenses(&pool, &None, &None, &None, &None, &None, &None, None, None)
+                .await
+                .unwrap();
         assert_eq!(records.len(), 2);
 
         let xlsx_path = temp_db("export-file").with_extension("xlsx");

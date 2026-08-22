@@ -3,30 +3,34 @@
     <div class="d-flex align-items-center justify-content-between mb-3">
       <h1 class="h4 mb-0">{{ t("expenses.title") }}</h1>
       <div class="d-flex gap-2">
-        <button v-can="'export.excel'" class="btn btn-outline-primary" type="button" :disabled="exporting" @click="exportExcel">
-          <span v-if="exporting" class="spinner-border spinner-border-sm me-1"></span>
-          <i v-else class="bi bi-file-earmark-excel me-1"></i>{{ t("common.export") }}
-        </button>
-        <button class="btn btn-outline-secondary" type="button" @click="showCatsModal = true">
-          <i class="bi bi-tags me-1"></i>{{ t("expenses.categories") }}
+        <AsyncButton
+          v-can="'export.excel'"
+          variant="outline-primary"
+          :loading="exporting"
+          @click="exportExcel"
+        >
+          <i v-if="!exporting" class="bi bi-file-earmark-excel mx-1"></i
+          >{{ t("common.export") }}
+        </AsyncButton>
+        <button
+          class="btn btn-outline-secondary"
+          type="button"
+          @click="showCatsModal = true"
+        >
+          <i class="bi bi-tags mx-1"></i>{{ t("expenses.categories") }}
         </button>
         <button class="btn btn-primary" type="button" @click="openAdd">
-          <i class="bi bi-plus-lg me-1"></i>{{ t("expenses.newExpense") }}
+          <i class="bi bi-plus-lg mx-1"></i>{{ t("expenses.newExpense") }}
         </button>
       </div>
-    </div>
-
-    <div v-if="error" class="alert alert-danger py-2 small" role="alert">
-      <i class="bi bi-exclamation-triangle me-1"></i>{{ error }}
-    </div>
-    <div v-if="notice" class="alert alert-success py-2 small" role="alert">
-      <i class="bi bi-check-circle me-1"></i>{{ notice }}
     </div>
 
     <div class="row g-2 mb-3">
       <div class="col">
         <div class="card text-center p-3 h-100">
-          <div class="text-muted small text-uppercase">{{ t("expenses.outstandingSupplierDues") }}</div>
+          <div class="text-muted small text-uppercase">
+            {{ t("expenses.outstandingSupplierDues") }}
+          </div>
           <div
             class="fs-4 fw-semibold"
             :class="(summary?.outstanding_due ?? 0) > 0 ? 'text-danger' : ''"
@@ -37,14 +41,16 @@
       </div>
       <div class="col">
         <div class="card text-center p-3 h-100">
-          <div class="text-muted small text-uppercase">{{ t("expenses.incomingPeriod") }}</div>
+          <div class="text-muted small text-uppercase">
+            {{ t("expenses.incomingPeriod") }}
+          </div>
           <div class="fs-4 fw-semibold">{{ fmt(summary?.total_in ?? 0) }}</div>
           <div class="text-muted small">
             {{
               t(
                 "expenses.invoiceCount",
                 { count: summary?.incoming_count ?? 0 },
-                summary?.incoming_count ?? 0
+                summary?.incoming_count ?? 0,
               )
             }}
           </div>
@@ -52,14 +58,18 @@
       </div>
       <div class="col">
         <div class="card text-center p-3 h-100">
-          <div class="text-muted small text-uppercase">{{ t("expenses.outgoingPeriod") }}</div>
-          <div class="fs-4 fw-semibold text-danger">{{ fmt(summary?.total_out ?? 0) }}</div>
+          <div class="text-muted small text-uppercase">
+            {{ t("expenses.outgoingPeriod") }}
+          </div>
+          <div class="fs-4 fw-semibold text-danger">
+            {{ fmt(summary?.total_out ?? 0) }}
+          </div>
           <div class="text-muted small">
             {{
               t(
                 "expenses.expenseCount",
                 { count: summary?.outgoing_count ?? 0 },
-                summary?.outgoing_count ?? 0
+                summary?.outgoing_count ?? 0,
               )
             }}
           </div>
@@ -67,10 +77,16 @@
       </div>
       <div class="col">
         <div class="card text-center p-3 h-100">
-          <div class="text-muted small text-uppercase">{{ t("expenses.netPeriod") }}</div>
+          <div class="text-muted small text-uppercase">
+            {{ t("expenses.netPeriod") }}
+          </div>
           <div
             class="fs-4 fw-semibold"
-            :class="((summary?.total_in ?? 0) - (summary?.total_out ?? 0)) < 0 ? 'text-danger' : ''"
+            :class="
+              (summary?.total_in ?? 0) - (summary?.total_out ?? 0) < 0
+                ? 'text-danger'
+                : ''
+            "
           >
             {{ fmt((summary?.total_in ?? 0) - (summary?.total_out ?? 0)) }}
           </div>
@@ -97,7 +113,9 @@
           :aria-label="t('expenses.filterSupplierAria')"
         >
           <option :value="null">{{ t("expenses.allSuppliers") }}</option>
-          <option v-for="s in suppliers" :key="s.id" :value="s.id">{{ s.name }}</option>
+          <option v-for="s in suppliers" :key="s.id" :value="s.id">
+            {{ s.name }}
+          </option>
         </select>
         <select
           v-model="filters.status"
@@ -125,6 +143,12 @@
           style="width: auto"
           :aria-label="t('expenses.toDateAria')"
         />
+        <input
+          v-model="search"
+          class="form-control form-control-sm flex-grow-1"
+          type="search"
+          :placeholder="t('expenses.searchPlaceholder')"
+        />
         <button
           v-if="
             filters.kind !== 'all' ||
@@ -136,10 +160,16 @@
           class="btn btn-sm btn-outline-secondary"
           type="button"
           @click="
-            filters = { kind: 'all', supplierId: null, status: 'all', from: '', to: '' }
+            filters = {
+              kind: 'all',
+              supplierId: null,
+              status: 'all',
+              from: '',
+              to: '',
+            }
           "
         >
-          <i class="bi bi-x-lg me-1"></i>{{ t("common.clear") }}
+          <i class="bi bi-x-lg mx-1"></i>{{ t("common.clear") }}
         </button>
         <span class="ms-auto text-muted small">
           {{ t("common.results", { count: filteredCount }, filteredCount) }}
@@ -150,7 +180,7 @@
     <div class="card">
       <div class="table-responsive">
         <table class="table align-middle mb-0">
-          <thead>
+          <thead v-if="expenses.length">
             <tr>
               <th>{{ t("expenses.type") }}</th>
               <th>{{ t("expenses.refInvoice") }}</th>
@@ -163,18 +193,32 @@
               <th>{{ t("common.status") }}</th>
             </tr>
           </thead>
-          <tbody>
-            <tr v-if="loading">
-              <td colspan="9" class="text-center text-muted py-4">{{ t("common.loading") }}</td>
-            </tr>
-            <tr v-else-if="!expenses.length">
+          <tbody v-if="loading">
+            <tr>
               <td colspan="9" class="text-center text-muted py-4">
-                {{ t("expenses.noExpenses") }}
+                {{ t("common.loading") }}
               </td>
             </tr>
-            <tr v-for="e in expenses" :key="e.kind + '-' + e.id">
+          </tbody>
+          <tbody v-else-if="!expenses.length">
+            <tr>
+              <td colspan="9" class="p-0 border-0">
+                <EmptyState
+                  :image="emptyExpenses"
+                  :message="t('expenses.noExpenses')"
+                />
+              </td>
+            </tr>
+          </tbody>
+          <tbody v-for="e in expenses" :key="e.kind + '-' + e.id">
+            <tr>
               <td>
-                <span class="badge" :class="e.kind === 'in' ? 'text-bg-primary' : 'text-bg-secondary'">
+                <span
+                  class="badge"
+                  :class="
+                    e.kind === 'in' ? 'text-bg-primary' : 'text-bg-secondary'
+                  "
+                >
                   {{ e.kind === "in" ? t("expenses.in") : t("expenses.out") }}
                 </span>
               </td>
@@ -182,12 +226,20 @@
               <td>{{ e.supplier_name ?? "—" }}</td>
               <td class="text-muted">{{ e.date }}</td>
               <td class="text-muted">{{ e.notes ?? "—" }}</td>
-              <td class="text-end fw-semibold" :class="e.kind === 'out' ? 'text-danger' : ''">
+              <td
+                class="text-end fw-semibold"
+                :class="e.kind === 'out' ? 'text-danger' : ''"
+              >
                 {{ fmt(e.amount) }}
               </td>
-              <td class="text-end">{{ e.kind === "in" ? fmt(e.paid_amount) : "—" }}</td>
               <td class="text-end">
-                <span v-if="e.kind === 'in' && e.due_amount > 0" class="text-danger fw-semibold">
+                {{ e.kind === "in" ? fmt(e.paid_amount) : "—" }}
+              </td>
+              <td class="text-end">
+                <span
+                  v-if="e.kind === 'in' && e.due_amount > 0"
+                  class="text-danger fw-semibold"
+                >
                   {{ fmt(e.due_amount) }}
                 </span>
                 <span v-else>—</span>
@@ -201,6 +253,24 @@
           </tbody>
         </table>
       </div>
+      <div
+        v-if="hasMore && !loading"
+        class="text-center border-top py-2"
+      >
+        <button
+          class="btn btn-sm btn-outline-secondary"
+          type="button"
+          :disabled="loadingMore"
+          @click="loadMore"
+        >
+          <span
+            v-if="loadingMore"
+            class="spinner-border spinner-border-sm mx-1"
+            role="status"
+          ></span>
+          {{ t("common.loadMore") }}
+        </button>
+      </div>
     </div>
 
     <div v-if="showModal" class="modal-backdrop show"></div>
@@ -209,40 +279,75 @@
         <div class="modal-content">
           <form @submit.prevent="save">
             <div class="modal-header">
-              <h5 class="modal-title">{{ t("expenses.newOutgoingExpense") }}</h5>
-              <button type="button" class="btn-close" @click="showModal = false"></button>
+              <h5 class="modal-title">
+                {{ t("expenses.newOutgoingExpense") }}
+              </h5>
+              <button
+                type="button"
+                class="btn-close"
+                @click="showModal = false"
+              ></button>
             </div>
             <div class="modal-body">
-              <div v-if="formError" class="alert alert-danger py-2 small" role="alert">
-                <i class="bi bi-exclamation-triangle me-1"></i>{{ formError }}
+              <div
+                v-if="formError"
+                class="alert alert-danger py-2 small"
+                role="alert"
+              >
+                <i class="bi bi-exclamation-triangle mx-1"></i>{{ formError }}
               </div>
               <div class="mb-3">
-                <label class="form-label" for="e-amount">{{ t("expenses.amount") }}</label>
+                <label class="form-label" for="e-amount">{{
+                  t("expenses.amount")
+                }}</label>
                 <input
                   id="e-amount"
                   v-model.number="form.amount"
                   class="form-control"
+                  :class="{ 'is-invalid': errors.amount }"
                   type="number"
-                  step="0.01"
+                  step="1"
                   min="0.01"
                   autofocus
+                  @input="clearFieldError(errors, 'amount')"
                 />
+                <div class="invalid-feedback">{{ errors.amount }}</div>
               </div>
               <div class="row g-3">
                 <div class="col-md-6">
-                  <label class="form-label" for="e-cat">{{ t("expenses.category") }}</label>
-                  <select id="e-cat" v-model="form.categoryId" class="form-select">
+                  <label class="form-label" for="e-cat">{{
+                    t("expenses.category")
+                  }}</label>
+                  <select
+                    id="e-cat"
+                    v-model="form.categoryId"
+                    class="form-select"
+                  >
                     <option :value="null">{{ t("common.none") }}</option>
-                    <option v-for="c in categories" :key="c.id" :value="c.id">{{ c.name }}</option>
+                    <option v-for="c in categories" :key="c.id" :value="c.id">
+                      {{ c.name }}
+                    </option>
                   </select>
                 </div>
                 <div class="col-md-6">
-                  <label class="form-label" for="e-date">{{ t("common.date") }}</label>
-                  <input id="e-date" v-model="form.date" class="form-control" type="date" />
+                  <label class="form-label" for="e-date">{{
+                    t("common.date")
+                  }}</label>
+                  <input
+                    id="e-date"
+                    v-model="form.date"
+                    class="form-control"
+                    :class="{ 'is-invalid': errors.date }"
+                    type="date"
+                    @input="clearFieldError(errors, 'date')"
+                  />
+                  <div class="invalid-feedback">{{ errors.date }}</div>
                 </div>
               </div>
               <div class="mt-3 mb-3">
-                <label class="form-label" for="e-desc">{{ t("expenses.description") }}</label>
+                <label class="form-label" for="e-desc">{{
+                  t("expenses.description")
+                }}</label>
                 <textarea
                   id="e-desc"
                   v-model="form.description"
@@ -252,7 +357,9 @@
                 ></textarea>
               </div>
               <div class="mb-0">
-                <label class="form-label" for="e-ref">{{ t("expenses.referenceNo") }}</label>
+                <label class="form-label" for="e-ref">{{
+                  t("expenses.referenceNo")
+                }}</label>
                 <input
                   id="e-ref"
                   v-model="form.referenceNo"
@@ -261,14 +368,24 @@
                   :placeholder="t('expenses.refPlaceholder')"
                 />
               </div>
-            </div>
-            <div class="modal-footer">
-              <button type="button" class="btn btn-outline-secondary" @click="showModal = false">
-                {{ t("common.cancel") }}
-              </button>
-              <button type="submit" class="btn btn-primary" :disabled="saving">
-                <span v-if="saving" class="spinner-border spinner-border-sm me-2"></span>{{ t("expenses.saveExpense") }}
-              </button>
+              <div
+                class="d-flex justify-content-end gap-2 mt-3 pt-3 border-top"
+              >
+                <button
+                  type="button"
+                  class="btn btn-outline-secondary"
+                  @click="showModal = false"
+                >
+                  {{ t("common.cancel") }}
+                </button>
+                <AsyncButton
+                  type="submit"
+                  :loading="saving"
+                  :disabled="!canSave"
+                >
+                  {{ t("expenses.saveExpense") }}
+                </AsyncButton>
+              </div>
             </div>
           </form>
         </div>
@@ -281,25 +398,44 @@
         <div class="modal-content">
           <div class="modal-header">
             <h5 class="modal-title">{{ t("expenses.expenseCategories") }}</h5>
-            <button type="button" class="btn-close" @click="showCatsModal = false"></button>
+            <button
+              type="button"
+              class="btn-close"
+              @click="showCatsModal = false"
+            ></button>
           </div>
           <div class="modal-body">
-            <div v-if="categoryError" class="alert alert-danger py-2 small" role="alert">
-              <i class="bi bi-exclamation-triangle me-1"></i>{{ categoryError }}
+            <div
+              v-if="categoryError"
+              class="alert alert-danger py-2 small"
+              role="alert"
+            >
+              <i class="bi bi-exclamation-triangle mx-1"></i>{{ categoryError }}
             </div>
             <form class="d-flex gap-2 mb-3" @submit.prevent="addCategory">
               <input
                 v-model="newCategoryName"
                 class="form-control"
+                :class="{ 'is-invalid': catErrors.name }"
                 type="text"
                 :placeholder="t('expenses.newCategoryName')"
                 :aria-label="t('expenses.newCategoryName')"
+                @input="clearFieldError(catErrors, 'name')"
               />
-              <button type="submit" class="btn btn-outline-primary" :disabled="catSaving">
-                <span v-if="catSaving" class="spinner-border spinner-border-sm me-1"></span>{{ t("common.add") }}
-              </button>
+              <div class="invalid-feedback d-block" v-if="catErrors.name">
+                {{ catErrors.name }}
+              </div>
+              <AsyncButton
+                type="submit"
+                variant="outline-primary"
+                :loading="catSaving"
+              >
+                {{ t("common.add") }}
+              </AsyncButton>
             </form>
-            <div v-if="!categories.length" class="text-muted small">{{ t("expenses.noCategoriesYet") }}</div>
+            <div v-if="!categories.length" class="text-muted small">
+              {{ t("expenses.noCategoriesYet") }}
+            </div>
             <ul class="list-group">
               <li
                 v-for="c in categories"
@@ -309,7 +445,13 @@
                 <div>
                   <span class="fw-semibold">{{ c.name }}</span>
                   <span class="text-muted small ms-2">
-                    {{ t("expenses.expenseCount", { count: c.expenseCount }, c.expenseCount) }}
+                    {{
+                      t(
+                        "expenses.expenseCount",
+                        { count: c.expenseCount },
+                        c.expenseCount,
+                      )
+                    }}
                   </span>
                 </div>
                 <button
@@ -330,10 +472,20 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onMounted, reactive, ref, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { useI18n } from "vue-i18n";
+import EmptyState from "../../components/EmptyState.vue";
+import AsyncButton from "../../components/AsyncButton.vue";
+import {
+  applyFieldRules,
+  clearFieldError,
+  useFormGuard,
+} from "../../composables/useFormGuard";
+import { usePagedList } from "../../composables/usePagedList";
+import { useToast } from "../../composables/useToast";
+import { useConfirm } from "../../composables/useConfirm";
 import { useSettingsStore } from "../../stores/settings";
 import { useAuth } from "../../composables/useAuth";
 import type {
@@ -342,19 +494,20 @@ import type {
   ExpenseSummary,
   Supplier,
 } from "../../types";
+import emptyExpenses from "../../assets/empty/expenses.svg";
+import { formatMoney } from "../../lib/currency";
 
 const settings = useSettingsStore();
 const auth = useAuth();
-const { t, locale } = useI18n();
+const toast = useToast();
+const { confirmDialog } = useConfirm();
+const { t } = useI18n();
 
 const suppliers = ref<Supplier[]>([]);
 const categories = ref<ExpenseCategory[]>([]);
-const expenses = ref<ExpenseRecord[]>([]);
 const summary = ref<ExpenseSummary | null>(null);
-const loading = ref(false);
 const exporting = ref(false);
-const error = ref("");
-const notice = ref("");
+const search = ref("");
 
 const filters = ref({
   kind: "all" as "all" | "in" | "out",
@@ -364,31 +517,53 @@ const filters = ref({
   to: "",
 });
 
+const {
+  items: expenses,
+  loading,
+  loadingMore,
+  hasMore,
+  reload: reloadExpenses,
+  loadMore,
+} = usePagedList<ExpenseRecord>(
+  (limit, offset) =>
+    invoke<ExpenseRecord[]>("list_expenses", {
+      ...filterBase(),
+      search: search.value.trim() || null,
+      limit,
+      offset,
+    }),
+  [filters, search],
+  (e) => toast.error(e instanceof Error ? e.message : String(e)),
+);
+
 const showModal = ref(false);
 const saving = ref(false);
 const formError = ref("");
 const form = ref({
   categoryId: null as number | null,
-  amount: 0,
+  amount: 0 as number | null,
   date: new Date().toISOString().slice(0, 10),
   description: "",
   referenceNo: "",
 });
+const errors = reactive<Record<string, string>>({});
+const guard = useFormGuard(form);
+const canSave = computed(() => guard.isDirty.value && !saving.value);
+
+function resetErrors() {
+  for (const key of Object.keys(errors)) delete errors[key];
+}
 
 const showCatsModal = ref(false);
 const catSaving = ref(false);
 const categoryError = ref("");
 const newCategoryName = ref("");
+const catErrors = reactive<Record<string, string>>({});
 
 const filteredCount = computed(() => expenses.value.length);
 
 function fmt(n: number): string {
-  if (!settings.currency) return n.toFixed(2);
-  return new Intl.NumberFormat(locale.value, {
-    style: "currency",
-    currency: settings.currency,
-    currencyDisplay: "narrowSymbol",
-  }).format(n);
+  return formatMoney(n);
 }
 
 function statusLabel(status: string): string {
@@ -404,7 +579,7 @@ function statusLabel(status: string): string {
   }
 }
 
-function filterParams() {
+function filterBase() {
   return {
     kind: filters.value.kind === "all" ? null : filters.value.kind,
     supplierId: filters.value.supplierId,
@@ -414,14 +589,13 @@ function filterParams() {
   };
 }
 
-async function load() {
-  loading.value = true;
-  error.value = "";
+/** Suppliers/categories dropdowns + summary cards; the record list itself is
+ *  paginated through `usePagedList`. */
+async function loadMeta() {
   try {
-    const [s, c, e, sum] = await Promise.all([
+    const [s, c, sum] = await Promise.all([
       invoke<Supplier[]>("list_suppliers"),
       invoke<ExpenseCategory[]>("list_expense_categories"),
-      invoke<ExpenseRecord[]>("list_expenses", filterParams()),
       invoke<ExpenseSummary>("expense_summary", {
         from: filters.value.from || null,
         to: filters.value.to || null,
@@ -429,12 +603,9 @@ async function load() {
     ]);
     suppliers.value = s;
     categories.value = c;
-    expenses.value = e;
     summary.value = sum;
   } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e);
-  } finally {
-    loading.value = false;
+    toast.error(e instanceof Error ? e.message : String(e));
   }
 }
 
@@ -442,19 +613,27 @@ function openAdd() {
   formError.value = "";
   form.value = {
     categoryId: categories.value[0]?.id ?? null,
-    amount: 0,
+    amount: null,
     date: new Date().toISOString().slice(0, 10),
     description: "",
     referenceNo: "",
   };
+  resetErrors();
+  guard.capture();
   showModal.value = true;
 }
 
-function validate(): string {
+function validate(): boolean {
   const amount = form.value.amount;
-  if (typeof amount !== "number" || isNaN(amount) || amount <= 0)
-    return t("expenses.enterAmount");
-  return "";
+  const ok = applyFieldRules(errors, [
+    [
+      "amount",
+      typeof amount === "number" && !isNaN(amount) && amount > 0,
+      t("expenses.amount"),
+    ],
+    ["date", !!form.value.date, t("common.date")],
+  ]);
+  return ok;
 }
 
 function payload() {
@@ -470,17 +649,17 @@ function payload() {
 
 async function save() {
   formError.value = "";
-  const err = validate();
-  if (err) {
-    formError.value = err;
+  if (!validate()) {
+    toast.error(t("common.fixErrors"));
     return;
   }
   saving.value = true;
   try {
     await invoke<number>("add_expense_out", { input: payload() });
+    guard.markSaved();
     showModal.value = false;
-    notice.value = t("expenses.expenseRecorded");
-    await load();
+    toast.success(t("expenses.expenseRecorded"));
+    await Promise.all([reloadExpenses(), loadMeta()]);
   } catch (e) {
     formError.value = e instanceof Error ? e.message : String(e);
   } finally {
@@ -490,16 +669,22 @@ async function save() {
 
 async function addCategory() {
   categoryError.value = "";
-  if (!newCategoryName.value.trim()) {
-    categoryError.value = t("expenses.categoryNameRequired");
+  if (
+    !applyFieldRules(catErrors, [
+      ["name", !!newCategoryName.value.trim(), t("expenses.category")],
+    ])
+  ) {
+    toast.error(t("common.fixErrors"));
     return;
   }
   catSaving.value = true;
   try {
-    await invoke<number>("create_expense_category", { name: newCategoryName.value });
+    await invoke<number>("create_expense_category", {
+      name: newCategoryName.value,
+    });
     newCategoryName.value = "";
-    notice.value = t("expenses.categoryAdded");
-    await load();
+    toast.success(t("expenses.categoryAdded"));
+    await loadMeta();
   } catch (e) {
     categoryError.value = e instanceof Error ? e.message : String(e);
   } finally {
@@ -509,12 +694,17 @@ async function addCategory() {
 
 async function removeCategory(c: ExpenseCategory) {
   categoryError.value = "";
-  if (!window.confirm(t("expenses.deleteCategoryConfirm", { name: c.name }))) return;
+  if (
+    !(await confirmDialog({
+      message: t("expenses.deleteCategoryConfirm", { name: c.name }),
+    }))
+  )
+    return;
   try {
     await invoke("delete_expense_category", { categoryId: c.id });
-    notice.value = t("expenses.categoryDeleted", { name: c.name });
+    toast.success(t("expenses.categoryDeleted", { name: c.name }));
     if (form.value.categoryId === c.id) form.value.categoryId = null;
-    await load();
+    await loadMeta();
   } catch (e) {
     categoryError.value = e instanceof Error ? e.message : String(e);
   }
@@ -535,7 +725,6 @@ function statusBadge(status: string) {
 
 async function exportExcel() {
   exporting.value = true;
-  error.value = "";
   try {
     const path = await saveDialog({
       title: t("expenses.exportTitle"),
@@ -543,18 +732,18 @@ async function exportExcel() {
       filters: [{ name: t("expenses.excelFilter"), extensions: ["xlsx"] }],
     });
     if (!path) return;
-    await invoke("export_expenses", { path, ...filterParams() });
-    notice.value = t("expenses.exportedTo", { path });
+    await invoke("export_expenses", { path, ...filterBase() });
+    toast.success(t("expenses.exportedTo", { path }));
   } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e);
+    toast.error(e instanceof Error ? e.message : String(e));
   } finally {
     exporting.value = false;
   }
 }
 
-watch(filters, () => load(), { deep: true });
+watch(filters, () => loadMeta(), { deep: true });
 
 onMounted(async () => {
-  await Promise.allSettled([load(), settings.load()]);
+  await Promise.allSettled([reloadExpenses(), loadMeta(), settings.load()]);
 });
 </script>

@@ -1,9 +1,10 @@
 use tauri_plugin_sql::{Migration, MigrationKind};
 
-mod commands;
-mod db;
-mod export;
-mod seed;
+// Public so integration tests (tests/) can exercise the data layer.
+pub mod commands;
+pub mod db;
+pub mod export;
+pub mod seed;
 
 fn initial_migrations() -> Vec<Migration> {
   vec![
@@ -38,6 +39,18 @@ fn initial_migrations() -> Vec<Migration> {
       version: 5,
       description: "backups_table",
       sql: "CREATE TABLE IF NOT EXISTS backups (\n  id         INTEGER PRIMARY KEY AUTOINCREMENT,\n  path       TEXT UNIQUE NOT NULL,\n  size_bytes INTEGER NOT NULL DEFAULT 0,\n  kind       TEXT NOT NULL DEFAULT 'manual',\n  created_at TEXT NOT NULL DEFAULT (datetime('now'))\n);",
+      kind: MigrationKind::Up,
+    },
+    Migration {
+      version: 6,
+      description: "products_is_quick",
+      sql: "ALTER TABLE products ADD COLUMN is_quick INTEGER NOT NULL DEFAULT 0;",
+      kind: MigrationKind::Up,
+    },
+    Migration {
+      version: 7,
+      description: "sales_refunds",
+      sql: "ALTER TABLE sale_items ADD COLUMN refunded_qty REAL NOT NULL DEFAULT 0;\nCREATE TABLE refunds (\n  id         INTEGER PRIMARY KEY AUTOINCREMENT,\n  refund_no  TEXT UNIQUE NOT NULL,\n  sale_id    INTEGER NOT NULL REFERENCES sales(id),\n  user_id    INTEGER REFERENCES users(id),\n  amount     REAL NOT NULL DEFAULT 0,\n  method     TEXT NOT NULL DEFAULT 'cash',\n  reason     TEXT,\n  created_at TEXT NOT NULL DEFAULT (datetime('now'))\n);\nCREATE TABLE refund_items (\n  id           INTEGER PRIMARY KEY AUTOINCREMENT,\n  refund_id    INTEGER NOT NULL REFERENCES refunds(id) ON DELETE CASCADE,\n  sale_item_id INTEGER NOT NULL REFERENCES sale_items(id),\n  product_id   INTEGER NOT NULL REFERENCES products(id),\n  qty          REAL NOT NULL,\n  amount       REAL NOT NULL\n);",
       kind: MigrationKind::Up,
     },
   ]
@@ -140,6 +153,8 @@ pub fn run() {
       commands::expenses::export_expenses,
       commands::sales::create_sale,
       commands::sales::void_sale,
+      commands::sales::refund_sale,
+      commands::sales::get_sale_for_refund,
       commands::sales::list_sales,
       commands::sales::hold_sale,
       commands::sales::resume_sale,

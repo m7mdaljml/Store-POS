@@ -23,7 +23,6 @@ pub struct SupplierInvoiceInput {
 }
 
 #[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct SupplierInvoiceRecord {
     pub id: i64,
     pub invoice_no: String,
@@ -180,18 +179,41 @@ pub async fn create_invoice(
 #[tauri::command]
 pub async fn list_supplier_invoices<R: Runtime>(
     app: AppHandle<R>,
+    search: Option<String>,
+    limit: Option<i64>,
+    offset: Option<i64>,
 ) -> Result<Vec<SupplierInvoiceRecord>, String> {
     let pool = db::pool(&app).await?;
-    let rows = sqlx::query(
-        "SELECT si.id, si.invoice_no, si.supplier_id, s.name, si.date,
+
+    let pattern = search
+        .as_deref()
+        .map(|s| format!("%{}%", s.trim()))
+        .filter(|p| p != "%%");
+    let search_cond = if pattern.is_some() {
+        " WHERE (si.invoice_no LIKE ? OR s.name LIKE ?)"
+    } else {
+        ""
+    };
+    let sql = format!(
+        "SELECT si.id, si.invoice_no, si.supplier_id, s.name AS supplier_name, si.date,
                 si.total, si.paid_amount, si.due_amount, si.status, si.notes
          FROM supplier_invoices si
          JOIN suppliers s ON s.id = si.supplier_id
-         ORDER BY si.date DESC, si.id DESC",
-    )
-    .fetch_all(&pool)
-    .await
-    .map_err(|e| e.to_string())?;
+         {search_cond}
+         ORDER BY si.date DESC, si.id DESC
+         LIMIT ? OFFSET ?"
+    );
+
+    let mut query = sqlx::query(&sql);
+    if let Some(p) = &pattern {
+        query = query.bind(p).bind(p);
+    }
+    let rows = query
+        .bind(limit.map(|l| l.max(1)).unwrap_or(-1))
+        .bind(offset.unwrap_or(0).max(0))
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
 
     rows.into_iter()
         .map(|row| {
@@ -223,7 +245,6 @@ pub struct SupplierPaymentInput {
 }
 
 #[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct SupplierPaymentRecord {
     pub id: i64,
     pub invoice_id: i64,
@@ -236,7 +257,6 @@ pub struct SupplierPaymentRecord {
 }
 
 #[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct PaymentResult {
     pub paid_amount: f64,
     pub due_amount: f64,
@@ -351,7 +371,7 @@ pub async fn list_supplier_payments<R: Runtime>(
 ) -> Result<Vec<SupplierPaymentRecord>, String> {
     let pool = db::pool(&app).await?;
     let rows = sqlx::query(
-        "SELECT sp.id, sp.invoice_id, si.invoice_no, sp.amount, sp.method, sp.date, sp.notes, u.full_name
+        "SELECT sp.id, sp.invoice_id, si.invoice_no, sp.amount, sp.method, sp.date, sp.notes, u.full_name AS user_name
          FROM supplier_payments sp
          JOIN supplier_invoices si ON si.id = sp.invoice_id
          LEFT JOIN users u ON u.id = sp.user_id

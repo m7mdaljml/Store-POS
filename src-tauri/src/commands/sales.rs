@@ -129,11 +129,68 @@ pub struct VoidSaleInput {
     pub user_id: Option<i64>,
 }
 
+// ------------------------- Refunds -------------------------
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RefundLineInput {
+    pub sale_item_id: i64,
+    pub qty: f64,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RefundSaleInput {
+    pub sale_id: i64,
+    pub items: Vec<RefundLineInput>,
+    /// cash | card | credit
+    pub method: String,
+    #[serde(default)]
+    pub reason: Option<String>,
+    pub user_id: Option<i64>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RefundSaleResult {
+    pub refund_no: String,
+    pub amount: f64,
+    pub fully_refunded: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RefundableItem {
+    pub sale_item_id: i64,
+    pub name: String,
+    pub qty: f64,
+    pub refunded_qty: f64,
+    pub price: f64,
+    pub discount: f64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RefundableSale {
+    pub sale_id: i64,
+    pub sale_no: String,
+    pub total: f64,
+    pub refunded_amount: f64,
+    pub fully_refunded: bool,
+    pub items: Vec<RefundableItem>,
+}
+
+fn round2(value: f64) -> f64 {
+    (value * 100.0).round() / 100.0
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ListSalesInput {
     pub status: Option<String>,
+    pub search: Option<String>,
     pub limit: Option<i64>,
+    pub offset: Option<i64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -149,6 +206,7 @@ pub struct SaleRecord {
     pub paid_amount: f64,
     pub status: String,
     pub void_reason: Option<String>,
+    pub refunded_amount: f64,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -805,6 +863,17 @@ pub async fn reverse_sale(pool: &sqlx::SqlitePool, input: VoidSaleInput) -> Resu
         return Err("Only completed sales can be voided".into());
     }
 
+    // Refunded sales keep their money trail; voiding on top of it would
+    // restore stock twice, so they are closed for voiding.
+    let refunded: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM refunds WHERE sale_id = ?")
+        .bind(input.sale_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    if refunded.0 > 0 {
+        return Err("Sales with refunds cannot be voided. Void is only available for invoices without refunds.".into());
+    }
+
     sqlx::query(
         "UPDATE sales SET status = 'voided', void_reason = ?, voided_by = ? WHERE id = ?",
     )
@@ -915,7 +984,16 @@ pub async fn list_sales<R: Runtime>(
     input: Option<ListSalesInput>,
 ) -> Result<Vec<SaleRecord>, String> {
     let pool = db::pool(&app).await?;
-    query_sales(&pool, input.unwrap_or(ListSalesInput { status: None, limit: None })).await
+    query_sales(
+        &pool,
+        input.unwrap_or(ListSalesInput {
+            status: None,
+            search: None,
+            limit: None,
+            offset: None,
+        }),
+    )
+    .await
 }
 
 pub async fn query_sales(
@@ -923,21 +1001,40 @@ pub async fn query_sales(
     input: ListSalesInput,
 ) -> Result<Vec<SaleRecord>, String> {
     let limit = input.limit.unwrap_or(100).max(1).min(500);
+    let offset = input.offset.unwrap_or(0).max(0);
 
-    let rows = sqlx::query(
+    let pattern = input
+        .search
+        .as_deref()
+        .map(|s| format!("%{}%", s.trim()))
+        .filter(|p| p != "%%");
+    let search_cond = if pattern.is_some() {
+        " AND (s.sale_no LIKE ? OR COALESCE(c.name, '') LIKE ? OR COALESCE(u.username, '') LIKE ?
+              OR CAST(s.id AS TEXT) LIKE ?)"
+    } else {
+        ""
+    };
+
+    let rows = sqlx::query(&format!(
         "SELECT s.id, s.sale_no, s.created_at, u.username, c.name,
                 (SELECT COUNT(*) FROM sale_items si WHERE si.sale_id = s.id) AS item_count,
-                s.total, s.paid_amount, s.status, s.void_reason
+                s.total, s.paid_amount, s.status, s.void_reason,
+                (SELECT COALESCE(SUM(r.amount), 0.0) FROM refunds r WHERE r.sale_id = s.id) AS refunded_amount
          FROM sales s
          LEFT JOIN users u ON u.id = s.user_id
          LEFT JOIN customers c ON c.id = s.customer_id
-         WHERE (? IS NULL OR s.status = ?)
+         WHERE (? IS NULL OR s.status = ?){search_cond}
          ORDER BY s.id DESC
-         LIMIT ?",
-    )
+         LIMIT ? OFFSET ?"
+    ))
     .bind(&input.status)
     .bind(&input.status)
+    .bind(&pattern)
+    .bind(&pattern)
+    .bind(&pattern)
+    .bind(&pattern)
     .bind(limit)
+    .bind(offset)
     .fetch_all(pool)
     .await
     .map_err(|e| e.to_string())?;
@@ -955,9 +1052,330 @@ pub async fn query_sales(
             paid_amount: row.try_get("paid_amount").map_err(|e| e.to_string())?,
             status: row.try_get("status").map_err(|e| e.to_string())?,
             void_reason: row.try_get("void_reason").map_err(|e| e.to_string())?,
+            refunded_amount: row.try_get("refunded_amount").map_err(|e| e.to_string())?,
         });
     }
     Ok(out)
+}
+
+/// Loads a completed sale with the quantity already refunded on every line so
+/// the UI can offer full or partial refunds.
+pub async fn load_refundable(
+    pool: &sqlx::SqlitePool,
+    sale_id: i64,
+) -> Result<RefundableSale, String> {
+    let sale: Option<(String, String, f64)> =
+        sqlx::query_as("SELECT sale_no, status, total FROM sales WHERE id = ?")
+            .bind(sale_id)
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+    let (sale_no, status, total) = sale.ok_or("Sale not found")?;
+    if status != "completed" {
+        return Err("Only completed sales can be refunded".into());
+    }
+
+    let refunded: (f64,) = sqlx::query_as(
+        "SELECT COALESCE(SUM(amount), 0.0) FROM refunds WHERE sale_id = ?",
+    )
+    .bind(sale_id)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let rows: Vec<(i64, String, f64, f64, f64, f64)> = sqlx::query_as(
+        "SELECT si.id, p.name, si.qty, si.refunded_qty, si.price, si.discount
+         FROM sale_items si JOIN products p ON p.id = si.product_id
+         WHERE si.sale_id = ?
+         ORDER BY si.id",
+    )
+    .bind(sale_id)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let items: Vec<RefundableItem> = rows
+        .into_iter()
+        .map(
+            |(sale_item_id, name, qty, refunded_qty, price, discount)| RefundableItem {
+                sale_item_id,
+                name,
+                qty,
+                refunded_qty,
+                price,
+                discount,
+            },
+        )
+        .collect();
+
+    let fully_refunded = items.iter().all(|i| i.qty - i.refunded_qty <= 0.005);
+
+    Ok(RefundableSale {
+        sale_id,
+        sale_no,
+        total,
+        refunded_amount: refunded.0,
+        fully_refunded,
+        items,
+    })
+}
+
+#[tauri::command]
+pub async fn get_sale_for_refund<R: Runtime>(
+    app: AppHandle<R>,
+    sale_id: i64,
+) -> Result<RefundableSale, String> {
+    let pool = db::pool(&app).await?;
+    load_refundable(&pool, sale_id).await
+}
+
+/// Refunds one, several or all lines of a completed sale. Stock is restored
+/// for the returned quantities and the money goes back to the customer as a
+/// cash/card outflow (negative payment row) or as customer store credit.
+/// Order-level discount/tax are allocated proportionally; when every remaining
+/// unit is refunded the exact outstanding invoice amount is returned.
+pub async fn refund_sale_impl(
+    pool: &sqlx::SqlitePool,
+    input: RefundSaleInput,
+) -> Result<RefundSaleResult, String> {
+    if input.items.is_empty() {
+        return Err("Select at least one item to refund".into());
+    }
+    let method = input.method.as_str();
+    if !matches!(method, "cash" | "card" | "credit") {
+        return Err(format!("Unknown refund method '{method}'"));
+    }
+
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+
+    let sale: Option<(String, f64, Option<i64>)> =
+        sqlx::query_as("SELECT sale_no, total, customer_id FROM sales WHERE id = ? AND status = 'completed'")
+            .bind(input.sale_id)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+    let (sale_no, sale_total, sale_customer) = sale.ok_or("Only completed sales can be refunded")?;
+
+    // Original lines of the invoice (qty includes previously refunded units).
+    let lines: Vec<(i64, i64, f64, f64, f64, f64)> = sqlx::query_as(
+        "SELECT id, product_id, qty, refunded_qty, price, discount FROM sale_items WHERE sale_id = ?",
+    )
+    .bind(input.sale_id)
+    .fetch_all(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let net_all: f64 = lines
+        .iter()
+        .map(|(_, _, qty, _, price, discount)| (price - discount) * qty)
+        .sum();
+    if net_all <= 0.0 {
+        return Err("This invoice has no refundable value".into());
+    }
+    // Share of order-level discount + tax carried by each refunded unit.
+    let multiplier = sale_total / net_all;
+
+    let already: (f64,) = sqlx::query_as(
+        "SELECT COALESCE(SUM(amount), 0.0) FROM refunds WHERE sale_id = ?",
+    )
+    .bind(input.sale_id)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+    let already_refunded = already.0;
+
+    // Validate requested quantities against what is still refundable.
+    let mut refund_net = 0.0;
+    let mut touches_all_remaining = true;
+    for req in &input.items {
+        if req.qty <= 0.0 {
+            return Err("Refund quantities must be greater than zero".into());
+        }
+        let line = lines
+            .iter()
+            .find(|l| l.0 == req.sale_item_id)
+            .ok_or_else(|| format!("Item {} does not belong to this invoice", req.sale_item_id))?;
+        let remaining = line.2 - line.3;
+        if req.qty > remaining + 0.005 {
+            return Err(format!(
+                "Cannot refund more than {} of this item",
+                round2(remaining)
+            ));
+        }
+        refund_net += (line.4 - line.5) * req.qty;
+    }
+    for line in &lines {
+        let requested: f64 = input
+            .items
+            .iter()
+            .filter(|r| r.sale_item_id == line.0)
+            .map(|r| r.qty)
+            .sum();
+        if line.2 - line.3 - requested > 0.005 {
+            touches_all_remaining = false;
+        }
+    }
+
+    let amount = if touches_all_remaining {
+        (sale_total - already_refunded).max(0.0)
+    } else {
+        round2(refund_net * multiplier).max(0.0)
+    };
+    if amount <= 0.005 {
+        return Err("Nothing left to refund on this invoice".into());
+    }
+
+    // Credit refunds go back to the customer's balance; anything else is an
+    // outflow recorded as a negative payment on the same invoice.
+    let credit_customer = if method == "credit" {
+        Some(sale_customer.ok_or("Credit refunds require a customer on the invoice")?)
+    } else {
+        None
+    };
+
+    let next_no: (i64,) = sqlx::query_as("SELECT COALESCE(MAX(id), 0) + 1 FROM refunds")
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    let refund_no = format!("R-{:06}", next_no.0);
+
+    let reason_text = optional_field(&input.reason).unwrap_or_default();
+    let note = format!("Refund {refund_no} of sale {sale_no}");
+
+    let refund_id = sqlx::query(
+        "INSERT INTO refunds (refund_no, sale_id, user_id, amount, method, reason)
+         VALUES (?, ?, ?, ?, ?, ?)",
+    )
+    .bind(&refund_no)
+    .bind(input.sale_id)
+    .bind(input.user_id)
+    .bind(amount)
+    .bind(method)
+    .bind(optional_field(&Some(reason_text.clone())))
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?
+    .last_insert_rowid();
+
+    for req in &input.items {
+        let line = lines.iter().find(|l| l.0 == req.sale_item_id).unwrap();
+
+        sqlx::query("UPDATE sale_items SET refunded_qty = refunded_qty + ? WHERE id = ?")
+            .bind(req.qty)
+            .bind(req.sale_item_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        sqlx::query(
+            "INSERT INTO refund_items (refund_id, sale_item_id, product_id, qty, amount)
+             VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind(refund_id)
+        .bind(line.0)
+        .bind(line.1)
+        .bind(req.qty)
+        .bind(round2((line.4 - line.5) * req.qty * multiplier))
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        sqlx::query(
+            "INSERT INTO stock_movements (product_id, type, qty, ref_id, notes, user_id)
+             VALUES (?, 'sale_refund_in', ?, ?, ?, ?)",
+        )
+        .bind(line.1)
+        .bind(req.qty)
+        .bind(input.sale_id)
+        .bind(&note)
+        .bind(input.user_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        sqlx::query("UPDATE products SET stock_qty = stock_qty + ? WHERE id = ?")
+            .bind(req.qty)
+            .bind(line.1)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+
+    if let Some(customer_id) = credit_customer {
+        let current: (f64,) = sqlx::query_as("SELECT balance FROM customers WHERE id = ?")
+            .bind(customer_id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+        let balance_after = current.0 + amount;
+
+        sqlx::query("UPDATE customers SET balance = ? WHERE id = ?")
+            .bind(balance_after)
+            .bind(customer_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        sqlx::query(
+            "INSERT INTO customer_ledger (customer_id, sale_id, type, amount, balance_after, notes, user_id)
+             VALUES (?, ?, 'refund', ?, ?, ?, ?)",
+        )
+        .bind(customer_id)
+        .bind(input.sale_id)
+        .bind(amount)
+        .bind(balance_after)
+        .bind(&note)
+        .bind(input.user_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    } else {
+        sqlx::query("INSERT INTO payments (sale_id, method, amount, reference) VALUES (?, ?, ?, ?)")
+            .bind(input.sale_id)
+            .bind(method)
+            .bind(-amount)
+            .bind(format!("Refund {refund_no}"))
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+
+    sqlx::query(
+        "INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
+         VALUES (?, 'sale.refund', 'sale', ?, ?)",
+    )
+    .bind(input.user_id)
+    .bind(input.sale_id)
+    .bind(format!(
+        "{note}: {} {}{}",
+        amount,
+        method,
+        if reason_text.is_empty() {
+            String::new()
+        } else {
+            format!(" — {reason_text}")
+        }
+    ))
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    tx.commit().await.map_err(|e| e.to_string())?;
+
+    Ok(RefundSaleResult {
+        refund_no,
+        amount,
+        fully_refunded: touches_all_remaining,
+    })
+}
+
+#[tauri::command]
+pub async fn refund_sale<R: Runtime>(
+    app: AppHandle<R>,
+    input: RefundSaleInput,
+) -> Result<RefundSaleResult, String> {
+    let pool = db::pool(&app).await?;
+    refund_sale_impl(&pool, input).await
 }
 
 /// Loads everything needed to render a sale's receipt: store profile from the
@@ -1209,7 +1627,26 @@ mod tests {
           cost_price REAL NOT NULL,
           discount REAL NOT NULL DEFAULT 0,
           tax REAL NOT NULL DEFAULT 0,
-          subtotal REAL NOT NULL
+          subtotal REAL NOT NULL,
+          refunded_qty REAL NOT NULL DEFAULT 0
+        );
+        CREATE TABLE refunds (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          refund_no TEXT UNIQUE NOT NULL,
+          sale_id INTEGER NOT NULL REFERENCES sales(id),
+          user_id INTEGER,
+          amount REAL NOT NULL DEFAULT 0,
+          method TEXT NOT NULL DEFAULT 'cash',
+          reason TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE TABLE refund_items (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          refund_id INTEGER NOT NULL REFERENCES refunds(id) ON DELETE CASCADE,
+          sale_item_id INTEGER NOT NULL REFERENCES sale_items(id),
+          product_id INTEGER NOT NULL,
+          qty REAL NOT NULL,
+          amount REAL NOT NULL
         );
         CREATE TABLE payments (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1544,6 +1981,142 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn refund_partial_then_full_and_block_void() {
+        let pool = mem_pool().await;
+        sample_product(&pool, 1, "Coffee", 20.0, 5.0).await;
+        sample_product(&pool, 2, "Chips", 20.0, 2.0).await;
+
+        // Invoice: 2 coffee @5 + 1 chips @2 = 12 total.
+        let sale = insert_sale(
+            &pool,
+            CreateSaleInput {
+                items: vec![item(1, 2.0, 5.0, 0.0), item(2, 1.0, 2.0, 0.0)],
+                payments: vec![SalePaymentInput {
+                    method: "cash".into(),
+                    amount: 12.0,
+                    reference: None,
+                    customer_id: None,
+                }],
+                discount: 0.0,
+                tax: 0.0,
+                user_id: Some(1),
+                customer_id: None,
+                held_sale_id: None,
+                session_id: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        let preview = load_refundable(&pool, sale.sale_id).await.unwrap();
+        assert_eq!(preview.items.len(), 2);
+        assert!(!preview.fully_refunded);
+        let chips = preview
+            .items
+            .iter()
+            .find(|i| i.sale_item_id == preview.items[1].sale_item_id)
+            .unwrap();
+
+        // Partial refund of the chips.
+        let partial = refund_sale_impl(
+            &pool,
+            RefundSaleInput {
+                sale_id: sale.sale_id,
+                items: vec![RefundLineInput {
+                    sale_item_id: chips.sale_item_id,
+                    qty: 1.0,
+                }],
+                method: "cash".into(),
+                reason: Some("Customer returned the chips".into()),
+                user_id: Some(1),
+            },
+        )
+        .await
+        .unwrap();
+        assert!((partial.amount - 2.0).abs() < 0.01);
+        assert!(!partial.fully_refunded);
+
+        // Stock came back and a negative payment was recorded.
+        assert!((stock_of(&pool, 2).await - 20.0).abs() < 0.001);
+        let neg: (f64,) =
+            sqlx::query_as("SELECT amount FROM payments WHERE amount < 0")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert!(neg.0 < 0.0);
+        let refunded_qty: (f64,) = sqlx::query_as(
+            "SELECT refunded_qty FROM sale_items WHERE id = ?",
+        )
+        .bind(chips.sale_item_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!((refunded_qty.0 - 1.0).abs() < 0.001);
+
+        // Voiding is blocked once refunds exist.
+        let err = reverse_sale(
+            &pool,
+            VoidSaleInput {
+                sale_id: sale.sale_id,
+                reason: "Too late".into(),
+                user_id: Some(1),
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(err.contains("refunds"));
+
+        // Full refund of what remains returns the exact outstanding amount.
+        let preview = load_refundable(&pool, sale.sale_id).await.unwrap();
+        let items = preview
+            .items
+            .iter()
+            .filter_map(|i| {
+                let rem = i.qty - i.refunded_qty;
+                (rem > 0.005).then(|| RefundLineInput {
+                    sale_item_id: i.sale_item_id,
+                    qty: rem,
+                })
+            })
+            .collect::<Vec<_>>();
+        let full = refund_sale_impl(
+            &pool,
+            RefundSaleInput {
+                sale_id: sale.sale_id,
+                items,
+                method: "cash".into(),
+                reason: None,
+                user_id: Some(1),
+            },
+        )
+        .await
+        .unwrap();
+        assert!(full.fully_refunded);
+        assert!((full.amount - 10.0).abs() < 0.01);
+        let after = load_refundable(&pool, sale.sale_id).await.unwrap();
+        assert!(after.fully_refunded);
+        assert!((after.refunded_amount - 12.0).abs() < 0.01);
+
+        // Nothing left to refund.
+        let err = refund_sale_impl(
+            &pool,
+            RefundSaleInput {
+                sale_id: sale.sale_id,
+                items: vec![RefundLineInput {
+                    sale_item_id: preview.items[0].sale_item_id,
+                    qty: 1.0,
+                }],
+                method: "cash".into(),
+                reason: None,
+                user_id: Some(1),
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(err.contains("Cannot refund more than") || err.contains("Nothing left"));
+    }
+
+    #[tokio::test]
     async fn void_sale_restores_stock_and_marks_voided() {
         let pool = mem_pool().await;
         sample_product(&pool, 1, "Coffee", 20.0, 5.0).await;
@@ -1736,9 +2309,17 @@ mod tests {
         .await
         .unwrap();
 
-        let all = query_sales(&pool, ListSalesInput { status: None, limit: None })
-            .await
-            .unwrap();
+        let all = query_sales(
+            &pool,
+            ListSalesInput {
+                status: None,
+                search: None,
+                limit: None,
+                offset: None,
+            },
+        )
+        .await
+        .unwrap();
         assert_eq!(all.len(), 1);
         assert_eq!(all[0].sale_no, "S-000001");
         assert_eq!(all[0].status, "voided");
@@ -1749,7 +2330,9 @@ mod tests {
             &pool,
             ListSalesInput {
                 status: Some("completed".into()),
+                search: None,
                 limit: None,
+                offset: None,
             },
         )
         .await
