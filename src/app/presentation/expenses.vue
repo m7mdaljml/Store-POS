@@ -253,10 +253,7 @@
           </tbody>
         </table>
       </div>
-      <div
-        v-if="hasMore && !loading"
-        class="text-center border-top py-2"
-      >
+      <div v-if="hasMore && !loading" class="text-center border-top py-2">
         <button
           class="btn btn-sm btn-outline-secondary"
           type="button"
@@ -306,7 +303,7 @@
                   class="form-control"
                   :class="{ 'is-invalid': errors.amount }"
                   type="number"
-                  step="1"
+                  step="0.01"
                   min="0.01"
                   autofocus
                   @input="clearFieldError(errors, 'amount')"

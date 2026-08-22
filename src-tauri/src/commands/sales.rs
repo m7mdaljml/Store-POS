@@ -1008,12 +1008,12 @@ pub async fn query_sales(
         .as_deref()
         .map(|s| format!("%{}%", s.trim()))
         .filter(|p| p != "%%");
-    let search_cond = if pattern.is_some() {
-        " AND (s.sale_no LIKE ? OR COALESCE(c.name, '') LIKE ? OR COALESCE(u.username, '') LIKE ?
-              OR CAST(s.id AS TEXT) LIKE ?)"
-    } else {
-        ""
-    };
+    // Always include the search placeholders so bind count stays constant.
+    // When pattern is None the first ? is NULL → TRUE, short-circuiting the
+    // LIKE conditions.
+    let search_cond =
+        " AND (? IS NULL OR s.sale_no LIKE ? OR COALESCE(c.name, '') LIKE ? OR COALESCE(u.username, '') LIKE ?
+              OR CAST(s.id AS TEXT) LIKE ?)";
 
     let rows = sqlx::query(&format!(
         "SELECT s.id, s.sale_no, s.created_at, u.username, c.name,
@@ -1029,6 +1029,7 @@ pub async fn query_sales(
     ))
     .bind(&input.status)
     .bind(&input.status)
+    .bind(&pattern)
     .bind(&pattern)
     .bind(&pattern)
     .bind(&pattern)
