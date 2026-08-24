@@ -541,6 +541,16 @@ fn parse_import_f64(raw: &str, field: &str) -> Result<f64, String> {
         .map_err(|_| format!("Invalid {field} value \"{raw}\""))
 }
 
+fn parse_import_bool(raw: &str) -> Result<bool, String> {
+    match raw.trim().to_lowercase().as_str() {
+        "" | "0" | "no" | "n" | "false" => Ok(false),
+        "1" | "yes" | "y" | "true" => Ok(true),
+        _ => Err(format!(
+            "Invalid quick_item value \"{raw}\" (use yes/no or 1/0)"
+        )),
+    }
+}
+
 fn validate_import_row(
     name: &str,
     barcode: &str,
@@ -615,6 +625,13 @@ pub async fn import_products_csv<R: Runtime>(
     let c_stock = find_col(&[
         "stock", "qty", "quantity", "openingstock", "opening_stock", "stockqty", "stock_qty",
     ]);
+    let c_quick = find_col(&[
+        "quick",
+        "quickitem",
+        "quick_item",
+        "isquick",
+        "is_quick",
+    ]);
 
     let mut result = CsvImportResult {
         imported: 0,
@@ -663,6 +680,13 @@ pub async fn import_products_csv<R: Runtime>(
         };
         let stock = match cell(c_stock).map(|v| parse_import_f64(&v, "stock")).transpose() {
             Ok(v) => v.unwrap_or(0.0),
+            Err(e) => {
+                result.errors.push(CsvImportError { row: row_no, message: e });
+                continue;
+            }
+        };
+        let quick = match cell(c_quick).map(|v| parse_import_bool(&v)).transpose() {
+            Ok(v) => v.unwrap_or(false),
             Err(e) => {
                 result.errors.push(CsvImportError { row: row_no, message: e });
                 continue;
@@ -719,8 +743,8 @@ pub async fn import_products_csv<R: Runtime>(
         let pid = sqlx::query(
             "INSERT INTO products
                 (sku, barcode, name, category_id, cost_price, sell_price,
-                 unit, stock_qty, reorder_level)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                 unit, stock_qty, reorder_level, is_quick)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(empty_to_none(&cell(c_sku)))
         .bind(&barcode)
@@ -731,6 +755,7 @@ pub async fn import_products_csv<R: Runtime>(
         .bind(unit.trim())
         .bind(stock)
         .bind(reorder)
+        .bind(i64::from(quick))
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?
@@ -753,4 +778,20 @@ pub async fn import_products_csv<R: Runtime>(
 
     tx.commit().await.map_err(|e| e.to_string())?;
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_import_bool_accepts_common_values() {
+        for v in ["1", "yes", "y", "true", "YES", "True"] {
+            assert!(parse_import_bool(v).unwrap(), "expected true for {v}");
+        }
+        for v in ["0", "no", "n", "false", "", "NO"] {
+            assert!(!parse_import_bool(v).unwrap(), "expected false for {v}");
+        }
+        assert!(parse_import_bool("maybe").is_err());
+    }
 }

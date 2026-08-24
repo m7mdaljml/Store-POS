@@ -88,10 +88,7 @@
           </tbody>
         </table>
       </div>
-      <div
-        v-if="hasMore && !loading"
-        class="text-center border-top py-2"
-      >
+      <div v-if="hasMore && !loading" class="text-center border-top py-2">
         <button
           class="btn btn-sm btn-outline-secondary"
           type="button"
@@ -182,6 +179,15 @@
 
               <div v-if="!form.lines.length" class="text-muted small py-2">
                 {{ t("purchases.noLines") }}
+              </div>
+              <div
+                v-if="form.lines.length"
+                class="row g-2 fw-semibold small text-muted mb-1 px-2 mb-3"
+              >
+                <div class="col-6">{{ t("purchases.colProduct") }}</div>
+                <div class="col-2">{{ t("purchases.colQty") }}</div>
+                <div class="col-2">{{ t("purchases.colCost") }}</div>
+                <div class="col-2 text-end">{{ t("purchases.colTotal") }}</div>
               </div>
               <div
                 v-for="(line, index) in form.lines"

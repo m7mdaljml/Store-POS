@@ -345,6 +345,10 @@ export const ar = {
     addLine: "إضافة سطر",
     noLines: 'لا توجد أسطر بعد — اضغط "إضافة سطر" لإضافة منتجات.',
     selectProduct: "اختر المنتج…",
+    colProduct: "المنتج",
+    colQty: "الكمية",
+    colCost: "التكلفة / للوحدة",
+    colTotal: "إجمالي السطر",
     lineCount:
       "{count} سطر | {count} سطر | {count} سطران | {count} أسطر | {count} سطرًا | {count} سطر",
     totalLabel: "الإجمالي: {total}",
