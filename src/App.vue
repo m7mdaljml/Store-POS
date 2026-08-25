@@ -121,6 +121,14 @@
           >
             <i class="bi bi-box-arrow-in-right mx-1"></i>{{ t("app.login") }}
           </RouterLink>
+
+          <button
+            class="btn btn-sm btn-outline-danger"
+            type="button"
+            @click="closeApp()"
+          >
+            <i class="bi bi-x-lg mx-1"></i>Close App
+          </button>
         </div>
       </header>
 
@@ -135,6 +143,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { RouterLink, RouterView, useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useAuth } from "./composables/useAuth";
 import { useSettingsStore } from "./stores/settings";
 import { useCatalogStore } from "./stores/catalog";
@@ -254,6 +263,10 @@ const navItems = computed(() => {
 
 function tick() {
   clock.value = new Date().toLocaleTimeString();
+}
+
+function closeApp() {
+  getCurrentWindow().close();
 }
 
 onMounted(async () => {
