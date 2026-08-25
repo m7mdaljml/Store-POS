@@ -19,16 +19,15 @@
             {{ t("stock.typeLabels." + key) }}
           </option>
         </select>
-        <select
+        <AppSelect
           v-model="productFilter"
-          class="form-select form-select-sm"
-          style="width: auto; max-width: 260px"
-        >
-          <option :value="null">{{ t("stock.allProducts") }}</option>
-          <option v-for="p in catalog.products" :key="p.id" :value="p.id">
-            {{ p.name }}
-          </option>
-        </select>
+          sm
+          class="app-select-inline"
+          :items="catalog.products"
+          :option-label="(p) => p.name"
+          :option-value="(p) => p.id"
+          :placeholder="t('stock.allProducts')"
+        />
         <input
           v-model="search"
           class="form-control form-control-sm flex-grow-1"
@@ -86,24 +85,13 @@
           </tbody>
         </table>
       </div>
-      <div
-        v-if="hasMore && !loading"
-        class="text-center border-top py-2"
-      >
-        <button
-          class="btn btn-sm btn-outline-secondary"
-          type="button"
-          :disabled="loadingMore"
-          @click="loadMore"
-        >
-          <span
-            v-if="loadingMore"
-            class="spinner-border spinner-border-sm mx-1"
-            role="status"
-          ></span>
-          {{ t("common.loadMore") }}
-        </button>
-      </div>
+      <Paginator
+        :page="page"
+        :page-size="size"
+        :total-items="totalItems"
+        :disabled="loading"
+        @update:page="goToPage"
+      />
     </div>
 
     <div v-if="showModal" class="modal-backdrop show"></div>
@@ -131,19 +119,15 @@
                 <label class="form-label" for="a-product">{{
                   t("common.product")
                 }}</label>
-                <select
+                <AppSelect
                   id="a-product"
                   v-model="selectedProductId"
-                  class="form-select"
-                >
-                  <option
-                    v-for="p in catalog.products"
-                    :key="p.id"
-                    :value="p.id"
-                  >
-                    {{ p.name }} ({{ p.stock_qty }} {{ t("stock.inStock") }})
-                  </option>
-                </select>
+                  :items="catalog.products"
+                  :option-label="
+                    (p) => `${p.name} (${p.stock_qty} ${t('stock.inStock')})`
+                  "
+                  :option-value="(p) => p.id"
+                />
               </div>
               <div class="row g-3">
                 <div class="col-6">
@@ -222,8 +206,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { useI18n } from "vue-i18n";
 import EmptyState from "../../components/EmptyState.vue";
 import AsyncButton from "../../components/AsyncButton.vue";
+import Paginator from "../../components/Paginator.vue";
+import AppSelect from "../../components/AppSelect.vue";
 import { useFormGuard } from "../../composables/useFormGuard";
-import { usePagedList } from "../../composables/usePagedList";
+import { usePagedList, type Paged } from "../../composables/usePagedList";
 import { useToast } from "../../composables/useToast";
 import { useCatalogStore } from "../../stores/catalog";
 import { useAuth } from "../../composables/useAuth";
@@ -252,13 +238,14 @@ const productFilter = ref<number | null>(null);
 const {
   items: movements,
   loading,
-  loadingMore,
-  hasMore,
+  page,
+  size,
+  totalItems,
+  goToPage,
   reload,
-  loadMore,
 } = usePagedList<StockMovement>(
   (limit, offset) =>
-    invoke<StockMovement[]>("list_stock_movements", {
+    invoke<Paged<StockMovement>>("list_stock_movements", {
       movementType: typeFilter.value === "all" ? null : typeFilter.value,
       productId: productFilter.value,
       search: search.value.trim() || null,
@@ -378,3 +365,11 @@ onMounted(async () => {
   await Promise.allSettled([reload(), catalog.load()]);
 });
 </script>
+
+<style scoped>
+.app-select-inline {
+  width: auto;
+  min-width: 220px;
+  max-width: 280px;
+}
+</style>

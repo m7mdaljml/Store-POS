@@ -188,24 +188,13 @@
           </tbody>
         </table>
       </div>
-      <div
-        v-if="hasMore && !loading"
-        class="text-center border-top py-2"
-      >
-        <button
-          class="btn btn-sm btn-outline-secondary"
-          type="button"
-          :disabled="loadingMore"
-          @click="loadMore"
-        >
-          <span
-            v-if="loadingMore"
-            class="spinner-border spinner-border-sm mx-1"
-            role="status"
-          ></span>
-          {{ t("common.loadMore") }}
-        </button>
-      </div>
+      <Paginator
+        :page="page"
+        :page-size="size"
+        :total-items="totalItems"
+        :disabled="loading"
+        @update:page="goToPage"
+      />
     </div>
 
     <div
@@ -445,8 +434,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { useI18n } from "vue-i18n";
 import EmptyState from "../../components/EmptyState.vue";
 import AsyncButton from "../../components/AsyncButton.vue";
+import Paginator from "../../components/Paginator.vue";
 import { useFormGuard } from "../../composables/useFormGuard";
-import { usePagedList } from "../../composables/usePagedList";
+import { usePagedList, type Paged } from "../../composables/usePagedList";
 import { useToast } from "../../composables/useToast";
 import { useAuth } from "../../composables/useAuth";
 import { buildReceiptHtml, printReceipt } from "../../lib/receipt";
@@ -464,13 +454,14 @@ const filter = ref("");
 const {
   items: sales,
   loading,
-  loadingMore,
-  hasMore,
+  page,
+  size,
+  totalItems,
+  goToPage,
   reload,
-  loadMore,
 } = usePagedList<SaleRecord>(
   (limit, offset) =>
-    invoke<SaleRecord[]>("list_sales", {
+    invoke<Paged<SaleRecord>>("list_sales", {
       input: {
         status: filter.value || null,
         search: search.value.trim() || null,

@@ -192,24 +192,13 @@
           </tbody>
         </table>
       </div>
-      <div
-        v-if="hasMore && !loading"
-        class="text-center border-top py-2"
-      >
-        <button
-          class="btn btn-sm btn-outline-secondary"
-          type="button"
-          :disabled="loadingMore"
-          @click="loadMore"
-        >
-          <span
-            v-if="loadingMore"
-            class="spinner-border spinner-border-sm mx-1"
-            role="status"
-          ></span>
-          {{ t("common.loadMore") }}
-        </button>
-      </div>
+      <Paginator
+        :page="page"
+        :page-size="size"
+        :total-items="totalItems"
+        :disabled="loading"
+        @update:page="goToPage"
+      />
     </div>
 
     <div v-if="showModal" class="modal-backdrop show"></div>
@@ -626,6 +615,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useI18n } from "vue-i18n";
 import EmptyState from "../../components/EmptyState.vue";
 import AsyncButton from "../../components/AsyncButton.vue";
+import Paginator from "../../components/Paginator.vue";
 import { useFormGuard } from "../../composables/useFormGuard";
 import { usePagedList } from "../../composables/usePagedList";
 import { useToast } from "../../composables/useToast";
@@ -670,21 +660,28 @@ async function fetchStats() {
 const {
   items: customers,
   loading,
-  loadingMore,
-  hasMore,
+  page,
+  size,
+  totalItems,
+  goToPage,
   reload: load,
-  loadMore,
 } = usePagedList<Customer>(
   async (limit, offset) => {
     const p = `%${search.value.trim()}%`;
-    const [rows] = await Promise.all([
+    const where =
+      "WHERE name LIKE ? OR IFNULL(phone,'') LIKE ? OR IFNULL(email,'') LIKE ? OR IFNULL(address,'') LIKE ? OR IFNULL(notes,'') LIKE ?";
+    const [rows, countRows] = await Promise.all([
       select<Customer>(
-        "SELECT id, name, phone, email, address, balance, notes, created_at FROM customers WHERE name LIKE ? OR IFNULL(phone,'') LIKE ? OR IFNULL(email,'') LIKE ? OR IFNULL(address,'') LIKE ? OR IFNULL(notes,'') LIKE ? ORDER BY name COLLATE NOCASE LIMIT ? OFFSET ?",
+        `SELECT id, name, phone, email, address, balance, notes, created_at FROM customers ${where} ORDER BY name COLLATE NOCASE LIMIT ? OFFSET ?`,
         [p, p, p, p, p, limit, offset],
+      ),
+      select<{ total: number }>(
+        `SELECT COUNT(*) AS total FROM customers ${where}`,
+        [p, p, p, p, p],
       ),
       fetchStats(),
     ]);
-    return rows;
+    return { items: rows, total: Number(countRows[0]?.total ?? 0) };
   },
   [search],
   (e) => toast.error(e instanceof Error ? e.message : String(e)),

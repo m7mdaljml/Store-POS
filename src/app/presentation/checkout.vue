@@ -342,15 +342,15 @@
         </div>
 
         <div v-if="currencies.length > 1" class="t-conv-row">
-          <select
-            v-model.number="displayCurrencyId"
-            class="form-select form-select-sm w-auto"
+          <AppSelect
+            v-model="displayCurrencyId"
+            sm
+            class="app-select-inline"
+            :items="currencies"
+            :option-label="(c) => `${c.code} (${c.symbol})`"
+            :option-value="(c) => c.id"
             :aria-label="t('checkout.displayCurrency')"
-          >
-            <option v-for="c in currencies" :key="c.id" :value="c.id">
-              {{ c.code }} ({{ c.symbol }})
-            </option>
-          </select>
+          />
           <span
             v-if="convertedTotal !== null"
             class="t-conv-note small text-muted ms-auto"
@@ -455,25 +455,21 @@
                   </option>
                 </select>
                 <template v-if="line.method === 'credit'">
-                  <select
-                    class="form-select form-select-sm"
-                    :value="line.customerId ?? ''"
+                  <AppSelect
+                    sm
+                    :model-value="line.customerId"
+                    :items="customers"
+                    :option-label="customerLabel"
+                    :option-value="(c) => c.id"
+                    :placeholder="t('checkout.selectCustomer')"
                     :aria-label="`${t('checkout.customerCredit')} ${i + 1}`"
-                    @change="
-                      cart.setSplitLine(i, {
-                        customerId: ($event.target as HTMLSelectElement).value
-                          ? Number(($event.target as HTMLSelectElement).value)
-                          : null,
-                      })
+                    @update:model-value="
+                      (v) =>
+                        cart.setSplitLine(i, {
+                          customerId: v == null ? null : Number(v),
+                        })
                     "
-                  >
-                    <option value="" disabled>
-                      {{ t("checkout.selectCustomer") }}
-                    </option>
-                    <option v-for="c in customers" :key="c.id" :value="c.id">
-                      {{ customerLabel(c) }}
-                    </option>
-                  </select>
+                  />
                 </template>
                 <template v-else>
                   <input
@@ -752,10 +748,12 @@ import {
 } from "vue";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { useI18n } from "vue-i18n";
+import AppSelect from "../../components/AppSelect.vue";
 import { useCatalogStore } from "../../stores/catalog";
 import { useSettingsStore } from "../../stores/settings";
 import { useCartStore } from "../../stores/cart";
 import { useAuth } from "../../composables/useAuth";
+import type { Paged } from "../../composables/usePagedList";
 import { useConfirm } from "../../composables/useConfirm";
 import { useScanner } from "../../composables/useScanner";
 import { useToast } from "../../composables/useToast";
@@ -1175,9 +1173,11 @@ function holdCurrentSale() {
 async function loadHeldSales() {
   heldError.value = "";
   try {
-    heldSales.value = await invoke<SaleRecord[]>("list_sales", {
-      input: { status: "held", limit: null },
-    });
+    heldSales.value = (
+      await invoke<Paged<SaleRecord>>("list_sales", {
+        input: { status: "held", limit: null },
+      })
+    ).items;
   } catch (e) {
     heldError.value = String(e);
   }
@@ -1482,3 +1482,9 @@ function onDocPointerDown(e: PointerEvent) {
   requestAnimationFrame(() => focusSearch(false));
 }
 </script>
+
+<style scoped>
+.app-select-inline {
+  width: 180px;
+}
+</style>

@@ -141,24 +141,13 @@
           </tbody>
         </table>
       </div>
-      <div
-        v-if="hasMore && !loading"
-        class="text-center border-top py-2"
-      >
-        <button
-          class="btn btn-sm btn-outline-secondary"
-          type="button"
-          :disabled="loadingMore"
-          @click="loadMore"
-        >
-          <span
-            v-if="loadingMore"
-            class="spinner-border spinner-border-sm mx-1"
-            role="status"
-          ></span>
-          {{ t("common.loadMore") }}
-        </button>
-      </div>
+      <Paginator
+        :page="page"
+        :page-size="size"
+        :total-items="totalItems"
+        :disabled="loading"
+        @update:page="goToPage"
+      />
     </div>
   </div>
 </template>
@@ -168,7 +157,8 @@ import { onMounted, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { useI18n } from "vue-i18n";
 import EmptyState from "../../components/EmptyState.vue";
-import { usePagedList } from "../../composables/usePagedList";
+import Paginator from "../../components/Paginator.vue";
+import { usePagedList, type Paged } from "../../composables/usePagedList";
 import { useToast } from "../../composables/useToast";
 import type { SaleSession } from "../../types";
 import { formatMoney } from "../../lib/currency";
@@ -183,13 +173,14 @@ const filter = ref("");
 const {
   items: sessions,
   loading,
-  loadingMore,
-  hasMore,
+  page,
+  size,
+  totalItems,
+  goToPage,
   reload,
-  loadMore,
 } = usePagedList<SaleSession>(
   (limit, offset) =>
-    invoke<SaleSession[]>("list_sessions", {
+    invoke<Paged<SaleSession>>("list_sessions", {
       input: {
         status: filter.value || null,
         search: search.value.trim() || null,

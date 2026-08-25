@@ -1,40 +1,76 @@
-import { computed, ref, watch, type Ref, type WatchSource } from "vue";
+import {
+  computed,
+  ref,
+  toValue,
+  watch,
+  type MaybeRefOrGetter,
+  type Ref,
+  type WatchSource,
+} from "vue";
+import { useSettingsStore } from "../stores/settings";
 
+/** Fallback page size when no user preference is available. */
 export const PAGE_SIZE = 20;
 
+/** One page of records plus the exact filtered row count. */
+export interface Paged<T> {
+  items: T[];
+  total: number;
+}
+
 /**
- * Shared "load more" pagination for list pages: every fetch pulls one page of
- * `pageSize` records and `loadMore()` appends the next page. When any of the
- * `resetSources` change (search text, filters...) the list restarts from the
- * first page. A stale-response guard keeps out-of-order replies from clobbering
- * newer results.
+ * Shared page-based pagination for list pages backed by exact row counts:
+ * every fetch pulls one page of `pageSize` records together with the total,
+ * so the Paginator can render true page numbers exactly like the client-side
+ * lists. `goToPage(n)` replaces the rendered slice. When any of the
+ * `resetSources` change (search text, filters...) or the preferred page size
+ * changes, the list restarts from the first page. A stale-response guard
+ * keeps out-of-order replies from clobbering newer results.
+ *
+ * `pageSize` may be omitted to follow the user's "rows per page" preference
+ * from Settings reactively.
  */
 export function usePagedList<T>(
-  fetchPage: (limit: number, offset: number) => Promise<T[]>,
+  fetchPage: (limit: number, offset: number) => Promise<Paged<T>>,
   resetSources: WatchSource[] = [],
   onError: (e: unknown) => void = () => {},
-  pageSize = PAGE_SIZE,
+  pageSize?: MaybeRefOrGetter<number>,
 ) {
+  const settings = useSettingsStore();
+
   const items = ref([]) as Ref<T[]>;
   const loading = ref(false);
-  const loadingMore = ref(false);
-  const lastPageCount = ref(0);
+  const page = ref(1);
+  const totalItems = ref<number | null>(null);
 
   let seq = 0;
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
-  // The button shows whenever the last fetch returned a full page, i.e. there
-  // may be more records beyond what is currently rendered.
-  const hasMore = computed(() => lastPageCount.value >= pageSize);
+  const size = computed(() => {
+    const explicit = pageSize !== undefined ? toValue(pageSize) : undefined;
+    const n = explicit ?? settings.pageSize;
+    return n > 0 ? Math.floor(n) : PAGE_SIZE;
+  });
 
-  async function reload() {
+  const totalPages = computed(() =>
+    Math.max(1, Math.ceil((totalItems.value ?? 0) / size.value)),
+  );
+
+  async function load(target: number): Promise<void> {
     const id = ++seq;
     loading.value = true;
     try {
-      const rows = await fetchPage(pageSize, 0);
+      let res = await fetchPage(size.value, (target - 1) * size.value);
       if (id !== seq) return;
-      items.value = rows;
-      lastPageCount.value = rows.length;
+      // Records may have been deleted while browsing past the end.
+      if (!res.items.length && target > 1 && res.total > 0) {
+        target = Math.max(1, Math.min(target - 1, totalPages.value));
+        res = await fetchPage(size.value, (target - 1) * size.value);
+        if (id !== seq) return;
+      }
+      items.value = res.items;
+      totalItems.value = res.total;
+      page.value = target;
     } catch (e) {
       if (id === seq) onError(e);
     } finally {
@@ -42,21 +78,15 @@ export function usePagedList<T>(
     }
   }
 
-  async function loadMore() {
-    if (loading.value || loadingMore.value || !hasMore.value) return;
-    const id = seq;
-    loadingMore.value = true;
-    try {
-      const rows = await fetchPage(pageSize, items.value.length);
-      // Ignore stale pages that raced with a filter/search change.
-      if (id !== seq) return;
-      items.value.push(...rows);
-      lastPageCount.value = rows.length;
-    } catch (e) {
-      if (id === seq) onError(e);
-    } finally {
-      if (id === seq) loadingMore.value = false;
-    }
+  function reload(): Promise<void> {
+    return load(1);
+  }
+
+  async function goToPage(n: number): Promise<void> {
+    if (loading.value || n < 1 || n > totalPages.value) return;
+    const target = Math.max(1, Math.min(n, totalPages.value));
+    if (target === page.value) return;
+    await load(target);
   }
 
   function debouncedReload() {
@@ -70,6 +100,7 @@ export function usePagedList<T>(
   if (resetSources.length) {
     watch(resetSources, debouncedReload, { deep: true });
   }
+  watch(size, debouncedReload);
 
-  return { items, loading, loadingMore, hasMore, reload, loadMore };
+  return { items, loading, page, size, totalItems, reload, goToPage };
 }

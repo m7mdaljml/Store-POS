@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use tauri::{AppHandle, Manager, Runtime};
 
+use super::Page;
 use crate::db;
 
 #[derive(Debug, Serialize)]
@@ -452,7 +453,7 @@ pub async fn list_stock_movements<R: Runtime>(
     search: Option<String>,
     limit: Option<i64>,
     offset: Option<i64>,
-) -> Result<Vec<StockMovement>, String> {
+) -> Result<Page<StockMovement>, String> {
     let pool = db::pool(&app).await?;
 
     let pattern = search
@@ -501,7 +502,7 @@ pub async fn list_stock_movements<R: Runtime>(
         .await
         .map_err(|e| e.to_string())?;
 
-    Ok(rows
+    let items: Vec<StockMovement> = rows
         .into_iter()
         .map(|r| StockMovement {
             id: r.get(0),
@@ -513,7 +514,32 @@ pub async fn list_stock_movements<R: Runtime>(
             user_name: r.get(6),
             created_at: r.get(7),
         })
-        .collect())
+        .collect();
+
+    let count_sql = format!(
+        "SELECT COUNT(*) FROM stock_movements sm
+         JOIN products p ON p.id = sm.product_id
+         LEFT JOIN users u ON u.id = sm.user_id
+         {where_clause}"
+    );
+    let mut count_query = sqlx::query_scalar::<_, i64>(&count_sql);
+    if movement_type.is_some() {
+        count_query = count_query.bind(&movement_type);
+    }
+    if product_id.is_some() {
+        count_query = count_query.bind(&product_id);
+    }
+    if pattern.is_some() {
+        for _ in 0..3 {
+            count_query = count_query.bind(&pattern);
+        }
+    }
+    let total = count_query
+        .fetch_one(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(Page { items, total })
 }
 
 #[derive(Serialize)]

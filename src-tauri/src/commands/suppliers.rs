@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use tauri::{AppHandle, Runtime};
 
+use super::Page;
 use crate::db;
 
 #[derive(Debug, Serialize)]
@@ -52,7 +53,7 @@ pub async fn list_suppliers<R: Runtime>(
     search: Option<String>,
     limit: Option<i64>,
     offset: Option<i64>,
-) -> Result<Vec<SupplierRecord>, String> {
+) -> Result<Page<SupplierRecord>, String> {
     let pool = db::pool(&app).await?;
 
     let pattern = search
@@ -91,8 +92,9 @@ pub async fn list_suppliers<R: Runtime>(
         .await
         .map_err(|e| e.to_string())?;
 
-    rows.into_iter()
-        .map(|row| {
+    let items: Vec<SupplierRecord> = rows
+        .into_iter()
+        .map(|row| -> Result<SupplierRecord, String> {
             Ok(SupplierRecord {
                 id: row.try_get("id").map_err(|e| e.to_string())?,
                 name: row.try_get("name").map_err(|e| e.to_string())?,
@@ -107,7 +109,21 @@ pub async fn list_suppliers<R: Runtime>(
                 total_due: row.try_get("total_due").map_err(|e| e.to_string())?,
             })
         })
-        .collect()
+        .collect::<Result<Vec<_>, String>>()?;
+
+    let count_sql = format!("SELECT COUNT(*) FROM suppliers s{search_cond}");
+    let mut count_query = sqlx::query_scalar::<_, i64>(&count_sql);
+    if let Some(p) = &pattern {
+        for _ in 0..5 {
+            count_query = count_query.bind(p);
+        }
+    }
+    let total = count_query
+        .fetch_one(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(Page { items, total })
 }
 
 #[derive(Debug, Serialize)]

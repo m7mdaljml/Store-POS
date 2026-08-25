@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use tauri::{AppHandle, Runtime};
 
+use super::Page;
 use crate::db;
 
 #[derive(Clone, Debug, Deserialize)]
@@ -239,7 +240,7 @@ pub async fn query_open_session(
 pub async fn query_sessions(
     pool: &sqlx::SqlitePool,
     input: ListSessionsInput,
-) -> Result<Vec<SaleSession>, String> {
+) -> Result<Page<SaleSession>, String> {
     let limit = input.limit.unwrap_or(50).max(1).min(500);
     let offset = input.offset.unwrap_or(0).max(0);
 
@@ -270,11 +271,29 @@ pub async fn query_sessions(
         .fetch_all(pool)
         .await
         .map_err(|e| e.to_string())?;
+    let total: i64 = {
+        let count_sql = format!(
+            "SELECT COUNT(*) FROM sale_sessions ss
+             LEFT JOIN users u ON u.id = ss.user_id
+             WHERE (? IS NULL OR ss.status = ?){search_cond}"
+        );
+        let mut count_query = sqlx::query_scalar::<_, i64>(&count_sql)
+            .bind(&input.status)
+            .bind(&input.status);
+        if let Some(p) = &pattern {
+            count_query = count_query.bind(p).bind(p).bind(p);
+        }
+        count_query
+            .fetch_one(pool)
+            .await
+            .map_err(|e| e.to_string())?
+    };
+
     let mut out = Vec::with_capacity(rows.len());
     for row in rows {
         out.push(map_session(&row)?);
     }
-    Ok(out)
+    Ok(Page { items: out, total })
 }
 
 #[tauri::command]
@@ -307,7 +326,7 @@ pub async fn get_open_session<R: Runtime>(
 pub async fn list_sessions<R: Runtime>(
     app: AppHandle<R>,
     input: Option<ListSessionsInput>,
-) -> Result<Vec<SaleSession>, String> {
+) -> Result<Page<SaleSession>, String> {
     let pool = db::pool(&app).await?;
     query_sessions(
         &pool,
@@ -572,7 +591,8 @@ mod tests {
             },
         )
         .await
-        .unwrap();
+        .unwrap()
+        .items;
         assert_eq!(all.len(), 1);
 
         let closed_only = query_sessions(
@@ -585,7 +605,8 @@ mod tests {
             },
         )
         .await
-        .unwrap();
+        .unwrap()
+        .items;
         assert!(closed_only.is_empty());
     }
 

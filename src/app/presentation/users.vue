@@ -133,24 +133,13 @@
           </tbody>
         </table>
       </div>
-      <div
-        v-if="hasMore && !loading"
-        class="text-center border-top py-2"
-      >
-        <button
-          class="btn btn-sm btn-outline-secondary"
-          type="button"
-          :disabled="loadingMore"
-          @click="loadMore"
-        >
-          <span
-            v-if="loadingMore"
-            class="spinner-border spinner-border-sm mx-1"
-            role="status"
-          ></span>
-          {{ t("common.loadMore") }}
-        </button>
-      </div>
+      <Paginator
+        :page="page"
+        :page-size="size"
+        :total-items="totalItems"
+        :disabled="loading"
+        @update:page="goToPage"
+      />
     </div>
 
     <div v-if="showAdd" class="modal-backdrop show"></div>
@@ -215,16 +204,14 @@
                 <label class="form-label" for="new-role">{{
                   t("users.role")
                 }}</label>
-                <select
+                <AppSelect
                   id="new-role"
                   v-model="addForm.roleId"
-                  class="form-select"
+                  :items="roles"
+                  :option-label="(r) => roleLabel(r.name)"
+                  :option-value="(r) => r.id"
                   :class="{ 'is-invalid': addErrors.roleId }"
-                >
-                  <option v-for="r in roles" :key="r.id" :value="r.id">
-                    {{ roleLabel(r.name) }}
-                  </option>
-                </select>
+                />
                 <div class="invalid-feedback">{{ addErrors.roleId }}</div>
               </div>
               <div
@@ -315,15 +302,13 @@
                 <label class="form-label" for="edit-role">{{
                   t("users.role")
                 }}</label>
-                <select
+                <AppSelect
                   id="edit-role"
                   v-model="editForm.roleId"
-                  class="form-select"
-                >
-                  <option v-for="r in roles" :key="r.id" :value="r.id">
-                    {{ roleLabel(r.name) }}
-                  </option>
-                </select>
+                  :items="roles"
+                  :option-label="(r) => roleLabel(r.name)"
+                  :option-value="(r) => r.id"
+                />
               </div>
               <hr />
               <div class="mb-2 fw-semibold small text-muted">
@@ -382,12 +367,14 @@ import { invoke } from "@tauri-apps/api/core";
 import { useI18n } from "vue-i18n";
 import EmptyState from "../../components/EmptyState.vue";
 import AsyncButton from "../../components/AsyncButton.vue";
+import Paginator from "../../components/Paginator.vue";
+import AppSelect from "../../components/AppSelect.vue";
 import {
   applyFieldRules,
   clearFieldError,
   useFormGuard,
 } from "../../composables/useFormGuard";
-import { usePagedList } from "../../composables/usePagedList";
+import { usePagedList, type Paged } from "../../composables/usePagedList";
 import { useToast } from "../../composables/useToast";
 import { useConfirm } from "../../composables/useConfirm";
 import { useAuth } from "../../composables/useAuth";
@@ -419,13 +406,14 @@ const permissions = ref<string[]>([]);
 const {
   items: users,
   loading,
-  loadingMore,
-  hasMore,
+  page,
+  size,
+  totalItems,
+  goToPage,
   reload: reloadUsers,
-  loadMore,
 } = usePagedList<UserRecord>(
   (limit, offset) =>
-    invoke<UserRecord[]>("list_users", {
+    invoke<Paged<UserRecord>>("list_users", {
       search: search.value.trim() || null,
       limit,
       offset,

@@ -106,17 +106,16 @@
           <option value="in">{{ t("expenses.incomingStockIn") }}</option>
           <option value="out">{{ t("expenses.outgoingMoneyOut") }}</option>
         </select>
-        <select
+        <AppSelect
           v-model="filters.supplierId"
-          class="form-select form-select-sm"
-          style="width: auto"
+          sm
+          class="app-select-inline"
+          :items="suppliers"
+          :option-label="(s) => s.name"
+          :option-value="(s) => s.id"
+          :placeholder="t('expenses.allSuppliers')"
           :aria-label="t('expenses.filterSupplierAria')"
-        >
-          <option :value="null">{{ t("expenses.allSuppliers") }}</option>
-          <option v-for="s in suppliers" :key="s.id" :value="s.id">
-            {{ s.name }}
-          </option>
-        </select>
+        />
         <select
           v-model="filters.status"
           class="form-select form-select-sm"
@@ -253,21 +252,13 @@
           </tbody>
         </table>
       </div>
-      <div v-if="hasMore && !loading" class="text-center border-top py-2">
-        <button
-          class="btn btn-sm btn-outline-secondary"
-          type="button"
-          :disabled="loadingMore"
-          @click="loadMore"
-        >
-          <span
-            v-if="loadingMore"
-            class="spinner-border spinner-border-sm mx-1"
-            role="status"
-          ></span>
-          {{ t("common.loadMore") }}
-        </button>
-      </div>
+      <Paginator
+        :page="page"
+        :page-size="size"
+        :total-items="totalItems"
+        :disabled="loading"
+        @update:page="goToPage"
+      />
     </div>
 
     <div v-if="showModal" class="modal-backdrop show"></div>
@@ -315,16 +306,13 @@
                   <label class="form-label" for="e-cat">{{
                     t("expenses.category")
                   }}</label>
-                  <select
+                  <AppSelect
                     id="e-cat"
                     v-model="form.categoryId"
-                    class="form-select"
-                  >
-                    <option :value="null">{{ t("common.none") }}</option>
-                    <option v-for="c in categories" :key="c.id" :value="c.id">
-                      {{ c.name }}
-                    </option>
-                  </select>
+                    :items="categoryOptions"
+                    :option-label="(c) => c.name"
+                    :option-value="(c) => c.id"
+                  />
                 </div>
                 <div class="col-md-6">
                   <label class="form-label" for="e-date">{{
@@ -475,12 +463,14 @@ import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { useI18n } from "vue-i18n";
 import EmptyState from "../../components/EmptyState.vue";
 import AsyncButton from "../../components/AsyncButton.vue";
+import Paginator from "../../components/Paginator.vue";
+import AppSelect from "../../components/AppSelect.vue";
 import {
   applyFieldRules,
   clearFieldError,
   useFormGuard,
 } from "../../composables/useFormGuard";
-import { usePagedList } from "../../composables/usePagedList";
+import { usePagedList, type Paged } from "../../composables/usePagedList";
 import { useToast } from "../../composables/useToast";
 import { useConfirm } from "../../composables/useConfirm";
 import { useSettingsStore } from "../../stores/settings";
@@ -517,13 +507,14 @@ const filters = ref({
 const {
   items: expenses,
   loading,
-  loadingMore,
-  hasMore,
+  page,
+  size,
+  totalItems,
+  goToPage,
   reload: reloadExpenses,
-  loadMore,
 } = usePagedList<ExpenseRecord>(
   (limit, offset) =>
-    invoke<ExpenseRecord[]>("list_expenses", {
+    invoke<Paged<ExpenseRecord>>("list_expenses", {
       ...filterBase(),
       search: search.value.trim() || null,
       limit,
@@ -591,20 +582,26 @@ function filterBase() {
 async function loadMeta() {
   try {
     const [s, c, sum] = await Promise.all([
-      invoke<Supplier[]>("list_suppliers"),
+      invoke<Paged<Supplier>>("list_suppliers"),
       invoke<ExpenseCategory[]>("list_expense_categories"),
       invoke<ExpenseSummary>("expense_summary", {
         from: filters.value.from || null,
         to: filters.value.to || null,
       }),
     ]);
-    suppliers.value = s;
+    suppliers.value = s.items;
     categories.value = c;
     summary.value = sum;
   } catch (e) {
     toast.error(e instanceof Error ? e.message : String(e));
   }
 }
+
+/** Category dropdown options: a leading "None" entry plus the DB list. */
+const categoryOptions = computed<{ id: number | null; name: string }[]>(() => [
+  { id: null, name: t("common.none") },
+  ...categories.value.map((c) => ({ id: c.id, name: c.name })),
+]);
 
 function openAdd() {
   formError.value = "";
@@ -744,3 +741,11 @@ onMounted(async () => {
   await Promise.allSettled([reloadExpenses(), loadMeta(), settings.load()]);
 });
 </script>
+
+<style scoped>
+.app-select-inline {
+  width: auto;
+  min-width: 200px;
+  max-width: 260px;
+}
+</style>

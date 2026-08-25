@@ -397,6 +397,22 @@
           </select>
         </div>
         <div class="col-md-4">
+          <label class="form-label fw-semibold" for="pref-page-size">{{
+            t("settings.pageSize")
+          }}</label>
+          <select
+            id="pref-page-size"
+            class="form-select"
+            :value="settings.pageSize"
+            @change="onPageSizeChange"
+          >
+            <option v-for="opt in PAGE_SIZE_OPTIONS" :key="opt" :value="opt">
+              {{ opt }}
+            </option>
+          </select>
+          <div class="form-text">{{ t("settings.pageSizeHint") }}</div>
+        </div>
+        <div class="col-md-4">
           <span class="form-label d-block fw-semibold">{{
             t("settings.sounds")
           }}</span>
@@ -1090,7 +1106,7 @@ import { useConfirm } from "../../composables/useConfirm";
 import { closeDb, execute, insert, select, selectOne } from "../../lib/db";
 import { baseCurrencySymbol, formatMoney, loadBaseCurrencySymbol } from "../../lib/currency";
 import { useAuthStore } from "../../stores/auth";
-import { useSettingsStore } from "../../stores/settings";
+import { useSettingsStore, PAGE_SIZE_OPTIONS } from "../../stores/settings";
 import { useThemeStore } from "../../stores/theme";
 import { setLocale, type Locale } from "../../i18n";
 import type {
@@ -1585,6 +1601,14 @@ watch(
 function onLangChange(e: Event) {
   setLocale((e.target as HTMLSelectElement).value as Locale);
   flash(t("settings.saved"));
+}
+
+function onPageSizeChange(e: Event) {
+  const value = Number((e.target as HTMLSelectElement).value);
+  void settings
+    .setValue("page_size", String(value))
+    .then(() => flash(t("settings.saved")))
+    .catch((err: unknown) => fail(String(err)));
 }
 
 function onSoundToggle(e: Event) {

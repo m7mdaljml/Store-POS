@@ -2,6 +2,7 @@
 use sqlx::Row;
 use tauri::{AppHandle, Runtime};
 
+use super::Page;
 use crate::db;
 
 #[derive(Clone, Debug, Deserialize)]
@@ -982,7 +983,7 @@ pub async fn void_sale<R: Runtime>(
 pub async fn list_sales<R: Runtime>(
     app: AppHandle<R>,
     input: Option<ListSalesInput>,
-) -> Result<Vec<SaleRecord>, String> {
+) -> Result<Page<SaleRecord>, String> {
     let pool = db::pool(&app).await?;
     query_sales(
         &pool,
@@ -999,7 +1000,7 @@ pub async fn list_sales<R: Runtime>(
 pub async fn query_sales(
     pool: &sqlx::SqlitePool,
     input: ListSalesInput,
-) -> Result<Vec<SaleRecord>, String> {
+) -> Result<Page<SaleRecord>, String> {
     let limit = input.limit.unwrap_or(100).max(1).min(500);
     let offset = input.offset.unwrap_or(0).max(0);
 
@@ -1040,6 +1041,23 @@ pub async fn query_sales(
     .await
     .map_err(|e| e.to_string())?;
 
+    let total: i64 = sqlx::query_scalar(&format!(
+        "SELECT COUNT(*) FROM sales s
+         LEFT JOIN users u ON u.id = s.user_id
+         LEFT JOIN customers c ON c.id = s.customer_id
+         WHERE (? IS NULL OR s.status = ?){search_cond}"
+    ))
+    .bind(&input.status)
+    .bind(&input.status)
+    .bind(&pattern)
+    .bind(&pattern)
+    .bind(&pattern)
+    .bind(&pattern)
+    .bind(&pattern)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
     let mut out = Vec::with_capacity(rows.len());
     for row in rows {
         out.push(SaleRecord {
@@ -1056,7 +1074,7 @@ pub async fn query_sales(
             refunded_amount: row.try_get("refunded_amount").map_err(|e| e.to_string())?,
         });
     }
-    Ok(out)
+    Ok(Page { items: out, total })
 }
 
 /// Loads a completed sale with the quantity already refunded on every line so
@@ -2320,7 +2338,8 @@ mod tests {
             },
         )
         .await
-        .unwrap();
+        .unwrap()
+        .items;
         assert_eq!(all.len(), 1);
         assert_eq!(all[0].sale_no, "S-000001");
         assert_eq!(all[0].status, "voided");
@@ -2337,7 +2356,8 @@ mod tests {
             },
         )
         .await
-        .unwrap();
+        .unwrap()
+        .items;
         assert!(completed.is_empty());
     }
 

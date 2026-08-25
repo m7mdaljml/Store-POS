@@ -3,6 +3,10 @@ import { defineStore } from "pinia";
 import { execute, select } from "../lib/db";
 import type { SettingsMap } from "../types";
 
+/** Allowed rows-per-page values for list screens. */
+export const PAGE_SIZE_OPTIONS = [5, 10, 20, 100];
+const DEFAULT_PAGE_SIZE = 20;
+
 export const useSettingsStore = defineStore("settings", () => {
   const values = ref<SettingsMap>({});
   const loaded = ref(false);
@@ -27,6 +31,11 @@ export const useSettingsStore = defineStore("settings", () => {
     () => (values.value["receipt_format"] as "thermal" | "a4") ?? "thermal",
   );
   const soundEnabled = computed(() => values.value["sound_enabled"] === "1");
+  /** Rows per page shown in list screens (user preference). */
+  const pageSize = computed(() => {
+    const n = Number(values.value["page_size"]);
+    return PAGE_SIZE_OPTIONS.includes(n) ? n : DEFAULT_PAGE_SIZE;
+  });
 
   async function load() {
     const rows = await select<{ key: string; value: string }>(
@@ -68,6 +77,7 @@ export const useSettingsStore = defineStore("settings", () => {
     receiptLogoPos,
     receiptFormat,
     soundEnabled,
+    pageSize,
     load,
     setValue,
   };

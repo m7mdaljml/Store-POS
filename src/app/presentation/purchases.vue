@@ -88,21 +88,13 @@
           </tbody>
         </table>
       </div>
-      <div v-if="hasMore && !loading" class="text-center border-top py-2">
-        <button
-          class="btn btn-sm btn-outline-secondary"
-          type="button"
-          :disabled="loadingMore"
-          @click="loadMore"
-        >
-          <span
-            v-if="loadingMore"
-            class="spinner-border spinner-border-sm mx-1"
-            role="status"
-          ></span>
-          {{ t("common.loadMore") }}
-        </button>
-      </div>
+      <Paginator
+        :page="page"
+        :page-size="size"
+        :total-items="totalItems"
+        :disabled="loading"
+        @update:page="goToPage"
+      />
     </div>
 
     <div v-if="showModal" class="modal-backdrop show"></div>
@@ -133,20 +125,16 @@
                   <label class="form-label" for="pi-supplier"
                     >{{ t("purchases.supplier") }} *</label
                   >
-                  <select
+                  <AppSelect
                     id="pi-supplier"
                     v-model="form.supplierId"
-                    class="form-select"
+                    :items="suppliers"
+                    :option-label="(s) => s.name"
+                    :option-value="(s) => s.id"
+                    :placeholder="t('purchases.selectSupplier')"
                     :class="{ 'is-invalid': errors.supplierId }"
-                    @change="clearFieldError(errors, 'supplierId')"
-                  >
-                    <option :value="null">
-                      {{ t("purchases.selectSupplier") }}
-                    </option>
-                    <option v-for="s in suppliers" :key="s.id" :value="s.id">
-                      {{ s.name }}
-                    </option>
-                  </select>
+                    @update:model-value="clearFieldError(errors, 'supplierId')"
+                  />
                   <div class="invalid-feedback">{{ errors.supplierId }}</div>
                 </div>
                 <div class="col-md-6">
@@ -195,27 +183,20 @@
                 class="row g-2 align-items-center invoice-line"
               >
                 <div class="col-6">
-                  <select
-                    class="form-select form-select-sm"
-                    :value="line.productId ?? ''"
-                    @change="
-                      (e) => {
-                        line.productId = (e.target as HTMLSelectElement).value
-                          ? Number((e.target as HTMLSelectElement).value)
-                          : null;
+                  <AppSelect
+                    sm
+                    :model-value="line.productId"
+                    :items="activeProducts"
+                    :option-label="(p) => p.name"
+                    :option-value="(p) => p.id"
+                    :placeholder="t('purchases.selectProduct')"
+                    @update:model-value="
+                      (v) => {
+                        line.productId = v == null ? null : Number(v);
                         onProductChange(line);
                       }
                     "
-                  >
-                    <option value="">{{ t("purchases.selectProduct") }}</option>
-                    <option
-                      v-for="p in activeProducts"
-                      :key="p.id"
-                      :value="p.id"
-                    >
-                      {{ p.name }}
-                    </option>
-                  </select>
+                  />
                 </div>
                 <div class="col-2">
                   <input
@@ -477,8 +458,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { useI18n } from "vue-i18n";
 import EmptyState from "../../components/EmptyState.vue";
 import AsyncButton from "../../components/AsyncButton.vue";
+import Paginator from "../../components/Paginator.vue";
+import AppSelect from "../../components/AppSelect.vue";
 import { clearFieldError, useFormGuard } from "../../composables/useFormGuard";
-import { usePagedList } from "../../composables/usePagedList";
+import { usePagedList, type Paged } from "../../composables/usePagedList";
 import { useToast } from "../../composables/useToast";
 import { useCatalogStore } from "../../stores/catalog";
 import { useSettingsStore } from "../../stores/settings";
@@ -505,13 +488,14 @@ const search = ref("");
 const {
   items: invoices,
   loading,
-  loadingMore,
-  hasMore,
+  page,
+  size,
+  totalItems,
+  goToPage,
   reload: reloadInvoices,
-  loadMore,
 } = usePagedList<SupplierInvoice>(
   (limit, offset) =>
-    invoke<SupplierInvoice[]>("list_supplier_invoices", {
+    invoke<Paged<SupplierInvoice>>("list_supplier_invoices", {
       search: search.value.trim() || null,
       limit,
       offset,
@@ -522,7 +506,7 @@ const {
 
 async function loadSuppliers() {
   try {
-    suppliers.value = await invoke<Supplier[]>("list_suppliers");
+    suppliers.value = (await invoke<Paged<Supplier>>("list_suppliers")).items;
   } catch (e) {
     toast.error(e instanceof Error ? e.message : String(e));
   }

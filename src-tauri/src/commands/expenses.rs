@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use tauri::{AppHandle, Runtime};
 
+use super::Page;
 use crate::db;
 
 #[derive(Debug, Serialize)]
@@ -303,7 +304,7 @@ pub async fn query_expenses(
     search: &Option<String>,
     limit: Option<i64>,
     offset: Option<i64>,
-) -> Result<Vec<ExpenseRecord>, String> {
+) -> Result<Page<ExpenseRecord>, String> {
     let show_in = kind.as_deref().map_or(true, |k| k == "in");
     let show_out = kind.as_deref().map_or(true, |k| k == "out");
 
@@ -324,20 +325,33 @@ pub async fn query_expenses(
         records.extend(list_out_expenses(pool, from, to, &pattern).await?);
     }
     records.sort_by(|a, b| b.date.cmp(&a.date).then(b.id.cmp(&a.id)));
+    let total = records.len() as i64;
 
     if limit.is_none() && offset.unwrap_or(0) == 0 {
-        return Ok(records);
+        return Ok(Page {
+            items: records,
+            total,
+        });
     }
     let start = offset.unwrap_or(0).max(0) as usize;
     if start >= records.len() {
-        return Ok(Vec::new());
+        return Ok(Page {
+            items: Vec::new(),
+            total,
+        });
     }
     match limit {
         Some(l) => {
             let end = (start + l.max(1) as usize).min(records.len());
-            Ok(records[start..end].to_vec())
+            Ok(Page {
+                items: records[start..end].to_vec(),
+                total,
+            })
         }
-        None => Ok(records[start..].to_vec()),
+        None => Ok(Page {
+            items: records[start..].to_vec(),
+            total,
+        }),
     }
 }
 
@@ -352,7 +366,7 @@ pub async fn list_expenses<R: Runtime>(
     search: Option<String>,
     limit: Option<i64>,
     offset: Option<i64>,
-) -> Result<Vec<ExpenseRecord>, String> {
+) -> Result<Page<ExpenseRecord>, String> {
     let kind = kind.map(|k| k.to_lowercase());
     if let Some(k) = &kind {
         if k != "in" && k != "out" {
@@ -551,7 +565,8 @@ pub async fn export_expenses<R: Runtime>(
     let pool = db::pool(&app).await?;
     let records =
         query_expenses(&pool, &kind, &supplier_id, &status, &from, &to, &None, None, None)
-            .await?;
+            .await?
+            .items;
     let rows = expense_records_to_rows(&records);
     crate::export::write_xlsx(
         std::path::Path::new(&path),
@@ -846,7 +861,8 @@ pub(crate) mod tests {
         let records =
             query_expenses(&pool, &None, &None, &None, &None, &None, &None, None, None)
                 .await
-                .unwrap();
+                .unwrap()
+                .items;
         assert_eq!(records.len(), 2);
 
         let xlsx_path = temp_db("export-file").with_extension("xlsx");

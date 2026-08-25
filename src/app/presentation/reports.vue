@@ -1,8 +1,12 @@
 <template>
   <div>
     <div class="d-flex align-items-center justify-content-between mb-3">
-      <h1 class="h4 mb-0">{{ t("reports.title") }}</h1>
-      <div class="d-flex flex-wrap align-items-center gap-2">
+      <h1 class="h4 mb-0 d-flex align-self-baseline">
+        {{ t("reports.title") }}
+      </h1>
+      <div
+        class="d-flex flex-wrap align-items-center gap-2 justify-content-end"
+      >
         <div
           class="btn-group btn-group-sm"
           role="group"
@@ -239,26 +243,26 @@
         <div class="card-body py-2">
           <div class="row g-2 align-items-center">
             <div class="col-auto">
-              <select
-                v-model.number="salesFilters.cashierId"
-                class="form-select form-select-sm"
-              >
-                <option :value="null">{{ t("reports.cashierAll") }}</option>
-                <option v-for="u in cashiers" :key="u.id" :value="u.id">
-                  {{ u.fullName }}
-                </option>
-              </select>
+              <AppSelect
+                v-model="salesFilters.cashierId"
+                sm
+                class="app-select-inline"
+                :items="cashiers"
+                :option-label="(u) => u.fullName"
+                :option-value="(u) => u.id"
+                :placeholder="t('reports.cashierAll')"
+              />
             </div>
             <div class="col-auto">
-              <select
-                v-model.number="salesFilters.customerId"
-                class="form-select form-select-sm"
-              >
-                <option :value="null">{{ t("reports.customerAll") }}</option>
-                <option v-for="c in customerOptions" :key="c.id" :value="c.id">
-                  {{ customerLabel(c) }}
-                </option>
-              </select>
+              <AppSelect
+                v-model="salesFilters.customerId"
+                sm
+                class="app-select-inline"
+                :items="customerOptions"
+                :option-label="customerLabel"
+                :option-value="(c) => c.id"
+                :placeholder="t('reports.customerAll')"
+              />
             </div>
             <div class="col-auto">
               <div class="form-check mb-0">
@@ -355,7 +359,11 @@
                 </td>
                 <td
                   class="text-end fw-semibold"
-                  :title="r.refunded ? `${fmt(r.total)} − ${fmt(r.refunded)}` : undefined"
+                  :title="
+                    r.refunded
+                      ? `${fmt(r.total)} − ${fmt(r.refunded)}`
+                      : undefined
+                  "
                 >
                   {{ fmt(r.total - Math.min(r.refunded, r.total)) }}
                 </td>
@@ -589,21 +597,11 @@
             </tbody>
           </table>
         </div>
-        <div
-          v-if="visibleInventory.length < filteredInventory.length"
-          class="text-center border-top py-2"
-        >
-          <button
-            class="btn btn-sm btn-outline-secondary"
-            type="button"
-            @click="showMoreInventory"
-          >
-            {{ t("common.loadMore") }}
-            <span class="text-muted small mx-1">
-              ({{ visibleInventory.length }}/{{ filteredInventory.length }})
-            </span>
-          </button>
-        </div>
+        <Paginator
+          v-model:page="inventoryPage"
+          :total-items="filteredInventory.length"
+          :page-size="settings.pageSize"
+        />
       </div>
     </template>
 
@@ -809,8 +807,11 @@ import Chart from "chart.js/auto";
 import { useI18n } from "vue-i18n";
 import EmptyState from "../../components/EmptyState.vue";
 import AsyncButton from "../../components/AsyncButton.vue";
+import Paginator from "../../components/Paginator.vue";
+import AppSelect from "../../components/AppSelect.vue";
 import { useSettingsStore } from "../../stores/settings";
 import { useToast } from "../../composables/useToast";
+import type { Paged } from "../../composables/usePagedList";
 import { select } from "../../lib/db";
 import { formatMoney } from "../../lib/currency";
 import emptySales from "../../assets/empty/sales.svg";
@@ -1029,7 +1030,9 @@ async function loadMargins() {
 async function loadMovements() {
   movementsLoading.value = true;
   try {
-    movements.value = await invoke<StockMovement[]>("list_stock_movements");
+    movements.value = (
+      await invoke<Paged<StockMovement>>("list_stock_movements")
+    ).items;
   } catch (e) {
     toast.error(String(e));
   } finally {
@@ -1213,18 +1216,15 @@ const filteredInventory = computed(() => {
 
 // Client-side windowing: the whole report is fetched at once, so paginate in
 // the UI to keep the table light.
-const INV_PAGE_SIZE = 20;
-const invVisibleCount = ref(INV_PAGE_SIZE);
-const visibleInventory = computed(() =>
-  filteredInventory.value.slice(0, invVisibleCount.value),
-);
+const inventoryPage = ref(1);
+const visibleInventory = computed(() => {
+  const size = settings.pageSize;
+  const start = (inventoryPage.value - 1) * size;
+  return filteredInventory.value.slice(start, start + size);
+});
 
-function showMoreInventory() {
-  invVisibleCount.value += INV_PAGE_SIZE;
-}
-
-watch([invSearch, invLowOnly], () => {
-  invVisibleCount.value = INV_PAGE_SIZE;
+watch([invSearch, invLowOnly, () => settings.pageSize], () => {
+  inventoryPage.value = 1;
 });
 
 const salesRows = computed(() => salesData.value?.rows ?? []);
@@ -1236,8 +1236,8 @@ onMounted(async () => {
   select<CustomerLite>(
     "SELECT id, name, phone FROM customers ORDER BY name",
   ).then((rows) => (customerOptions.value = rows));
-  invoke<UserRecord[]>("list_users")
-    .then((rows) => (cashiers.value = rows.filter((u) => u.isActive)))
+  invoke<Paged<UserRecord>>("list_users")
+    .then((page) => (cashiers.value = page.items.filter((u) => u.isActive)))
     .catch(() => undefined);
 });
 
@@ -1250,3 +1250,10 @@ watch(showMovements, (open) => {
   if (open && !movements.value.length) loadMovements();
 });
 </script>
+
+<style scoped>
+.app-select-inline {
+  width: 220px;
+  max-width: 260px;
+}
+</style>

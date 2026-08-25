@@ -243,21 +243,11 @@
             </tbody>
           </table>
         </div>
-        <div
-          v-if="visibleProducts.length < filteredProducts.length"
-          class="text-center border-top py-2"
-        >
-          <button
-            class="btn btn-sm btn-outline-secondary"
-            type="button"
-            @click="showMoreProducts"
-          >
-            {{ t("common.loadMore") }}
-            <span class="text-muted small mx-1">
-              ({{ visibleProducts.length }}/{{ filteredProducts.length }})
-            </span>
-          </button>
-        </div>
+        <Paginator
+          v-model:page="productPage"
+          :total-items="filteredProducts.length"
+          :page-size="settings.pageSize"
+        />
       </div>
     </div>
 
@@ -386,31 +376,25 @@
                   <label class="form-label" for="p-cat">{{
                     t("products.category")
                   }}</label>
-                  <select
+                  <AppSelect
                     id="p-cat"
                     v-model="form.categoryId"
-                    class="form-select"
-                  >
-                    <option :value="null">{{ t("common.none") }}</option>
-                    <option v-for="c in categories" :key="c.id" :value="c.id">
-                      {{ c.name }}
-                    </option>
-                  </select>
+                    :items="categoryFormOptions"
+                    :option-label="(c) => c.name"
+                    :option-value="(c) => c.id"
+                  />
                 </div>
                 <div class="col-md-6">
                   <label class="form-label" for="p-tax">{{
                     t("products.taxProfile")
                   }}</label>
-                  <select
+                  <AppSelect
                     id="p-tax"
                     v-model="form.taxProfileId"
-                    class="form-select"
-                  >
-                    <option :value="null">{{ t("products.noTax") }}</option>
-                    <option v-for="t in taxProfiles" :key="t.id" :value="t.id">
-                      {{ t.name }} ({{ t.rate }}%)
-                    </option>
-                  </select>
+                    :items="taxProfileOptions"
+                    :option-label="(tp) => tp.label"
+                    :option-value="(tp) => tp.id"
+                  />
                 </div>
                 <div class="col-md-4">
                   <label class="form-label" for="p-cost"
@@ -576,20 +560,13 @@
                     t("common.optional")
                   }}</span>
                 </label>
-                <select
+                <AppSelect
                   id="cat-parent"
                   v-model="catForm.parentId"
-                  class="form-select"
-                >
-                  <option :value="null">{{ t("common.none") }}</option>
-                  <option
-                    v-for="c in categories.filter((x) => x.id !== catEditingId)"
-                    :key="c.id"
-                    :value="c.id"
-                  >
-                    {{ c.name }}
-                  </option>
-                </select>
+                  :items="parentCategoryOptions"
+                  :option-label="(c) => c.name"
+                  :option-value="(c) => c.id"
+                />
               </div>
               <div
                 class="d-flex justify-content-end gap-2 mt-3 pt-3 border-top"
@@ -696,6 +673,8 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { useI18n } from "vue-i18n";
 import EmptyState from "../../components/EmptyState.vue";
 import AsyncButton from "../../components/AsyncButton.vue";
+import Paginator from "../../components/Paginator.vue";
+import AppSelect from "../../components/AppSelect.vue";
 import {
   applyFieldRules,
   clearFieldError,
@@ -782,6 +761,29 @@ const canAdjust = computed(
 
 const taxProfiles = ref<TaxProfile[]>([]);
 
+/** Dropdown option lists: a leading "None" entry plus the DB rows. */
+const categoryFormOptions = computed<{ id: number | null; name: string }[]>(
+  () => [
+    { id: null, name: t("common.none") },
+    ...categories.value.map((c) => ({ id: c.id, name: c.name })),
+  ],
+);
+const parentCategoryOptions = computed<{ id: number | null; name: string }[]>(
+  () => [
+    { id: null, name: t("common.none") },
+    ...categories.value
+      .filter((x) => x.id !== catEditingId.value)
+      .map((c) => ({ id: c.id, name: c.name })),
+  ],
+);
+const taxProfileOptions = computed<{ id: number | null; label: string }[]>(() => [
+  { id: null, label: t("products.noTax") },
+  ...taxProfiles.value.map((tp) => ({
+    id: tp.id,
+    label: `${tp.name} (${tp.rate}%)`,
+  })),
+]);
+
 const csvImporting = ref(false);
 const csvResult = ref<{
   imported: number;
@@ -829,22 +831,16 @@ const filteredProducts = computed(() => {
 
 // Client-side windowing: the catalog store is shared with checkout/purchases,
 // so this list is paginated in the UI instead of via SQL limits.
-const PAGE_SIZE = 20;
-const visibleCount = ref(PAGE_SIZE);
-const visibleProducts = computed(() =>
-  filteredProducts.value.slice(0, visibleCount.value),
-);
+const productPage = ref(1);
+const visibleProducts = computed(() => {
+  const size = settings.pageSize;
+  const start = (productPage.value - 1) * size;
+  return filteredProducts.value.slice(start, start + size);
+});
 
-function showMoreProducts() {
-  visibleCount.value += PAGE_SIZE;
-}
-
-watch(
-  [search, statusFilter, selected],
-  () => {
-    visibleCount.value = PAGE_SIZE;
-  },
-);
+watch([search, statusFilter, selected, () => settings.pageSize], () => {
+  productPage.value = 1;
+});
 
 const categoryName = (id: number | null) =>
   categories.value.find((c) => c.id === id)?.name ?? "—";

@@ -6,6 +6,7 @@ use sqlx::{Row, SqlitePool};
 use std::collections::HashMap;
 use tauri::{AppHandle, Runtime};
 
+use super::Page;
 use crate::db;
 
 #[derive(Debug, PartialEq, Serialize)]
@@ -421,7 +422,7 @@ pub async fn list_users<R: Runtime>(
     search: Option<String>,
     limit: Option<i64>,
     offset: Option<i64>,
-) -> Result<Vec<UserRecord>, String> {
+) -> Result<Page<UserRecord>, String> {
     let pool = db::pool(&app).await?;
 
     let pattern = search
@@ -470,9 +471,9 @@ pub async fn list_users<R: Runtime>(
         perms_by_role.entry(role_id).or_default().push(code);
     }
 
-    user_rows
+    let items: Vec<UserRecord> = user_rows
         .into_iter()
-        .map(|row| {
+        .map(|row| -> Result<UserRecord, String> {
             let role_id: i64 = row.try_get("role_id").map_err(|e| e.to_string())?;
             Ok(UserRecord {
                 id: row.try_get("id").map_err(|e| e.to_string())?,
@@ -487,7 +488,21 @@ pub async fn list_users<R: Runtime>(
                 permissions: perms_by_role.get(&role_id).cloned().unwrap_or_default(),
             })
         })
-        .collect()
+        .collect::<Result<Vec<_>, String>>()?;
+
+    let count_sql = format!(
+        "SELECT COUNT(*) FROM users u JOIN roles r ON r.id = u.role_id WHERE 1=1{search_cond}"
+    );
+    let mut count_query = sqlx::query_scalar::<_, i64>(&count_sql);
+    if let Some(p) = &pattern {
+        count_query = count_query.bind(p).bind(p);
+    }
+    let total = count_query
+        .fetch_one(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(Page { items, total })
 }
 
 #[cfg(test)]

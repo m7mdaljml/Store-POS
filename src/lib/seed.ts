@@ -31,6 +31,13 @@ export async function seedIfNeeded(): Promise<void> {
     await execute("INSERT INTO settings (key, value) VALUES ('sound_enabled', '1')");
   }
 
+  const pageSizeSetting = await selectOne<{ value: string }>(
+    "SELECT value FROM settings WHERE key = 'page_size'",
+  );
+  if (!pageSizeSetting) {
+    await execute("INSERT INTO settings (key, value) VALUES ('page_size', '20')");
+  }
+
   const baseCurrency = await selectOne<{ id: number }>(
     "SELECT id FROM currencies WHERE is_base = 1 LIMIT 1",
   );
