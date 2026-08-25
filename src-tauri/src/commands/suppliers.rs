@@ -206,9 +206,11 @@ pub async fn get_supplier<R: Runtime>(
 pub async fn create_supplier<R: Runtime>(
     app: AppHandle<R>,
     input: SupplierInput,
+    user_id: Option<i64>,
 ) -> Result<i64, String> {
     validate_supplier(&input)?;
     let pool = db::pool(&app).await?;
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
     let result = sqlx::query(
         "INSERT INTO suppliers (name, contact, phone, email, address, tax_id)
          VALUES (?, ?, ?, ?, ?, ?)",
@@ -219,10 +221,22 @@ pub async fn create_supplier<R: Runtime>(
     .bind(optional_field(&input.email))
     .bind(optional_field(&input.address))
     .bind(optional_field(&input.tax_id))
-    .execute(&pool)
+    .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
-    Ok(result.last_insert_rowid())
+    let id = result.last_insert_rowid();
+    sqlx::query(
+        "INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
+         VALUES (?, 'supplier.create', 'supplier', ?, ?)",
+    )
+    .bind(user_id)
+    .bind(id)
+    .bind(format!("Created supplier \"{}\"", input.name.trim()))
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+    tx.commit().await.map_err(|e| e.to_string())?;
+    Ok(id)
 }
 
 #[tauri::command]
@@ -230,9 +244,11 @@ pub async fn update_supplier<R: Runtime>(
     app: AppHandle<R>,
     supplier_id: i64,
     input: SupplierInput,
+    user_id: Option<i64>,
 ) -> Result<(), String> {
     validate_supplier(&input)?;
     let pool = db::pool(&app).await?;
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
     let result = sqlx::query(
         "UPDATE suppliers SET
             name = ?, contact = ?, phone = ?, email = ?, address = ?, tax_id = ?
@@ -245,12 +261,23 @@ pub async fn update_supplier<R: Runtime>(
     .bind(optional_field(&input.address))
     .bind(optional_field(&input.tax_id))
     .bind(supplier_id)
-    .execute(&pool)
+    .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
     if result.rows_affected() == 0 {
         return Err("Supplier not found".into());
     }
+    sqlx::query(
+        "INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
+         VALUES (?, 'supplier.update', 'supplier', ?, ?)",
+    )
+    .bind(user_id)
+    .bind(supplier_id)
+    .bind(format!("Updated supplier \"{}\"", input.name.trim()))
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+    tx.commit().await.map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -258,6 +285,7 @@ pub async fn update_supplier<R: Runtime>(
 pub async fn delete_supplier<R: Runtime>(
     app: AppHandle<R>,
     supplier_id: i64,
+    user_id: Option<i64>,
 ) -> Result<(), String> {
     let pool = db::pool(&app).await?;
     let invoices: (i64,) =
@@ -272,13 +300,31 @@ pub async fn delete_supplier<R: Runtime>(
                 .into(),
         );
     }
+    let name_row: Option<(String,)> = sqlx::query_as("SELECT name FROM suppliers WHERE id = ?")
+        .bind(supplier_id)
+        .fetch_optional(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    let supplier_name = name_row.map(|r| r.0).unwrap_or_default();
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
     let result = sqlx::query("DELETE FROM suppliers WHERE id = ?")
         .bind(supplier_id)
-        .execute(&pool)
+        .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
     if result.rows_affected() == 0 {
         return Err("Supplier not found".into());
     }
+    sqlx::query(
+        "INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
+         VALUES (?, 'supplier.delete', 'supplier', ?, ?)",
+    )
+    .bind(user_id)
+    .bind(supplier_id)
+    .bind(format!("Deleted supplier \"{supplier_name}\""))
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+    tx.commit().await.map_err(|e| e.to_string())?;
     Ok(())
 }

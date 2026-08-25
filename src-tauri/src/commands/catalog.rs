@@ -46,6 +46,7 @@ pub async fn create_category<R: Runtime>(
     app: AppHandle<R>,
     name: String,
     parent_id: Option<i64>,
+    user_id: Option<i64>,
 ) -> Result<i64, String> {
     let pool = db::pool(&app).await?;
     let name = name.trim().to_string();
@@ -60,13 +61,26 @@ pub async fn create_category<R: Runtime>(
     if exists.is_some() {
         return Err(format!("Category '{name}' already exists"));
     }
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
     let result = sqlx::query("INSERT INTO categories (name, parent_id) VALUES (?, ?)")
         .bind(&name)
         .bind(parent_id)
-        .execute(&pool)
+        .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
-    Ok(result.last_insert_rowid())
+    let id = result.last_insert_rowid();
+    sqlx::query(
+        "INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
+         VALUES (?, 'category.create', 'category', ?, ?)",
+    )
+    .bind(user_id)
+    .bind(id)
+    .bind(format!("Created category \"{name}\""))
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+    tx.commit().await.map_err(|e| e.to_string())?;
+    Ok(id)
 }
 
 #[tauri::command]
@@ -75,6 +89,7 @@ pub async fn update_category<R: Runtime>(
     category_id: i64,
     name: String,
     parent_id: Option<i64>,
+    user_id: Option<i64>,
 ) -> Result<(), String> {
     let pool = db::pool(&app).await?;
     let name = name.trim().to_string();
@@ -94,16 +109,28 @@ pub async fn update_category<R: Runtime>(
     if exists.is_some() {
         return Err(format!("Category '{name}' already exists"));
     }
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
     let result = sqlx::query("UPDATE categories SET name = ?, parent_id = ? WHERE id = ?")
         .bind(&name)
         .bind(parent_id)
         .bind(category_id)
-        .execute(&pool)
+        .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
     if result.rows_affected() == 0 {
         return Err("Category not found".into());
     }
+    sqlx::query(
+        "INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
+         VALUES (?, 'category.update', 'category', ?, ?)",
+    )
+    .bind(user_id)
+    .bind(category_id)
+    .bind(format!("Updated category \"{name}\""))
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+    tx.commit().await.map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -111,6 +138,7 @@ pub async fn update_category<R: Runtime>(
 pub async fn delete_category<R: Runtime>(
     app: AppHandle<R>,
     category_id: i64,
+    user_id: Option<i64>,
 ) -> Result<(), String> {
     let pool = db::pool(&app).await?;
     let products: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM products WHERE category_id = ?")
@@ -132,14 +160,32 @@ pub async fn delete_category<R: Runtime>(
     if sub.0 > 0 {
         return Err("This category has sub-categories. Remove them first.".into());
     }
+    let name_row: Option<(String,)> = sqlx::query_as("SELECT name FROM categories WHERE id = ?")
+        .bind(category_id)
+        .fetch_optional(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    let cat_name = name_row.map(|r| r.0).unwrap_or_default();
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
     let result = sqlx::query("DELETE FROM categories WHERE id = ?")
         .bind(category_id)
-        .execute(&pool)
+        .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
     if result.rows_affected() == 0 {
         return Err("Category not found".into());
     }
+    sqlx::query(
+        "INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
+         VALUES (?, 'category.delete', 'category', ?, ?)",
+    )
+    .bind(user_id)
+    .bind(category_id)
+    .bind(format!("Deleted category \"{cat_name}\""))
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+    tx.commit().await.map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -227,11 +273,13 @@ fn empty_to_none(value: &Option<String>) -> Option<String> {
 pub async fn create_product<R: Runtime>(
     app: AppHandle<R>,
     input: ProductInput,
+    user_id: Option<i64>,
 ) -> Result<i64, String> {
     let pool = db::pool(&app).await?;
     validate_product(&input)?;
     ensure_sku_unique(&pool, &input.sku, None).await?;
 
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
     let result = sqlx::query(
         "INSERT INTO products
             (sku, barcode, name, description, category_id, cost_price, sell_price,
@@ -251,10 +299,22 @@ pub async fn create_product<R: Runtime>(
     .bind(empty_to_none(&input.image_path))
     .bind(i64::from(input.is_active))
     .bind(i64::from(input.is_quick))
-    .execute(&pool)
+    .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
-    Ok(result.last_insert_rowid())
+    let id = result.last_insert_rowid();
+    sqlx::query(
+        "INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
+         VALUES (?, 'product.create', 'product', ?, ?)",
+    )
+    .bind(user_id)
+    .bind(id)
+    .bind(format!("Created product \"{}\"", input.name.trim()))
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+    tx.commit().await.map_err(|e| e.to_string())?;
+    Ok(id)
 }
 
 #[tauri::command]
@@ -262,11 +322,13 @@ pub async fn update_product<R: Runtime>(
     app: AppHandle<R>,
     product_id: i64,
     input: ProductInput,
+    user_id: Option<i64>,
 ) -> Result<(), String> {
     let pool = db::pool(&app).await?;
     validate_product(&input)?;
     ensure_sku_unique(&pool, &input.sku, Some(product_id)).await?;
 
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
     let result = sqlx::query(
         "UPDATE products SET
             sku = ?, barcode = ?, name = ?, description = ?, category_id = ?,
@@ -288,12 +350,23 @@ pub async fn update_product<R: Runtime>(
     .bind(i64::from(input.is_active))
     .bind(i64::from(input.is_quick))
     .bind(product_id)
-    .execute(&pool)
+    .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
     if result.rows_affected() == 0 {
         return Err("Product not found".into());
     }
+    sqlx::query(
+        "INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
+         VALUES (?, 'product.update', 'product', ?, ?)",
+    )
+    .bind(user_id)
+    .bind(product_id)
+    .bind(format!("Updated product \"{}\"", input.name.trim()))
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+    tx.commit().await.map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -302,22 +375,42 @@ pub async fn set_product_active<R: Runtime>(
     app: AppHandle<R>,
     product_id: i64,
     is_active: bool,
+    user_id: Option<i64>,
 ) -> Result<(), String> {
     let pool = db::pool(&app).await?;
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
     let result = sqlx::query("UPDATE products SET is_active = ? WHERE id = ?")
         .bind(i64::from(is_active))
         .bind(product_id)
-        .execute(&pool)
+        .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
     if result.rows_affected() == 0 {
         return Err("Product not found".into());
     }
+    let action = if is_active { "product.activate" } else { "product.deactivate" };
+    let detail = if is_active {
+        format!("Activated product {product_id}")
+    } else {
+        format!("Deactivated product {product_id}")
+    };
+    sqlx::query(
+        "INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
+         VALUES (?, ?, 'product', ?, ?)",
+    )
+    .bind(user_id)
+    .bind(action)
+    .bind(product_id)
+    .bind(detail)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+    tx.commit().await.map_err(|e| e.to_string())?;
     Ok(())
 }
 
 #[tauri::command]
-pub async fn delete_product<R: Runtime>(app: AppHandle<R>, product_id: i64) -> Result<(), String> {
+pub async fn delete_product<R: Runtime>(app: AppHandle<R>, product_id: i64, user_id: Option<i64>) -> Result<(), String> {
     let pool = db::pool(&app).await?;
     let sold: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM sale_items WHERE product_id = ?")
         .bind(product_id)
@@ -330,14 +423,32 @@ pub async fn delete_product<R: Runtime>(app: AppHandle<R>, product_id: i64) -> R
                 .into(),
         );
     }
+    let name_row: Option<(String,)> = sqlx::query_as("SELECT name FROM products WHERE id = ?")
+        .bind(product_id)
+        .fetch_optional(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    let prod_name = name_row.map(|r| r.0).unwrap_or_default();
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
     let result = sqlx::query("DELETE FROM products WHERE id = ?")
         .bind(product_id)
-        .execute(&pool)
+        .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
     if result.rows_affected() == 0 {
         return Err("Product not found".into());
     }
+    sqlx::query(
+        "INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
+         VALUES (?, 'product.delete', 'product', ?, ?)",
+    )
+    .bind(user_id)
+    .bind(product_id)
+    .bind(format!("Deleted product \"{prod_name}\""))
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+    tx.commit().await.map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -427,6 +538,17 @@ pub async fn adjust_stock<R: Runtime>(
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
+
+    sqlx::query(
+        "INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
+         VALUES (?, 'stock.adjust', 'product', ?, ?)",
+    )
+    .bind(user_id)
+    .bind(product_id)
+    .bind(format!("Stock adjusted from {current} to {new_qty}"))
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
 
     tx.commit().await.map_err(|e| e.to_string())?;
     Ok(())
@@ -617,6 +739,7 @@ fn validate_import_row(
 pub async fn import_products_csv<R: Runtime>(
     app: AppHandle<R>,
     source_path: String,
+    user_id: Option<i64>,
 ) -> Result<CsvImportResult, String> {
     let pool = db::pool(&app).await?;
     let mut reader = csv::ReaderBuilder::new()
@@ -803,6 +926,19 @@ pub async fn import_products_csv<R: Runtime>(
     }
 
     tx.commit().await.map_err(|e| e.to_string())?;
+
+    if result.imported > 0 {
+        sqlx::query(
+            "INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
+             VALUES (?, 'product.import', 'product', NULL, ?)",
+        )
+        .bind(user_id)
+        .bind(format!("Imported {} product(s) from CSV", result.imported))
+        .execute(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    }
+
     Ok(result)
 }
 

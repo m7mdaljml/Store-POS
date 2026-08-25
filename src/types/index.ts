@@ -463,3 +463,14 @@ export interface ExpenseSummary {
   incoming_count: number;
   outgoing_count: number;
 }
+
+export interface AuditLogEntry {
+  id: number;
+  userId: number | null;
+  userName: string | null;
+  action: string;
+  entityType: string | null;
+  entityId: number | null;
+  details: string | null;
+  createdAt: string;
+}

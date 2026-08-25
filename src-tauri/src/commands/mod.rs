@@ -5,6 +5,7 @@ pub mod backup;
 pub mod catalog;
 pub mod customers;
 pub mod expenses;
+pub mod logs;
 pub mod purchasing;
 pub mod reports;
 pub mod sales;

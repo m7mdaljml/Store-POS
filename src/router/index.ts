@@ -85,6 +85,12 @@ const routes = [
     component: () => import("../app/presentation/users.vue"),
     meta: { permission: "users.manage" },
   },
+  {
+    path: "/logs",
+    name: "logs",
+    component: () => import("../app/presentation/logs.vue"),
+    meta: { adminOnly: true },
+  },
 ];
 
 const router = createRouter({

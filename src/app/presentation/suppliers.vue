@@ -395,11 +395,13 @@ import { usePagedList, type Paged } from "../../composables/usePagedList";
 import { useToast } from "../../composables/useToast";
 import { useConfirm } from "../../composables/useConfirm";
 import { useSettingsStore } from "../../stores/settings";
+import { useAuth } from "../../composables/useAuth";
 import type { Supplier, SupplierDetail } from "../../types";
 import { formatMoney } from "../../lib/currency";
 import emptySuppliers from "../../assets/empty/suppliers.svg";
 
 const settings = useSettingsStore();
+const auth = useAuth();
 const toast = useToast();
 const { confirmDialog } = useConfirm();
 const { t, locale } = useI18n();
@@ -522,12 +524,13 @@ async function save() {
   saving.value = true;
   try {
     if (editingId.value == null) {
-      await invoke<number>("create_supplier", { input: payload() });
+      await invoke<number>("create_supplier", { input: payload(), userId: auth.user?.id ?? null });
       toast.success(t("suppliers.supplierAdded"));
     } else {
       await invoke("update_supplier", {
         supplierId: editingId.value,
         input: payload(),
+        userId: auth.user?.id ?? null,
       });
       toast.success(t("suppliers.supplierUpdated"));
     }
@@ -564,7 +567,7 @@ async function remove(s: Supplier) {
   )
     return;
   try {
-    await invoke("delete_supplier", { supplierId: s.id });
+    await invoke("delete_supplier", { supplierId: s.id, userId: auth.user?.id ?? null });
     toast.success(t("suppliers.supplierDeleted", { name: s.name }));
     await load();
   } catch (e) {

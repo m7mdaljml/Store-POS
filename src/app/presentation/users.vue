@@ -515,6 +515,7 @@ async function submitAdd() {
       password: addForm.value.password,
       fullName: addForm.value.fullName.trim(),
       roleId: addForm.value.roleId,
+      createdBy: auth.user?.id ?? null,
     });
     addGuard.markSaved();
     showAdd.value = false;
@@ -562,10 +563,12 @@ async function saveUser() {
       fullName: editForm.value.fullName.trim(),
       password: editForm.value.password || null,
       roleId: editForm.value.roleId,
+      updatedBy: auth.user?.id ?? null,
     });
     await invoke<string[]>("update_user_permissions", {
       userId: editTarget.value.id,
       permissionCodes: editSelection.value,
+      updatedBy: auth.user?.id ?? null,
     });
     editGuard.markSaved();
     editTarget.value = null;
@@ -586,7 +589,7 @@ async function deactivate(u: UserRecord) {
   )
     return;
   try {
-    await invoke("delete_user", { userId: u.id });
+    await invoke("delete_user", { userId: u.id, deletedBy: auth.user?.id ?? null });
     toast.success(t("users.deactivated2", { name: u.fullName }));
     await reloadUsers();
   } catch (e) {
@@ -596,7 +599,7 @@ async function deactivate(u: UserRecord) {
 
 async function activate(u: UserRecord) {
   try {
-    await invoke("set_user_active", { userId: u.id, active: true });
+    await invoke("set_user_active", { userId: u.id, active: true, toggledBy: auth.user?.id ?? null });
     toast.success(t("users.reactivated", { name: u.fullName }));
     await reloadUsers();
   } catch (e) {

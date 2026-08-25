@@ -801,6 +801,7 @@ async function importCsv() {
   try {
     csvResult.value = await invoke("import_products_csv", {
       sourcePath: filePath,
+      userId: auth.user?.id ?? null,
     });
     await Promise.all([loadCategories(), catalog.load()]);
   } catch (e) {
@@ -892,6 +893,7 @@ async function saveCategory() {
       await invoke<number>("create_category", {
         name: catForm.value.name,
         parentId: catForm.value.parentId,
+        userId: auth.user?.id ?? null,
       });
       toast.success(t("products.categoryAdded"));
     } else {
@@ -899,6 +901,7 @@ async function saveCategory() {
         categoryId: catEditingId.value,
         name: catForm.value.name,
         parentId: catForm.value.parentId,
+        userId: auth.user?.id ?? null,
       });
       toast.success(t("products.categoryUpdated"));
     }
@@ -920,7 +923,7 @@ async function removeCategory(c: Category) {
   )
     return;
   try {
-    await invoke("delete_category", { categoryId: c.id });
+    await invoke("delete_category", { categoryId: c.id, userId: auth.user?.id ?? null });
     toast.success(t("products.categoryDeleted", { name: c.name }));
     if (selected.value === c.id) selected.value = null;
     await Promise.all([loadCategories(), catalog.load()]);
@@ -1078,12 +1081,13 @@ async function saveProduct() {
   try {
     let id = editingId.value;
     if (id == null) {
-      id = await invoke<number>("create_product", { input: productPayload() });
+      id = await invoke<number>("create_product", { input: productPayload(), userId: auth.user?.id ?? null });
       toast.success(t("products.productAdded"));
     } else {
       await invoke("update_product", {
         productId: id,
         input: productPayload(),
+        userId: auth.user?.id ?? null,
       });
       toast.success(t("products.productUpdated"));
     }
@@ -1113,7 +1117,7 @@ async function removeProduct(p: Product) {
   )
     return;
   try {
-    await invoke("delete_product", { productId: p.id });
+    await invoke("delete_product", { productId: p.id, userId: auth.user?.id ?? null });
     toast.success(t("products.productDeleted", { name: p.name }));
     await Promise.all([loadCategories(), catalog.load()]);
   } catch (e) {

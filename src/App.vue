@@ -234,6 +234,12 @@ const navItems = computed(() => {
       permission: "users.manage",
     },
     {
+      to: "/logs",
+      label: t("nav.logs"),
+      icon: "bi-journal-text",
+      adminOnly: true,
+    },
+    {
       to: "/settings",
       label: t("nav.settings"),
       icon: "bi-gear",

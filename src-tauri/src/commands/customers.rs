@@ -48,6 +48,17 @@ async fn record_payment(
     .await
     .map_err(|e| e.to_string())?;
 
+    sqlx::query(
+        "INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
+         VALUES (?, 'customer.payment', 'customer', ?, ?)",
+    )
+    .bind(user_id)
+    .bind(customer_id)
+    .bind(format!("Customer payment of {amount}"))
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+
     tx.commit().await.map_err(|e| e.to_string())?;
     Ok(balance_after)
 }

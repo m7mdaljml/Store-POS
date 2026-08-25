@@ -159,6 +159,7 @@ pub async fn create_user<R: Runtime>(
     password: String,
     full_name: String,
     role_id: i64,
+    created_by: Option<i64>,
 ) -> Result<i64, String> {
     let pool = db::pool(&app).await?;
     let hash = hash_password_inner(&password)?;
@@ -172,11 +173,22 @@ pub async fn create_user<R: Runtime>(
     .execute(&pool)
     .await
     .map_err(|e| e.to_string())?;
-    Ok(result.last_insert_rowid())
+    let id = result.last_insert_rowid();
+    sqlx::query(
+        "INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
+         VALUES (?, 'user.create', 'user', ?, ?)",
+    )
+    .bind(created_by)
+    .bind(id)
+    .bind(format!("Created user \"{username}\" ({full_name})"))
+    .execute(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+    Ok(id)
 }
 
 #[tauri::command]
-pub async fn delete_user<R: Runtime>(app: AppHandle<R>, user_id: i64) -> Result<(), String> {
+pub async fn delete_user<R: Runtime>(app: AppHandle<R>, user_id: i64, deleted_by: Option<i64>) -> Result<(), String> {
     let pool = db::pool(&app).await?;
     let result = sqlx::query("UPDATE users SET is_active = 0 WHERE id = ?")
         .bind(user_id)
@@ -186,6 +198,16 @@ pub async fn delete_user<R: Runtime>(app: AppHandle<R>, user_id: i64) -> Result<
     if result.rows_affected() == 0 {
         return Err("User not found".into());
     }
+    sqlx::query(
+        "INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
+         VALUES (?, 'user.deactivate', 'user', ?, ?)",
+    )
+    .bind(deleted_by)
+    .bind(user_id)
+    .bind(format!("Deactivated user {user_id}"))
+    .execute(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -194,6 +216,7 @@ pub async fn set_user_active<R: Runtime>(
     app: AppHandle<R>,
     user_id: i64,
     active: bool,
+    toggled_by: Option<i64>,
 ) -> Result<(), String> {
     let pool = db::pool(&app).await?;
     let result = sqlx::query("UPDATE users SET is_active = ? WHERE id = ?")
@@ -205,6 +228,23 @@ pub async fn set_user_active<R: Runtime>(
     if result.rows_affected() == 0 {
         return Err("User not found".into());
     }
+    let action = if active { "user.activate" } else { "user.deactivate" };
+    let detail = if active {
+        format!("Reactivated user {user_id}")
+    } else {
+        format!("Deactivated user {user_id}")
+    };
+    sqlx::query(
+        "INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
+         VALUES (?, ?, 'user', ?, ?)",
+    )
+    .bind(toggled_by)
+    .bind(action)
+    .bind(user_id)
+    .bind(detail)
+    .execute(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -259,6 +299,18 @@ pub async fn remove_user<R: Runtime>(app: AppHandle<R>, user_id: i64) -> Result<
     if result.rows_affected() == 0 {
         return Err("User not found".into());
     }
+
+    sqlx::query(
+        "INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
+         VALUES (?, 'user.delete', 'user', ?, ?)",
+    )
+    .bind(None::<i64>)
+    .bind(user_id)
+    .bind(format!("Permanently deleted user {user_id}"))
+    .execute(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
     Ok(())
 }
 
@@ -270,6 +322,7 @@ pub async fn update_user<R: Runtime>(
     full_name: String,
     password: Option<String>,
     role_id: i64,
+    updated_by: Option<i64>,
 ) -> Result<(), String> {
     let pool = db::pool(&app).await?;
 
@@ -326,6 +379,16 @@ pub async fn update_user<R: Runtime>(
     if result.rows_affected() == 0 {
         return Err("User not found".into());
     }
+    sqlx::query(
+        "INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
+         VALUES (?, 'user.update', 'user', ?, ?)",
+    )
+    .bind(updated_by)
+    .bind(user_id)
+    .bind(format!("Updated user \"{username}\""))
+    .execute(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -334,6 +397,7 @@ pub async fn update_user_permissions<R: Runtime>(
     app: AppHandle<R>,
     user_id: i64,
     permission_codes: Vec<String>,
+    updated_by: Option<i64>,
 ) -> Result<Vec<String>, String> {
     let pool = db::pool(&app).await?;
 
@@ -383,6 +447,17 @@ pub async fn update_user_permissions<R: Runtime>(
     }
 
     tx.commit().await.map_err(|e| e.to_string())?;
+
+    sqlx::query(
+        "INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
+         VALUES (?, 'user.permissions', 'user', ?, ?)",
+    )
+    .bind(updated_by)
+    .bind(user_id)
+    .bind(format!("Updated permissions for user {user_id}: {} permission(s)", permission_codes.len()))
+    .execute(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
 
     Ok(permission_codes)
 }

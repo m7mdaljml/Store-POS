@@ -605,7 +605,7 @@
             <tr>
               <td>{{ fmtDateTime(b.createdAt) }}</td>
               <td>
-                <span class="badge text-bg-secondary">{{ b.kind }}</span>
+                <span class="badge text-bg-secondary">{{ backupKindLabel(b.kind) }}</span>
               </td>
               <td class="text-end">{{ fmtSize(b.sizeBytes) }}</td>
               <td
@@ -1751,6 +1751,17 @@ function fmtDateTime(raw: string): string {
 function fmtSize(n: number): string {
   if (n > 1048576) return (n / 1048576).toFixed(1) + " MB";
   return Math.max(1, Math.round(n / 1024)) + " KB";
+}
+
+const backupKindMap: Record<string, string> = {
+  manual: "settings.kindManual",
+  auto: "settings.kindAuto",
+  pre_restore: "settings.kindPreRestore",
+  backup: "settings.kindBackup",
+};
+
+function backupKindLabel(kind: string): string {
+  return t(backupKindMap[kind] ?? "settings.kindBackup");
 }
 
 async function restore(path: string) {
