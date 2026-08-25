@@ -264,6 +264,15 @@ body {
   overflow-y: auto;
 }
 
+.app-footer {
+  padding: var(--pos-space-md) var(--pos-space-xl);
+  text-align: center;
+  font-size: 0.78rem;
+  color: var(--pos-text-muted);
+  border-top: 1px solid var(--pos-border);
+  background: var(--pos-surface);
+}
+
 .sidebar-toggle {
   width: 36px;
   height: 36px;

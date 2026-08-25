@@ -135,6 +135,11 @@
       <main class="content">
         <RouterView />
       </main>
+
+      <footer class="app-footer">
+        &copy; {{ new Date().getFullYear() }} Mohammad Aljamal &dash; All Rights
+        Reserved
+      </footer>
     </div>
   </div>
 </template>
