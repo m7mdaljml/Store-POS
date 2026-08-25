@@ -1439,10 +1439,8 @@ body,
 }
 
 /* ------------------------------------------------------------------ */
-/* RTL layout fixes                                                     */
+/* Shared layout helpers (LTR + RTL safe)                               */
 /* ------------------------------------------------------------------ */
-
-/* Fix modal header spacing between title and close button */
 .modal-header {
   gap: var(--bs-modal-header-padding, 1rem);
 }
@@ -1451,15 +1449,66 @@ body,
   flex-shrink: 0;
 }
 
+.topbar {
+  flex-wrap: nowrap;
+}
+
+.topbar > * {
+  flex-shrink: 0;
+}
+
+.topbar .topbar-title {
+  flex-shrink: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.topbar-controls {
+  margin-inline-start: auto;
+  flex-shrink: 0;
+}
+
+.ticket-discount {
+  flex-wrap: wrap;
+}
+
+.toast-host {
+  inset-inline-end: 18px;
+}
+
+.checkout-search-dropdown {
+  border-radius: 0 0 var(--bs-border-radius) var(--bs-border-radius);
+}
+
+/* ------------------------------------------------------------------ */
+/* RTL layout overrides                                                 */
+/* Bootstrap 5.3 LTR build uses physical CSS properties (margin-left,   */
+/* border-top-left-radius, etc.) that do NOT flip when dir="rtl" is     */
+/* set. We must manually mirror every directional property.             */
+/* ------------------------------------------------------------------ */
+
+/* -- Button groups ---------------------------------------------------- */
 /*
- * Fix Bootstrap btn-group geometry for RTL.
- * Bootstrap's LTR build squares corners and overlaps borders by physical
- * side, which is reversed once the group renders right-to-left: the outer
- * ends end up square while seams between buttons show rounded double
- * borders. Mirror the geometry instead: the DOM-first button sits at the
- * RIGHT end, so its right side is the outer edge; the DOM-last button sits
- * at the LEFT end with its left side outer.
+ * Bootstrap LTR sets:
+ *   .btn-group > .btn + .btn        { margin-left: calc(-1*border-width) }
+ *   .btn-group > .btn:first-child   { border-top-left-radius; border-bottom-left-radius }
+ *   .btn-group > .btn:last-child    { border-top-right-radius; border-bottom-right-radius }
+ *   .btn-group > .btn:not(:first-child):not(:last-child) { border-radius: 0 }
+ *   .btn-group > .btn:not(:last-child) { border-top-right-radius: 0; border-bottom-right-radius: 0 }
+ *
+ * In RTL the first DOM child renders at the RIGHT (outer) edge; the last
+ * DOM child renders at the LEFT (outer) edge.  The overlap margin must be
+ * on the right (pulling the previous button over), not the left.
  */
+[dir="rtl"] .btn-group > .btn + .btn,
+[dir="rtl"] .btn-group > .btn + .btn-group,
+[dir="rtl"] .btn-group > .btn-group + .btn,
+[dir="rtl"] .btn-group > .btn-group + .btn-group {
+  margin-left: 0;
+  margin-right: calc(-1 * var(--bs-border-width));
+}
+
 [dir="rtl"] .btn-group > .btn:first-child {
   border-top-left-radius: 0;
   border-bottom-left-radius: 0;
@@ -1480,14 +1529,121 @@ body,
   );
 }
 
-/* Overlap each button's border over its predecessor's so every seam shows a
-   single straight divider (Bootstrap's margin-left pulls the wrong way). */
+/* Middle buttons: keep all corners square */
+[dir="rtl"] .btn-group > .btn:not(:first-child):not(:last-child) {
+  border-radius: 0;
+}
+
+/* All non-first buttons: flip the overlap margin from left to right */
 [dir="rtl"] .btn-group > .btn:not(:first-child) {
   margin-left: 0;
   margin-right: calc(-1 * var(--bs-border-width));
 }
 
-/* Fix sidebar toggle chevron direction in RTL */
+/* -- Modal close button ----------------------------------------------- */
+/*
+ * Bootstrap LTR places .btn-close at the physical right via flex + margin.
+ * In RTL the close button should sit at the inline-end = LEFT side of the
+ * header.  We flip its auto margin so flex pushes it to the left.
+ */
+[dir="rtl"] .modal-header .btn-close {
+  margin-left: 0;
+  margin-right: auto;
+}
+
+/* -- Modal footer buttons --------------------------------------------- */
+/*
+ * Bootstrap LTR sets .modal-footer > .btn + .btn { margin-left: .25rem }
+ * and .modal-footer > :not(:first-child) { margin-left: .25rem }.
+ * In RTL the first button should appear at the end (right side).
+ */
+[dir="rtl"] .modal-footer > :not(:first-child) {
+  margin-left: 0;
+  margin-right: var(--bs-btn-spacing, 0.25rem);
+}
+
+/* -- Nav pills (pos-tabs) -------------------------------------------- */
+/*
+ * Bootstrap LTR: .nav-link + .nav-link { margin-left: -.5rem }.
+ * In RTL the overlap must come from the right.
+ */
+[dir="rtl"] .pos-tabs .nav-link + .nav-link {
+  margin-left: 0;
+  margin-right: calc(-0.5rem);
+}
+
+/* -- Form checks & switches ------------------------------------------ */
+/*
+ * Bootstrap LTR positions the check input at the physical left with
+ * margin-left/margin-right pairs.  In RTL the input should sit at the
+ * physical right (inline-start).
+ */
+[dir="rtl"] .form-check-input {
+  float: right;
+}
+
+[dir="rtl"] .form-check .form-check-input {
+  margin-left: 0;
+  margin-right: -1.5em;
+}
+
+[dir="rtl"] .form-switch .form-check-input {
+  margin-left: 0;
+  margin-right: -1.75em;
+}
+
+[dir="rtl"] .form-check-inline .form-check-input {
+  margin-left: 0.75em;
+  margin-right: -1.5em;
+}
+
+/* -- Input group addons ---------------------------------------------- */
+/*
+ * Bootstrap LTR: .input-group > :not(:first-child) { margin-left: calc(-1*border-width) }
+ * and .input-group > .form-control:not(:first-child) { border-top-left-radius: 0; border-bottom-left-radius: 0 }
+ * In RTL the order flips so the first addon is now at the physical right.
+ */
+[dir="rtl"] .input-group > :not(:first-child) {
+  margin-left: 0;
+  margin-right: calc(-1 * var(--bs-border-width));
+}
+
+[dir="rtl"] .input-group > .form-control:not(:first-child) {
+  border-top-left-radius: var(--bs-border-radius);
+  border-bottom-left-radius: var(--bs-border-radius);
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+[dir="rtl"] .input-group > .form-control:not(:last-child) {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  border-top-right-radius: var(--bs-border-radius);
+  border-bottom-right-radius: var(--bs-border-radius);
+}
+
+[dir="rtl"] .input-group > :not(:last-child):not(.dropdown-toggle) {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  border-top-right-radius: var(--bs-border-radius);
+  border-bottom-right-radius: var(--bs-border-radius);
+}
+
+/* -- Dropdowns ------------------------------------------------------- */
+[dir="rtl"] .dropdown-menu {
+  text-align: right;
+}
+
+[dir="rtl"] .dropdown-item {
+  text-align: right;
+}
+
+/* -- Table hover (fix Bootstrap's :hover with directional margin) ----- */
+[dir="rtl"] .table-hover > tbody > tr:hover > * {
+  --bs-table-accent-bg: transparent;
+}
+
+/* -- Sidebar chevrons ------------------------------------------------ */
 [dir="rtl"] .bi-chevron-double-left {
   transform: scaleX(-1);
 }
@@ -1496,17 +1652,7 @@ body,
   transform: scaleX(-1);
 }
 
-/* Ensure topbar controls stay at the end (RTL-aware) */
-.topbar {
-  flex-wrap: nowrap;
-}
-
-.topbar-controls {
-  margin-inline-start: auto;
-  flex-shrink: 0;
-}
-
-/* Fix split-details arrow direction in RTL */
+/* -- Split-details / quick-items arrows ------------------------------ */
 [dir="rtl"] .split-details summary::before {
   transform: scaleX(-1);
 }
@@ -1515,19 +1661,16 @@ body,
   transform: scaleX(-1) rotate(90deg);
 }
 
-/* Quick items panel sits on the left in RTL: mirror the collapse chevrons */
 [dir="rtl"] .quick-items-toggle .bi::before {
   transform: scaleX(-1);
 }
 
-/* Fix picker caret in RTL */
+/* -- Customer picker caret ------------------------------------------- */
 [dir="rtl"] .customer-picker[open] .picker-caret {
   transform: rotate(-180deg);
 }
 
-/* Table alignment is already RTL-aware via Bootstrap 5.3's text-end/text-start (logical properties) */
-
-/* Fix checkout grid layout for RTL */
+/* -- Checkout grid column swap --------------------------------------- */
 [dir="rtl"] .checkout-left {
   grid-column: 1;
 }
@@ -1536,39 +1679,147 @@ body,
   grid-column: 2;
 }
 
-/* Ensure ticket discount row works in RTL */
-.ticket-discount {
-  flex-wrap: wrap;
-}
-
-/* Fix payment line grid for RTL */
-.payment-line {
-  grid-template-columns: 104px minmax(0, 1fr) 116px 30px;
-}
-
-/* Fix toast host positioning for RTL */
-.toast-host {
-  inset-inline-end: 18px;
-}
-
-/* Fix pay-banner alignment in RTL */
+/* -- Pay-banner alignment ------------------------------------------- */
 .pay-banner strong.ms-auto {
   margin-inline-start: auto;
 }
 
-/* Fix search dropdown border radius */
-.checkout-search-dropdown {
-  border-radius: 0 0 var(--bs-border-radius) var(--bs-border-radius);
+/* -- Badge margin in RTL -------------------------------------------- */
+[dir="rtl"] .badge.ms-1 {
+  margin-left: 0;
+  margin-right: 0.25rem;
 }
 
-/* Fix topbar flex direction awareness */
-.topbar > * {
-  flex-shrink: 0;
+/* -- Pagination (Bootstrap uses physical margins) ------------------- */
+[dir="rtl"] .page-link {
+  margin-left: 0;
+  margin-right: -0.125rem;
 }
 
-.topbar .topbar-title {
-  flex-shrink: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+/* -- Alert dismissible (close button on the left in RTL) ------------ */
+[dir="rtl"] .alert-dismissible .btn-close {
+  padding-left: 0;
+  padding-right: 1rem;
+  left: 0;
+  right: auto;
+}
+
+/* -- Bootstrap physical utility classes --------------------------------
+ * Bootstrap 5.3 LTR build uses physical properties for ms-*, me-*, ps-*, pe-*
+ * classes. In RTL these must be flipped. mx-*/
+px-*/py-*/my-*
+  are
+  fine
+  since
+  *
+  they
+  set
+  both
+  sides
+  equally
+  */
+  [dir="rtl"]
+  .ms-1 {
+  margin-left: 0 !important;
+  margin-right: 0.25rem !important;
+}
+[dir="rtl"] .ms-2 {
+  margin-left: 0 !important;
+  margin-right: 0.5rem !important;
+}
+[dir="rtl"] .ms-3 {
+  margin-left: 0 !important;
+  margin-right: 1rem !important;
+}
+[dir="rtl"] .ms-auto {
+  margin-left: 0 !important;
+  margin-right: auto !important;
+}
+[dir="rtl"] .me-1 {
+  margin-right: 0 !important;
+  margin-left: 0.25rem !important;
+}
+[dir="rtl"] .me-2 {
+  margin-right: 0 !important;
+  margin-left: 0.5rem !important;
+}
+[dir="rtl"] .me-3 {
+  margin-right: 0 !important;
+  margin-left: 1rem !important;
+}
+[dir="rtl"] .me-auto {
+  margin-right: 0 !important;
+  margin-left: auto !important;
+}
+[dir="rtl"] .ps-1 {
+  padding-left: 0 !important;
+  padding-right: 0.25rem !important;
+}
+[dir="rtl"] .ps-2 {
+  padding-left: 0 !important;
+  padding-right: 0.5rem !important;
+}
+[dir="rtl"] .ps-3 {
+  padding-left: 0 !important;
+  padding-right: 1rem !important;
+}
+[dir="rtl"] .pe-1 {
+  padding-right: 0 !important;
+  padding-left: 0.25rem !important;
+}
+[dir="rtl"] .pe-2 {
+  padding-right: 0 !important;
+  padding-left: 0.5rem !important;
+}
+[dir="rtl"] .pe-3 {
+  padding-right: 0 !important;
+  padding-left: 1rem !important;
+}
+
+/* -- Float utilities -------------------------------------------------- */
+[dir="rtl"] .float-start {
+  float: right !important;
+}
+[dir="rtl"] .float-end {
+  float: left !important;
+}
+
+/* -- Position start/end (Bootstrap uses left/right) ------------------- */
+[dir="rtl"] .start-0 {
+  left: auto !important;
+  right: 0 !important;
+}
+[dir="rtl"] .start-50 {
+  left: auto !important;
+  right: 50% !important;
+}
+[dir="rtl"] .start-100 {
+  left: auto !important;
+  right: 100% !important;
+}
+[dir="rtl"] .end-0 {
+  right: auto !important;
+  left: 0 !important;
+}
+[dir="rtl"] .end-50 {
+  right: auto !important;
+  left: 50% !important;
+}
+[dir="rtl"] .end-100 {
+  right: auto !important;
+  left: 100% !important;
+}
+
+/* -- Modal fade compatibility for manual modals --------------------- */
+.modal.d-block {
+  overflow-y: auto;
+}
+
+.modal-dialog-scrollable .modal-body {
+  max-height: calc(100vh - 9rem);
+  overflow-y: auto;
+}
+
+.modal-dialog-scrollable .modal-content {
+  max-height: calc(100vh - 3.5rem);
 }
