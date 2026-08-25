@@ -127,7 +127,7 @@
             type="button"
             @click="closeApp()"
           >
-            <i class="bi bi-x-lg mx-1"></i>Close App
+            <i class="bi bi-x-lg mx-1"></i>{{ t("app.close") }}
           </button>
         </div>
       </header>
