@@ -709,6 +709,7 @@ export const ar = {
     noBackups: "لا توجد نسخ بعد",
     sizeCol: "الحجم",
     restore: "استعادة",
+    restoreFromFile: "استعادة من ملف…",
     restoreConfirm:
       "استعادة هذه النسخة؟\n\nسيتم استبدال قاعدة البيانات الحالية، ويُحفظ نسخ أمان للبيانات الحالية أولاً.",
     deleteConfirm: "حذف ملف هذه النسخة؟",

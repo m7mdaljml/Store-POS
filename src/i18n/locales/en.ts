@@ -708,6 +708,7 @@ export const en = {
     noBackups: "No backups yet",
     sizeCol: "Size",
     restore: "Restore",
+    restoreFromFile: "Restore from file…",
     restoreConfirm:
       "Restore this backup?\n\nThe current database will be replaced. A safety copy of the current data is saved first.",
     deleteConfirm: "Delete this backup file?",

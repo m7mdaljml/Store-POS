@@ -490,6 +490,18 @@
                 <i v-if="!backingUp" class="bi bi-database-add mx-1"></i
                 >{{ t("settings.backupNow") }}
               </AsyncButton>
+              <AsyncButton
+                size="sm"
+                variant="outline-primary"
+                :loading="restoringFile"
+                @click="restoreFromFile"
+              >
+                <i
+                  v-if="!restoringFile"
+                  class="bi bi-box-arrow-in-down mx-1"
+                ></i
+                >{{ t("settings.restoreFromFile") }}
+              </AsyncButton>
             </div>
           </div>
         </div>
@@ -1624,6 +1636,7 @@ const integrity = ref<{ ok: boolean; text: string } | null>(null);
 const checkingIntegrity = ref(false);
 const backups = ref<BackupInfo[]>([]);
 const backingUp = ref(false);
+const restoringFile = ref(false);
 const autoForm = reactive({
   enabled: false,
   freq: "daily" as "daily" | "weekly",
@@ -1750,6 +1763,32 @@ async function restore(path: string) {
     window.setTimeout(() => window.location.reload(), 1200);
   } catch (e: unknown) {
     fail(String(e));
+  }
+}
+
+/** Restores from any database file picked on disk (e.g. a downloaded or
+ *  copied backup) — independent of the in-app backup list. */
+async function restoreFromFile() {
+  const picked = await openFileDialog({
+    multiple: false,
+    directory: false,
+    filters: [
+      { name: "SQLite database", extensions: ["db", "sqlite", "db3"] },
+      { name: "All files", extensions: ["*"] },
+    ],
+  });
+  if (typeof picked !== "string" || !picked) return;
+  if (!(await confirmDialog({ message: t("settings.restoreConfirm") }))) return;
+  restoringFile.value = true;
+  try {
+    // Release the webview's SQL connections so the file can be replaced.
+    await closeDb();
+    await invoke("restore_database", { sourcePath: picked });
+    flash(t("settings.restoreDone"));
+    window.setTimeout(() => window.location.reload(), 1200);
+  } catch (e: unknown) {
+    fail(String(e));
+    restoringFile.value = false;
   }
 }
 
