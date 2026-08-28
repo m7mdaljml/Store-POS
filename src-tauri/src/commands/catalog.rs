@@ -206,6 +206,8 @@ pub struct ProductInput {
     pub is_active: bool,
     #[serde(default)]
     pub is_quick: bool,
+    #[serde(default)]
+    pub opening_stock: f64,
 }
 
 fn validate_product(input: &ProductInput) -> Result<(), String> {
@@ -227,6 +229,9 @@ fn validate_product(input: &ProductInput) -> Result<(), String> {
     }
     if input.unit.trim().is_empty() {
         return Err("Unit is required".into());
+    }
+    if input.opening_stock < 0.0 {
+        return Err("Opening stock cannot be negative".into());
     }
     Ok(())
 }
@@ -283,8 +288,8 @@ pub async fn create_product<R: Runtime>(
     let result = sqlx::query(
         "INSERT INTO products
             (sku, barcode, name, description, category_id, cost_price, sell_price,
-             tax_profile_id, unit, reorder_level, image_path, is_active, is_quick)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+             tax_profile_id, unit, stock_qty, reorder_level, image_path, is_active, is_quick)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(empty_to_none(&input.sku))
     .bind(empty_to_none(&input.barcode))
@@ -295,6 +300,7 @@ pub async fn create_product<R: Runtime>(
     .bind(input.sell_price)
     .bind(input.tax_profile_id)
     .bind(input.unit.trim())
+    .bind(input.opening_stock)
     .bind(input.reorder_level)
     .bind(empty_to_none(&input.image_path))
     .bind(i64::from(input.is_active))
@@ -303,6 +309,17 @@ pub async fn create_product<R: Runtime>(
     .await
     .map_err(|e| e.to_string())?;
     let id = result.last_insert_rowid();
+    if input.opening_stock > 0.0 {
+        sqlx::query(
+            "INSERT INTO stock_movements (product_id, type, qty, notes)
+             VALUES (?, 'opening', ?, 'Opening stock set on create')",
+        )
+        .bind(id)
+        .bind(input.opening_stock)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    }
     sqlx::query(
         "INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
          VALUES (?, 'product.create', 'product', ?, ?)",

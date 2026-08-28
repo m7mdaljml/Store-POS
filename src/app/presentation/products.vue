@@ -444,7 +444,23 @@
                   />
                   <div class="invalid-feedback">{{ errors.unit }}</div>
                 </div>
-                <div class="col-md-6">
+                <div v-if="editingId == null" class="col-md-4">
+                  <label class="form-label" for="p-stock">{{
+                    t("products.stock")
+                  }}</label>
+                  <input
+                    id="p-stock"
+                    v-model.number="form.stock"
+                    class="form-control"
+                    :class="{ 'is-invalid': errors.stock }"
+                    type="number"
+                    step="1"
+                    min="0"
+                    @input="clearFieldError(errors, 'stock')"
+                  />
+                  <div class="invalid-feedback">{{ errors.stock }}</div>
+                </div>
+                <div class="col-md-4">
                   <label class="form-label" for="p-reorder">{{
                     t("products.reorderLevel")
                   }}</label>
@@ -457,7 +473,7 @@
                     min="0"
                   />
                 </div>
-                <div class="col-md-6 d-flex align-items-end">
+                <div class="col-md-4 d-flex align-items-end">
                   <div class="d-flex align-items-center gap-4 mb-2 flex-wrap">
                     <div class="form-check form-switch">
                       <input
@@ -718,6 +734,7 @@ const form = ref({
   taxProfileId: null as number | null,
   unit: "store item",
   reorderLevel: 0,
+  stock: 0,
   isActive: true,
   isQuick: false,
   imagePath: null as string | null,
@@ -948,6 +965,7 @@ function openAddProduct() {
     taxProfileId: null,
     unit: "store item",
     reorderLevel: 0,
+    stock: 0,
     isActive: true,
     isQuick: false,
     imagePath: null,
@@ -971,6 +989,7 @@ function openEditProduct(p: Product) {
     taxProfileId: p.tax_profile_id,
     unit: p.unit,
     reorderLevel: p.reorder_level,
+    stock: p.stock_qty,
     isActive: p.is_active === 1,
     isQuick: p.is_quick === 1,
     imagePath: p.image_path,
@@ -1024,6 +1043,7 @@ function validateProduct(): boolean {
   const cost = form.value.costPrice;
   const sell = form.value.sellPrice;
   const reorder = form.value.reorderLevel;
+  const stock = form.value.stock;
   const ok = applyFieldRules(errors, [
     ["name", !!form.value.name.trim(), t("common.name")],
     [
@@ -1047,6 +1067,11 @@ function validateProduct(): boolean {
       typeof reorder === "number" && !isNaN(reorder) && reorder >= 0,
       t("products.reorderLevel"),
     ],
+    [
+      "stock",
+      typeof stock === "number" && !isNaN(stock) && stock >= 0,
+      t("products.stock"),
+    ],
   ]);
   if (typeof cost === "number" && typeof sell === "number" && sell <= cost) {
     productError.value = t("products.sellAboveCost");
@@ -1065,6 +1090,7 @@ function productPayload() {
     taxProfileId: form.value.taxProfileId,
     unit: form.value.unit,
     reorderLevel: form.value.reorderLevel,
+    openingStock: editingId.value == null ? form.value.stock : 0,
     imagePath: form.value.imagePath,
     isActive: form.value.isActive,
     isQuick: form.value.isQuick,
