@@ -54,7 +54,10 @@ async fn record_payment(
     )
     .bind(user_id)
     .bind(customer_id)
-    .bind(format!("Customer payment of {amount}"))
+    .bind(format!(
+        "Customer payment of {}",
+        crate::format::money(amount)
+    ))
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
@@ -100,6 +103,15 @@ mod tests {
           balance_after REAL NOT NULL,
           notes TEXT,
           user_id INTEGER,
+          created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE TABLE audit_log (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER,
+          action TEXT NOT NULL,
+          entity_type TEXT,
+          entity_id INTEGER,
+          details TEXT,
           created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
         "#

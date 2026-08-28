@@ -4,8 +4,10 @@ use tauri::{AppHandle, Runtime};
 use crate::db;
 
 /// Shared period filter fragment: completed sales within [from, to] dates.
+// created_at is stored as UTC (datetime('now')); convert to localtime so the
+// report's local-date range (from/to, e.g. "today") matches the store clock.
 const SALES_PERIOD_FILTER: &str =
-    "s.status = 'completed' AND date(s.created_at) BETWEEN ?1 AND ?2";
+    "s.status = 'completed' AND date(s.created_at, 'localtime') BETWEEN ?1 AND ?2";
 
 /// Net invoice value: original total minus every refund issued against the sale.
 /// Requires the sales table to be aliased as `s`.
@@ -47,7 +49,7 @@ pub async fn compute_summary(
     to: &str,
 ) -> Result<SalesSummary, String> {
     let agg: (f64, i64) = sqlx::query_as(
-        "SELECT TOTAL(s.total - COALESCE((SELECT SUM(r.amount) FROM refunds r WHERE r.sale_id = s.id), 0.0)), COUNT(*) FROM sales s WHERE s.status = 'completed' AND date(s.created_at) BETWEEN ?1 AND ?2",
+        "SELECT TOTAL(s.total - COALESCE((SELECT SUM(r.amount) FROM refunds r WHERE r.sale_id = s.id), 0.0)), COUNT(*) FROM sales s WHERE s.status = 'completed' AND date(s.created_at, 'localtime') BETWEEN ?1 AND ?2",
     )
     .bind(from)
     .bind(to)
@@ -57,7 +59,7 @@ pub async fn compute_summary(
 
     let profit: (f64,) = sqlx::query_as(&format!(
         "SELECT TOTAL((si.price - si.discount - si.cost_price) * {NET_ITEM_QTY})
-         FROM sale_items si JOIN sales s ON s.id = si.sale_id WHERE s.status = 'completed' AND date(s.created_at) BETWEEN ?1 AND ?2"
+         FROM sale_items si JOIN sales s ON s.id = si.sale_id WHERE s.status = 'completed' AND date(s.created_at, 'localtime') BETWEEN ?1 AND ?2"
     ))
     .bind(from)
     .bind(to)
@@ -110,9 +112,9 @@ pub struct TrendPoint {
 
 fn bucket_expr(granularity: &str) -> Result<&'static str, String> {
     match granularity {
-        "day" => Ok("strftime('%Y-%m-%d', s.created_at)"),
-        "week" => Ok("strftime('%Y-W%W', s.created_at)"),
-        "month" => Ok("strftime('%Y-%m', s.created_at)"),
+        "day" => Ok("strftime('%Y-%m-%d', s.created_at, 'localtime')"),
+        "week" => Ok("strftime('%Y-W%W', s.created_at, 'localtime')"),
+        "month" => Ok("strftime('%Y-%m', s.created_at, 'localtime')"),
         other => Err(format!("Unknown granularity '{other}'")),
     }
 }
@@ -325,7 +327,7 @@ impl<'a> SalesFilter<'a> {
     /// are numbered in bind order: ?1 = from, ?2 = to, ?3 = cashier, ?4 = customer
     /// (filters only present when set).
     fn where_sql(&self) -> String {
-        let mut sql = String::from("date(s.created_at) BETWEEN ?1 AND ?2");
+        let mut sql = String::from("date(s.created_at, 'localtime') BETWEEN ?1 AND ?2");
         if !self.include_voided {
             sql.push_str(" AND s.status = 'completed'");
         }
@@ -626,7 +628,7 @@ pub async fn margin_report<R: Runtime>(
 // ============================================================
 
 fn money(v: f64) -> String {
-    format!("{v:.2}")
+    crate::format::money(v)
 }
 
 fn num(v: f64) -> String {
@@ -1184,5 +1186,51 @@ mod tests {
         assert_eq!(points.len(), 1);
         assert!((points[0].revenue - 8.0).abs() < 0.001);
         assert_eq!(points[0].orders, 2);
+    }
+
+    /// Regression: `sales.created_at` is stored in UTC (`datetime('now')`) while
+    /// the report range is expressed in local dates. A sale late in the UTC day
+    /// must appear under its *local* date, not the raw UTC date.
+    #[tokio::test]
+    async fn sales_are_bucketed_by_local_date_not_utc_date() {
+        let pool = mem_pool().await;
+
+        sqlx::query("DELETE FROM sale_items").execute(&pool).await.unwrap();
+        sqlx::query("DELETE FROM refunds").execute(&pool).await.unwrap();
+        sqlx::query("DELETE FROM expense_out").execute(&pool).await.unwrap();
+        sqlx::query("DELETE FROM sales").execute(&pool).await.unwrap();
+
+        sqlx::query(
+            "INSERT INTO sales (id, sale_no, user_id, subtotal, discount, total, status, created_at)
+             VALUES (1, 'S-TZ001', 1, 20, 0, 20, 'completed', '2026-08-28 22:00:00')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO sale_items (sale_id, product_id, qty, price, cost_price, discount, subtotal)
+             VALUES (1, 1, 1, 20.0, 2.0, 0, 20.0)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let (utc_day, local_day): (String, String) = sqlx::query_as(
+            "SELECT date('2026-08-28 22:00:00'), date('2026-08-28 22:00:00', 'localtime')",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        let by_local = compute_summary(&pool, &local_day, &local_day).await.unwrap();
+        assert_eq!(by_local.orders, 1);
+        assert!((by_local.revenue - 20.0).abs() < 0.001);
+
+        // When the store's local date differs from the UTC date, the raw UTC
+        // date must NOT match — this is the bug the fix addresses.
+        if utc_day != local_day {
+            let by_utc = compute_summary(&pool, &utc_day, &utc_day).await.unwrap();
+            assert_eq!(by_utc.orders, 0);
+        }
     }
 }

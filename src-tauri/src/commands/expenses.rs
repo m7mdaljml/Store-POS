@@ -492,7 +492,10 @@ pub async fn create_outgoing_expense(
     )
     .bind(input.user_id)
     .bind(expense_id)
-    .bind(format!("Recorded outgoing expense of {}", input.amount))
+    .bind(format!(
+        "Recorded outgoing expense of {}",
+        crate::format::money(input.amount)
+    ))
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;

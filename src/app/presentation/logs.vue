@@ -210,6 +210,16 @@ function dateLabel(d: string): string {
   return date.toLocaleString(locale.value);
 }
 
+// Renders a captured money value from an audit detail to two decimals
+// ("687.21"), collapsing anything that rounds to zero to "0". This also
+// cleans up entries recorded before the backend formatted these amounts.
+function cleanMoney(s: string | undefined): string {
+  if (!s) return "0";
+  const n = parseFloat(s);
+  if (Number.isNaN(n)) return s;
+  return Math.round(Math.abs(n) * 100) === 0 ? "0" : n.toFixed(2);
+}
+
 const detailPatterns: Array<{
   action: string;
   regex: RegExp;
@@ -298,7 +308,7 @@ const detailPatterns: Array<{
     action: "customer.payment",
     regex: /^Customer payment of (.+)$/,
     i18nKey: "logs.detail.customerPayment",
-    map: (m) => ({ amount: m[1] }),
+    map: (m) => ({ amount: cleanMoney(m[1]) }),
   },
   {
     action: "user.create",
@@ -348,9 +358,9 @@ const detailPatterns: Array<{
       return {
         no: m[1],
         items: m[2],
-        total: nums?.[1] ?? "",
-        paid: nums?.[2] ?? "",
-        change: nums?.[3] ?? "",
+        total: cleanMoney(nums?.[1]),
+        paid: cleanMoney(nums?.[2]),
+        change: cleanMoney(nums?.[3]),
       };
     },
   },
@@ -361,7 +371,7 @@ const detailPatterns: Array<{
     map: (m) => {
       const rest = m.input!.slice(m[0].length);
       const total = rest.match(/total ([\d.,]+)/);
-      return { no: m[1], items: m[2], total: total?.[1] ?? "" };
+      return { no: m[1], items: m[2], total: cleanMoney(total?.[1]) };
     },
   },
   {
@@ -386,19 +396,23 @@ const detailPatterns: Array<{
     action: "session.open",
     regex: /^Opened register with opening cash (.+)$/,
     i18nKey: "logs.detail.openedRegister",
-    map: (m) => ({ cash: m[1] }),
+    map: (m) => ({ cash: cleanMoney(m[1]) }),
   },
   {
     action: "session.close",
     regex: /^Closed register: expected ([\d.,]+), actual ([\d.,]+), variance ([\d.,+-]+)/,
     i18nKey: "logs.detail.closedRegister",
-    map: (m) => ({ expected: m[1], actual: m[2], variance: m[3] }),
+    map: (m) => ({
+      expected: cleanMoney(m[1]),
+      actual: cleanMoney(m[2]),
+      variance: cleanMoney(m[3]),
+    }),
   },
   {
     action: "expense.outgoing",
     regex: /^Recorded outgoing expense of (.+)$/,
     i18nKey: "logs.detail.outgoingExpense",
-    map: (m) => ({ amount: m[1] }),
+    map: (m) => ({ amount: cleanMoney(m[1]) }),
   },
   {
     action: "expense.incoming",
@@ -410,7 +424,7 @@ const detailPatterns: Array<{
     action: "expense.payment",
     regex: /^Payment of ([\d.,]+) \((.+)\) on invoice (.+)$/,
     i18nKey: "logs.detail.paymentOnInvoice",
-    map: (m) => ({ amount: m[1], method: m[2], no: m[3] }),
+    map: (m) => ({ amount: cleanMoney(m[1]), method: m[2], no: m[3] }),
   },
 ];
 

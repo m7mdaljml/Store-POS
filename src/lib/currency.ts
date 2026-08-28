@@ -86,10 +86,13 @@ function numberFormatter(locale: string, code: string): Intl.NumberFormat {
 export function formatMoney(n: number): string {
   ensureBaseCurrencySymbol();
   const value = Number.isFinite(n) ? n : 0;
-  const num = numberFormatter(
-    i18n.global.locale.value,
-    baseCurrencyCode.value,
-  ).format(value);
+  const num =
+    Math.round(Math.abs(value) * 100) === 0
+      ? "0"
+      : numberFormatter(
+          i18n.global.locale.value,
+          baseCurrencyCode.value,
+        ).format(value);
   const symbol = baseCurrencySymbol.value;
   return symbol ? `${num} ${symbol}` : num;
 }

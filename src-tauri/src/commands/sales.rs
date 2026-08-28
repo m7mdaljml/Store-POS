@@ -597,9 +597,9 @@ pub async fn insert_sale(
     .bind(format!(
         "Created sale {sale_no} for {} item(s), total {}, paid {}, change {}",
         input.items.len(),
-        total,
-        paid_amount,
-        change_given
+        crate::format::money(total),
+        crate::format::money(paid_amount),
+        crate::format::money(change_given)
     ))
     .execute(&mut *tx)
     .await
@@ -688,7 +688,7 @@ pub async fn insert_hold(pool: &sqlx::SqlitePool, input: HoldSaleInput) -> Resul
     .bind(format!(
         "Held sale {sale_no} for {} item(s), total {}",
         create_input.items.len(),
-        total
+        crate::format::money(total)
     ))
     .execute(&mut *tx)
     .await
@@ -1367,7 +1367,7 @@ pub async fn refund_sale_impl(
     .bind(input.sale_id)
     .bind(format!(
         "{note}: {} {}{}",
-        amount,
+        crate::format::money(amount),
         method,
         if reason_text.is_empty() {
             String::new()

@@ -3,9 +3,12 @@ import { i18n } from "../i18n";
 import { currencySuffix } from "./currency";
 
 /** Format a number as a plain currency string (no thousands grouping),
- * with the base currency symbol placed after the number. */
+ * with the base currency symbol placed after the number. Amounts that round
+ * to zero render as "0" instead of "0.00". */
 function money(n: number): string {
-  return n.toFixed(2) + currencySuffix();
+  const value =
+    Math.round(Math.abs(n) * 100) === 0 ? "0" : n.toFixed(2);
+  return value + currencySuffix();
 }
 
 /** Escape text for safe embedding in the receipt document. */

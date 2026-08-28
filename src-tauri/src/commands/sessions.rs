@@ -118,7 +118,10 @@ pub async fn insert_session(
     )
     .bind(input.user_id)
     .bind(id)
-    .bind(format!("Opened register with opening cash {}", input.opening_cash))
+    .bind(format!(
+        "Opened register with opening cash {}",
+        crate::format::money(input.opening_cash)
+    ))
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
@@ -191,7 +194,11 @@ pub async fn finalize_session(
     .bind(input.closing_cash)
     .bind(expected)
     .bind(variance)
-    .bind(format!("Expected {}, counted {}", expected, input.closing_cash))
+    .bind(format!(
+        "Expected {}, counted {}",
+        crate::format::money(expected),
+        crate::format::money(input.closing_cash)
+    ))
     .bind(input.session_id)
     .execute(&mut *tx)
     .await
@@ -205,7 +212,9 @@ pub async fn finalize_session(
     .bind(input.session_id)
     .bind(format!(
         "Closed register: expected {}, actual {}, variance {}",
-        expected, input.closing_cash, variance
+        crate::format::money(expected),
+        crate::format::money(input.closing_cash),
+        crate::format::money(variance)
     ))
     .execute(&mut *tx)
     .await

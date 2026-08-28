@@ -359,7 +359,12 @@ pub async fn record_supplier_payment(
     )
     .bind(input.user_id)
     .bind(input.invoice_id)
-    .bind(format!("Payment of {:.2} ({}) on invoice {}", input.amount, method, invoice_no))
+    .bind(format!(
+        "Payment of {} ({}) on invoice {}",
+        crate::format::money(input.amount),
+        method,
+        invoice_no
+    ))
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;

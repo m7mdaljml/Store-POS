@@ -4,6 +4,7 @@ use tauri_plugin_sql::{Migration, MigrationKind};
 pub mod commands;
 pub mod db;
 pub mod export;
+pub mod format;
 pub mod seed;
 
 fn initial_migrations() -> Vec<Migration> {
