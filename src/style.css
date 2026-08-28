@@ -1591,6 +1591,15 @@ body,
   float: right;
 }
 
+[dir="rtl"] .form-check {
+  padding-left: 0;
+  padding-right: 1.5em;
+}
+
+[dir="rtl"] .form-switch {
+  padding-right: 2.5em;
+}
+
 [dir="rtl"] .form-check .form-check-input {
   margin-left: 0;
   margin-right: -1.5em;
@@ -1598,11 +1607,11 @@ body,
 
 [dir="rtl"] .form-switch .form-check-input {
   margin-left: 0;
-  margin-right: -1.75em;
+  margin-right: -2.5em;
 }
 
 [dir="rtl"] .form-check-inline .form-check-input {
-  margin-left: 0.75em;
+  margin-left: 0;
   margin-right: -1.5em;
 }
 
