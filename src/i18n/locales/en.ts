@@ -89,6 +89,28 @@ export const en = {
     invalidCredentials: "Invalid username or password",
     showPassword: "Show password",
     hidePassword: "Hide password",
+    mustChangeSubtitle:
+      "You signed in with a temporary password. Choose a permanent one below.",
+  },
+  setup: {
+    subtitle: "First-time setup — create the administrator account",
+    fullName: "Full name",
+    choosePassword: "Choose a password",
+    createAdmin: "Create Administrator",
+    requiredFullName: "Enter the administrator's full name",
+    securityNote:
+      "Your password is stored only as a secure hash. No default password is ever shipped.",
+  },
+  changePassword: {
+    title: "Set your password",
+    subtitle: "Choose the password you will use to sign in from now on",
+    note: "Your previous (temporary) password is no longer valid after you save.",
+    newPassword: "New password",
+    confirm: "Confirm new password",
+    tooShort: "Password must be at least 4 characters",
+    mismatch: "Passwords do not match",
+    save: "Save password",
+    saved: "Password saved",
   },
   dashboard: {
     title: "Dashboard",
@@ -245,6 +267,8 @@ export const en = {
   products: {
     title: "Products",
     importCsv: "Import CSV",
+    exportXlsx: "Export Excel",
+    exportedTo: "Exported to {path}",
     addProduct: "Add Product",
     importResult: "{imported} product(s) imported",
     importRowsSkipped: ", {count} row(s) skipped",
@@ -583,11 +607,15 @@ export const en = {
     searchPlaceholder: "Search by name or username…",
     noUsers: "No users yet",
     deactivated: "Deactivated",
+    stateActive: "Active",
+    statePending: "Pending activation",
+    stateReset: "Password reset required",
     you: "You",
     editUserTitle: "Edit user",
     deactivateTitle: "Deactivate",
     reactivateTitle: "Reactivate",
     deletePermTitle: "Delete permanently",
+    resetPasswordTitle: "Reset password",
     addCashierTitle: "Add Cashier",
     fullName: "Full name",
     create: "Create",
@@ -597,6 +625,10 @@ export const en = {
     cashierCreated: "Cashier created",
     usernameNameRequired: "Username and full name are required",
     userUpdated: "User updated",
+    noPasswordNote:
+      "The user chooses their own password. A temporary password is generated and shown once for their first sign-in.",
+    resetConfirm:
+      'Reset the password for "{name}"?\n\nTheir current password stops working and they must choose a new one at next sign-in. Their password is never shown to you.',
     deactivateConfirm:
       'Deactivate "{name}"? They will no longer be able to sign in.',
     deactivated2: "{name} deactivated",
@@ -604,6 +636,11 @@ export const en = {
     deleteConfirm:
       'Permanently delete "{name}" ({username})?\n\nThis cannot be undone and the user will be removed from the system.',
     deleted: "{name} deleted",
+    tempPasswordTitle: "Temporary password",
+    tempPasswordNote:
+      "Write this down and give it to the user. It can only be shown once and is invalidated as soon as they set their own password.",
+    tempPasswordHandoff:
+      "The user must set their own password at their next sign-in.",
   },
   sessions: {
     title: "Register sessions",
@@ -780,6 +817,8 @@ export const en = {
       "user-activate": "User activated",
       "user-deactivate": "User deactivated",
       "user-permissions": "Permissions updated",
+      "user-password_set": "Password changed",
+      "user-password_reset": "Password reset by admin",
     },
     detail: {
       createdCategory: 'Created category "{name}"',
@@ -803,6 +842,8 @@ export const en = {
       deactivateUser: "Deactivated user {id}",
       updatedPermissions:
         "Updated permissions for user {id}: {count} permission(s)",
+      setOwnPassword: "User chose a new password",
+      adminResetPassword: "Admin issued a temporary credential for this user",
       createdSale:
         "Created sale {no} for {items} item(s), total {total}, paid {paid}, change {change}",
       heldSale: "Held sale {no} for {items} item(s), total {total}",

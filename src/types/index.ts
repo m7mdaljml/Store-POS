@@ -4,6 +4,9 @@ export interface AuthUser {
   fullName: string;
   roleName: string;
   permissions: string[];
+  /** True when signed in with a temporary/initial password and must choose a
+   * permanent one before using the POS (Pending Activation / Password Reset). */
+  mustChangePassword: boolean;
 }
 
 export interface Role {
@@ -18,6 +21,9 @@ export interface UserRecord {
   roleId: number;
   roleName: string;
   isActive: boolean;
+  /** One of: 'set' (Active), 'pending' (Pending Activation),
+   * 'reset' (Password Reset Required). */
+  passwordState: string;
   permissions: string[];
 }
 

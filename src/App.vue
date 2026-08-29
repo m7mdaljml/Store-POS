@@ -2,7 +2,7 @@
   <ToastHost />
   <ConfirmHost />
   <div class="app-shell">
-    <aside v-if="!isLoginRoute" class="sidebar" :class="{ collapsed }">
+    <aside v-if="showShell" class="sidebar" :class="{ collapsed }">
       <div class="sidebar-brand">
         <img
           v-if="settings.storeLogo"
@@ -171,7 +171,9 @@ const collapsed = ref(false);
 const clock = ref("");
 let timer: number | undefined;
 
-const isLoginRoute = computed(() => route.name === "login");
+const showShell = computed(
+  () => route.name !== "login" && route.name !== "change-password",
+);
 
 const navItems = computed(() => {
   const items = [

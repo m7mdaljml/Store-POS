@@ -3,7 +3,7 @@
 //! daily report, and take a backup snapshot — the full happy path a real
 //! session would exercise.
 
-use app_lib::{commands, db, seed};
+use app_lib::{commands, db, initial_migrations, seed};
 
 fn temp_path(tag: &str) -> std::path::PathBuf {
     static SEQ: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
@@ -16,7 +16,9 @@ async fn full_sale_flow_smoke() {
     let path = temp_path("flow");
     let _ = std::fs::remove_file(&path);
 
-    // 1. Fresh install → schema + demo reference data.
+    // 1. Fresh install → apply migrations (same as the runtime plugin) then
+    //    seed the demo/reference data.
+    db::apply_migrations(&path, &initial_migrations()).await.expect("migrations failed");
     seed::seed_db(&path).await.expect("seed failed");
     let pool = db::connect(&path).await.unwrap();
 

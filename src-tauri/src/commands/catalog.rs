@@ -4,7 +4,9 @@ use tauri::{AppHandle, Manager, Runtime};
 
 use super::Page;
 use crate::db;
-
+use crate::export::ImageRow;
+use calamine::{Data, Picture, Reader, Xlsx};
+use std::collections::HashMap;
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CategoryRecord {
@@ -951,6 +953,444 @@ pub async fn import_products_csv<R: Runtime>(
         )
         .bind(user_id)
         .bind(format!("Imported {} product(s) from CSV", result.imported))
+        .execute(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    }
+
+    Ok(result)
+}
+
+fn export_money(v: f64) -> String {
+    crate::format::money(v)
+}
+
+fn export_num(v: f64) -> String {
+    if v.fract().abs() < f64::EPSILON {
+        format!("{}", v as i64)
+    } else {
+        format!("{v:.3}")
+    }
+}
+
+#[derive(sqlx::FromRow)]
+struct ProductExportRow {
+    sku: Option<String>,
+    barcode: Option<String>,
+    name: String,
+    description: Option<String>,
+    category: Option<String>,
+    cost_price: f64,
+    sell_price: f64,
+    unit: String,
+    tax_profile: Option<String>,
+    stock_qty: f64,
+    reorder_level: f64,
+    image_path: Option<String>,
+    is_active: i64,
+    is_quick: i64,
+}
+
+/// Exports every product to an `.xlsx` workbook ("Products" sheet) with all
+/// fields plus an embedded thumbnail image per row. The image is anchored in
+/// column 0 of the product's row, which `import_products_xlsx` reads back so a
+/// full-detail export can be re-imported "as is" (including images).
+#[tauri::command]
+pub async fn export_products_xlsx<R: Runtime>(
+    app: AppHandle<R>,
+    path: String,
+) -> Result<(), String> {
+    let pool = db::pool(&app).await?;
+    let rows: Vec<ProductExportRow> = sqlx::query_as(
+        "SELECT p.sku, p.barcode, p.name, p.description, c.name AS category,
+                p.cost_price, p.sell_price, p.unit,
+                (SELECT tp.name FROM tax_profiles tp WHERE tp.id = p.tax_profile_id) AS tax_profile,
+                p.stock_qty, p.reorder_level, p.image_path, p.is_active, p.is_quick
+         FROM products p
+         LEFT JOIN categories c ON c.id = p.category_id
+         ORDER BY lower(p.name) COLLATE NOCASE",
+    )
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let headers: Vec<String> = [
+        "Image",
+        "SKU",
+        "Barcode",
+        "Name",
+        "Description",
+        "Category",
+        "Cost Price",
+        "Sell Price",
+        "Unit",
+        "Tax Profile",
+        "Stock",
+        "Reorder Level",
+        "Active",
+        "Quick Item",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect();
+
+    let mut image_rows: Vec<ImageRow> = Vec::with_capacity(rows.len());
+    for r in &rows {
+        let image = match &r.image_path {
+            Some(p) => std::fs::read(p).ok(),
+            None => None,
+        };
+        image_rows.push(ImageRow {
+            cells: vec![
+                r.sku.clone().unwrap_or_default(),
+                r.barcode.clone().unwrap_or_default(),
+                r.name.clone(),
+                r.description.clone().unwrap_or_default(),
+                r.category.clone().unwrap_or_default(),
+                export_money(r.cost_price),
+                export_money(r.sell_price),
+                r.unit.clone(),
+                r.tax_profile.clone().unwrap_or_default(),
+                export_num(r.stock_qty),
+                export_num(r.reorder_level),
+                if r.is_active != 0 { "YES" } else { "NO" }.to_string(),
+                if r.is_quick != 0 { "YES" } else { "NO" }.to_string(),
+            ],
+            image,
+            image_name: std::path::Path::new(r.image_path.as_deref().unwrap_or(""))
+                .file_name()
+                .map(|f| f.to_string_lossy().to_string())
+                .unwrap_or_else(|| r.name.clone()),
+        });
+    }
+
+    crate::export::write_image_table(std::path::Path::new(&path), "Products", &headers, &image_rows)
+}
+
+fn xlsx_cell_text(d: &Data) -> String {
+    match d {
+        Data::String(s) => s.clone(),
+        Data::Int(i) => i.to_string(),
+        Data::Float(f) => {
+            if f.fract().abs() < f64::EPSILON {
+                format!("{}", *f as i64)
+            } else {
+                f.to_string()
+            }
+        }
+        Data::Bool(b) => {
+            if *b {
+                "TRUE".into()
+            } else {
+                "FALSE".into()
+            }
+        }
+        Data::DateTime(edt) => edt.to_string(),
+        Data::DateTimeIso(s) | Data::DurationIso(s) => s.clone(),
+        // Errors and empty cells read back as empty text.
+        Data::Error(_) | Data::Empty => String::new(),
+    }
+}
+
+/// Imports products from an `.xlsx` workbook written by `export_products_xlsx`.
+/// Restores every field and, where a row carries an embedded image, copies the
+/// image into the images directory and links it to the new product. Uses the
+/// same per-row validation/skipping semantics as the CSV import.
+#[tauri::command]
+pub async fn import_products_xlsx<R: Runtime>(
+    app: AppHandle<R>,
+    source_path: String,
+    user_id: Option<i64>,
+) -> Result<CsvImportResult, String> {
+    let pool = db::pool(&app).await?;
+
+    let mut wb: Xlsx<std::io::BufReader<std::fs::File>> =
+        calamine::open_workbook(&source_path)
+            .map_err(|e| format!("Could not open Excel file: {e}"))?;
+
+    let sheet_name = wb
+        .sheet_names()
+        .first()
+        .cloned()
+        .unwrap_or_else(|| "Sheet1".into());
+    let range = wb
+        .worksheet_range(&sheet_name)
+        .map_err(|e| format!("Could not read worksheet: {e}"))?;
+
+    let (start_row_u, _) = range.start().unwrap_or((0, 0));
+    let start_row = start_row_u as usize;
+    let mut row_iter = range.rows();
+    let headers: Vec<String> = row_iter
+        .next()
+        .map(|h| h.iter().map(xlsx_cell_text).collect())
+        .unwrap_or_default();
+    if headers.is_empty() {
+        return Err("Excel file has no header row".into());
+    }
+    let norm: Vec<String> = headers.iter().map(|h| normalize_header(h)).collect();
+
+    let find_col = |aliases: &[&str]| -> Option<usize> {
+        norm.iter().position(|h| aliases.contains(&h.as_str()))
+    };
+    let require_col =
+        |aliases: &[&str], label: &str| -> Result<usize, String> {
+            find_col(aliases)
+                .ok_or_else(|| format!("Excel is missing a '{label}' column"))
+        };
+
+    let c_name = require_col(
+        &["name", "product", "productname", "product_name"],
+        "name",
+    )?;
+    let c_barcode = require_col(
+        &["barcode", "code", "bar_code", "barcode_no"],
+        "barcode",
+    )?;
+    let c_sku = find_col(&["sku", "product_code"]);
+    let c_description = find_col(&["description", "desc"]);
+    let c_category = find_col(&["category", "categoryname", "category_name", "group"]);
+    let c_cost = find_col(&["cost", "costprice", "cost_price"]);
+    let c_sell = find_col(&["sell", "sellprice", "sell_price", "price"]);
+    let c_unit = find_col(&["unit", "uom"]);
+    let c_tax = find_col(&["tax_profile", "taxprofile", "tax"]);
+    let c_reorder = find_col(&[
+        "reorder",
+        "reorderlevel",
+        "reorder_level",
+        "min_stock",
+    ]);
+    let c_stock = find_col(&[
+        "stock", "qty", "quantity", "openingstock", "opening_stock", "stockqty", "stock_qty",
+    ]);
+    let c_active = find_col(&["active", "is_active", "isactive", "status"]);
+    let c_quick = find_col(&[
+        "quick",
+        "quickitem",
+        "quick_item",
+        "isquick",
+        "is_quick",
+    ]);
+
+    // Map sheet row (0-based) -> embedded picture so each row can restore its
+    // image without relying on ordering.
+    let mut images_by_row: HashMap<u32, Picture> = HashMap::new();
+    for pic in wb.pictures_with_metadata() {
+        if pic.sheet_name.is_empty() || pic.sheet_name == sheet_name {
+            images_by_row.entry(pic.row).or_insert(pic);
+        }
+    }
+
+    let mut result = CsvImportResult {
+        imported: 0,
+        errors: Vec::new(),
+    };
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+
+    for (offset, record) in row_iter.enumerate() {
+        let abs_row = start_row + offset + 1;
+        let row_no = abs_row + 1;
+        let cell = |ix: Option<usize>| -> String {
+            match ix {
+                Some(i) => record
+                    .get(i)
+                    .map(xlsx_cell_text)
+                    .unwrap_or_default(),
+                None => String::new(),
+            }
+        };
+
+        let name = cell(Some(c_name));
+        let barcode = cell(Some(c_barcode));
+
+        let cost = match parse_import_f64(&cell(c_cost), "cost price") {
+            Ok(v) => v,
+            Err(e) => {
+                result.errors.push(CsvImportError { row: row_no, message: e });
+                continue;
+            }
+        };
+        let sell = match parse_import_f64(&cell(c_sell), "sell price") {
+            Ok(v) => v,
+            Err(e) => {
+                result.errors.push(CsvImportError { row: row_no, message: e });
+                continue;
+            }
+        };
+        let reorder = match parse_import_f64(&cell(c_reorder), "reorder level") {
+            Ok(v) => v,
+            Err(e) => {
+                result.errors.push(CsvImportError { row: row_no, message: e });
+                continue;
+            }
+        };
+        let stock = match parse_import_f64(&cell(c_stock), "stock") {
+            Ok(v) => v,
+            Err(e) => {
+                result.errors.push(CsvImportError { row: row_no, message: e });
+                continue;
+            }
+        };
+        let quick = match parse_import_bool(&cell(c_quick)) {
+            Ok(v) => v,
+            Err(e) => {
+                result.errors.push(CsvImportError { row: row_no, message: e });
+                continue;
+            }
+        };
+        let active = match c_active {
+            Some(_) => match parse_import_bool(&cell(c_active)) {
+                Ok(v) => v,
+                Err(e) => {
+                    result.errors.push(CsvImportError { row: row_no, message: e });
+                    continue;
+                }
+            },
+            // Column absent -> default to active.
+            None => true,
+        };
+
+        let unit_raw = cell(c_unit);
+        let unit = if unit_raw.trim().is_empty() {
+            "store item".to_string()
+        } else {
+            unit_raw
+        };
+
+        if let Err(msg) = validate_import_row(&name, &barcode, cost, sell, &unit, reorder, stock) {
+            result.errors.push(CsvImportError { row: row_no, message: msg });
+            continue;
+        }
+
+        let dup: Option<(i64,)> =
+            sqlx::query_as("SELECT id FROM products WHERE barcode = ?")
+                .bind(&barcode)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+        if dup.is_some() {
+            result.errors.push(CsvImportError {
+                row: row_no,
+                message: format!("Product with barcode \"{barcode}\" already exists"),
+            });
+            continue;
+        }
+
+        let category_id = match cell(c_category).trim() {
+            cat_name if !cat_name.is_empty() => {
+                let existing: Option<(i64,)> = sqlx::query_as(
+                    "SELECT id FROM categories WHERE lower(name) = lower(?)",
+                )
+                .bind(cat_name)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+                match existing {
+                    Some((id,)) => Some(id),
+                    None => {
+                        let r = sqlx::query("INSERT INTO categories (name) VALUES (?)")
+                            .bind(cat_name)
+                            .execute(&mut *tx)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                        Some(r.last_insert_rowid())
+                    }
+                }
+            }
+            _ => None,
+        };
+
+        let tax_profile_id = match cell(c_tax).trim() {
+            tax_name if !tax_name.is_empty() => {
+                let existing: Option<(i64,)> = sqlx::query_as(
+                    "SELECT id FROM tax_profiles WHERE lower(name) = lower(?)",
+                )
+                .bind(tax_name)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+                existing.map(|(id,)| id)
+            }
+            _ => None,
+        };
+
+        let description = empty_to_none(&Some(cell(c_description)));
+
+        let pid = sqlx::query(
+            "INSERT INTO products
+                (sku, barcode, name, description, category_id, cost_price, sell_price,
+                 tax_profile_id, unit, stock_qty, reorder_level, is_active, is_quick)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(empty_to_none(&Some(cell(c_sku))))
+        .bind(&barcode)
+        .bind(name.trim())
+        .bind(description)
+        .bind(category_id)
+        .bind(cost)
+        .bind(sell)
+        .bind(tax_profile_id)
+        .bind(unit.trim())
+        .bind(stock)
+        .bind(reorder)
+        .bind(i64::from(active))
+        .bind(i64::from(quick))
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?
+        .last_insert_rowid();
+
+        if let Some(pic) = images_by_row.get(&(abs_row as u32)) {
+            let ext = if pic.extension.is_empty() {
+                "png".to_string()
+            } else {
+                pic.extension.to_lowercase()
+            };
+            let images_dir = app
+                .path()
+                .app_data_dir()
+                .map_err(|e| e.to_string())?
+                .join("images");
+            std::fs::create_dir_all(&images_dir).map_err(|e| e.to_string())?;
+            let stamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis())
+                .unwrap_or_default();
+            let dest = images_dir.join(format!("product_{pid}_{stamp}.{ext}"));
+            std::fs::write(&dest, &pic.data)
+                .map_err(|e| format!("Could not write image: {e}"))?;
+            let dest_path = dest.to_string_lossy().to_string();
+            sqlx::query("UPDATE products SET image_path = ? WHERE id = ?")
+                .bind(&dest_path)
+                .bind(pid)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+
+        if stock > 0.0 {
+            sqlx::query(
+                "INSERT INTO stock_movements (product_id, type, qty, notes)
+                 VALUES (?, 'opening', ?, 'Imported from Excel')",
+            )
+            .bind(pid)
+            .bind(stock)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+        }
+
+        result.imported += 1;
+    }
+
+    tx.commit().await.map_err(|e| e.to_string())?;
+
+    if result.imported > 0 {
+        sqlx::query(
+            "INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
+             VALUES (?, 'product.import', 'product', NULL, ?)",
+        )
+        .bind(user_id)
+        .bind(format!("Imported {} product(s) from Excel", result.imported))
         .execute(&pool)
         .await
         .map_err(|e| e.to_string())?;

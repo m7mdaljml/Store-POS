@@ -2,12 +2,31 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePool, SqlitePoolOptions};
 use tauri::{AppHandle, Manager, Runtime};
+use tauri_plugin_sql::Migration;
 
 pub fn db_path<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
     app.path()
         .app_config_dir()
         .map(|dir| dir.join("store.db"))
         .map_err(|e| e.to_string())
+}
+
+/// Applies a list of SQL migrations to the database at `path`, in order. Used
+/// by integration tests to build the same schema the production Tauri plugin
+/// builds at startup (each migration body may contain multiple statements).
+pub async fn apply_migrations(path: &Path, migrations: &[Migration]) -> Result<(), String> {
+    let pool = connect(path).await?;
+    {
+        let mut conn = pool.acquire().await.map_err(|e| e.to_string())?;
+        for m in migrations {
+            sqlx::raw_sql(&m.sql)
+                .execute(&mut *conn)
+                .await
+                .map_err(|e| format!("migration {} ({}) failed: {e}", m.version, m.description))?;
+        }
+    }
+    pool.close().await;
+    Ok(())
 }
 
 pub async fn pool<R: Runtime>(app: &AppHandle<R>) -> Result<SqlitePool, String> {

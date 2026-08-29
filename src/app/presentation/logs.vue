@@ -150,6 +150,8 @@ const ALL_ACTIONS = [
   "user.activate",
   "user.deactivate",
   "user.permissions",
+  "user.password_set",
+  "user.password_reset",
 ];
 
 const toast = useToast();
@@ -345,6 +347,18 @@ const detailPatterns: Array<{
     regex: /^Updated permissions for user (\d+): (\d+) permission/,
     i18nKey: "logs.detail.updatedPermissions",
     map: (m) => ({ id: m[1], count: m[2] }),
+  },
+  {
+    action: "user.password_set",
+    regex: /^User set their own password$/,
+    i18nKey: "logs.detail.setOwnPassword",
+    map: () => ({}),
+  },
+  {
+    action: "user.password_reset",
+    regex: /^Admin reset user password \(temporary credential issued\)$/,
+    i18nKey: "logs.detail.adminResetPassword",
+    map: () => ({}),
   },
   {
     action: "sale.create",

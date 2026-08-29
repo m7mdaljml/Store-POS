@@ -1,6 +1,4 @@
-use argon2::password_hash::rand_core::OsRng;
-use argon2::password_hash::SaltString;
-use argon2::{Argon2, PasswordHasher};
+use argon2::{Argon2, PasswordHash, PasswordVerifier};
 use tauri::{AppHandle, Runtime};
 
 use crate::db;
@@ -108,25 +106,33 @@ pub async fn seed_db(path: &std::path::Path) -> Result<(), Box<dyn std::error::E
         }
     }
 
-    let admin: Option<(i64,)> = sqlx::query_as("SELECT id FROM users WHERE username = 'admin'")
-        .fetch_optional(&pool)
-        .await?;
-    if admin.is_none() {
-        let admin_role_id: i64 = sqlx::query_scalar("SELECT id FROM roles WHERE name = 'Admin'")
-            .fetch_one(&pool)
+    // The system never ships a known admin credential (e.g. admin/admin) for
+    // the production database, so a copied database cannot be opened with a
+    // default password. On a fresh install no user exists at all -> the
+    // frontend shows a first-run setup screen where the administrator picks
+    // their own username + password (see commands::auth::needs_setup and
+    // setup_admin).
+    //
+    // For installations upgraded from an old seed that already created an
+    // 'admin' user still using the insecure default password 'admin', we
+    // detect it and flag Password Reset Required so the admin is forced to
+    // choose a new password on their next login.
+    let admin: Option<(i64, String)> =
+        sqlx::query_as("SELECT id, password_hash FROM users WHERE username = 'admin'")
+            .fetch_optional(&pool)
             .await?;
-        let salt = SaltString::generate(&mut OsRng);
-        let hash = Argon2::default()
-            .hash_password(b"admin", &salt)
-            .map_err(|e| e.to_string())?
-            .to_string();
-        sqlx::query(
-            "INSERT INTO users (username, password_hash, full_name, role_id) VALUES ('admin', ?, 'Administrator', ?)",
-        )
-        .bind(hash)
-        .bind(admin_role_id)
-        .execute(&pool)
-        .await?;
+    if let Some((admin_id, hash)) = admin {
+        if let Ok(parsed) = PasswordHash::new(&hash) {
+            let is_default = Argon2::default()
+                .verify_password(b"admin", &parsed)
+                .is_ok();
+            if is_default {
+                sqlx::query("UPDATE users SET password_state = 'reset' WHERE id = ?")
+                    .bind(admin_id)
+                    .execute(&pool)
+                    .await?;
+            }
+        }
     }
 
     pool.close().await;
@@ -136,7 +142,8 @@ pub async fn seed_db(path: &std::path::Path) -> Result<(), Box<dyn std::error::E
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use argon2::{PasswordHash, PasswordVerifier};
+    use argon2::password_hash::SaltString;
+    use argon2::PasswordHasher;
 
     pub(crate) async fn create_schema(path: &std::path::Path) {
         let pool = db::connect(path).await.unwrap();
@@ -146,7 +153,7 @@ pub(crate) mod tests {
             "CREATE TABLE roles (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, description TEXT)",
             "CREATE TABLE permissions (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT UNIQUE NOT NULL)",
             "CREATE TABLE role_permissions (role_id INTEGER NOT NULL REFERENCES roles(id) ON DELETE CASCADE, permission_id INTEGER NOT NULL REFERENCES permissions(id) ON DELETE CASCADE, PRIMARY KEY (role_id, permission_id))",
-            "CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, full_name TEXT NOT NULL, role_id INTEGER NOT NULL REFERENCES roles(id), is_active INTEGER NOT NULL DEFAULT 1)",
+            "CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, full_name TEXT NOT NULL, role_id INTEGER NOT NULL REFERENCES roles(id), is_active INTEGER NOT NULL DEFAULT 1, password_state TEXT NOT NULL DEFAULT 'set')",
         ] {
             sqlx::query(sql).execute(&pool).await.unwrap();
         }
@@ -170,9 +177,11 @@ pub(crate) mod tests {
         seed_db(&path).await.unwrap();
 
         let pool = db::connect(&path).await.unwrap();
+        // A fresh install must NOT ship with any users (no hard-coded admin),
+        // so the frontend can present the first-run setup flow.
         let users: i64 =
             sqlx::query_scalar("SELECT COUNT(*) FROM users").fetch_one(&pool).await.unwrap();
-        assert_eq!(users, 1);
+        assert_eq!(users, 0);
         let roles: i64 =
             sqlx::query_scalar("SELECT COUNT(*) FROM roles").fetch_one(&pool).await.unwrap();
         assert_eq!(roles, 2);
@@ -186,18 +195,59 @@ pub(crate) mod tests {
             .await
             .unwrap();
         assert_eq!(links, 10);
-        let hash: String = sqlx::query_scalar("SELECT password_hash FROM users WHERE username = 'admin'")
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-        let parsed = PasswordHash::new(&hash).unwrap();
-        assert!(Argon2::default().verify_password(b"admin", &parsed).is_ok());
         let threshold: String =
             sqlx::query_scalar("SELECT value FROM settings WHERE key = 'discount_threshold'")
                 .fetch_one(&pool)
                 .await
                 .unwrap();
         assert_eq!(threshold, "10");
+        pool.close().await;
+
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[tokio::test]
+    async fn legacy_default_admin_is_flagged_for_reset() {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "store-pos-seed-reset-test-{}-{nanos}.db",
+            std::process::id()
+        ));
+        create_schema(&path).await;
+        let pool = db::connect(&path).await.unwrap();
+        let _ = sqlx::query(
+            "INSERT INTO roles (name) VALUES ('Admin') ON CONFLICT(name) DO NOTHING",
+        )
+        .execute(&pool)
+        .await;
+        let admin_role_id: i64 =
+            sqlx::query_scalar("SELECT id FROM roles WHERE name = 'Admin'").fetch_one(&pool).await.unwrap();
+        let salt = SaltString::generate(&mut argon2::password_hash::rand_core::OsRng);
+        let hash = Argon2::default()
+            .hash_password(b"admin", &salt)
+            .unwrap()
+            .to_string();
+        sqlx::query(
+            "INSERT INTO users (username, password_hash, full_name, role_id, password_state) VALUES ('admin', ?, 'Administrator', ?, 'set')",
+        )
+        .bind(&hash)
+        .bind(admin_role_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        pool.close().await;
+
+        seed_db(&path).await.unwrap();
+
+        let pool = db::connect(&path).await.unwrap();
+        let state: String = sqlx::query_scalar("SELECT password_state FROM users WHERE username = 'admin'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(state, "reset");
         pool.close().await;
 
         std::fs::remove_file(&path).ok();

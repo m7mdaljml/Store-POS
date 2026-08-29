@@ -1,4 +1,3 @@
-import { invoke } from "@tauri-apps/api/core";
 import { execute, insert, selectOne } from "./db";
 
 const ROLE_PERMISSIONS: Record<string, string[]> = {
@@ -78,18 +77,8 @@ export async function seedIfNeeded(): Promise<void> {
     }
   }
 
-  const admin = await selectOne<{ id: number }>(
-    "SELECT id FROM users WHERE username = 'admin'",
-  );
-  if (!admin) {
-    const adminRole = await selectOne<{ id: number }>(
-      "SELECT id FROM roles WHERE name = 'Admin'",
-    );
-    if (!adminRole) throw new Error("Admin role missing during seed");
-    const hash = await invoke<string>("hash_password", { password: "admin" });
-    await insert(
-      "INSERT INTO users (username, password_hash, full_name, role_id) VALUES ('admin', ?, 'Administrator', ?)",
-      [hash, adminRole.id],
-    );
-  }
+  // NOTE: No user is seeded here. A fresh install must never ship with a
+  // hard-coded admin credential — on first launch the frontend detects an empty
+  // users table (needs_setup) and shows the administrator setup screen where the
+  // owner chooses their own username and password.
 }

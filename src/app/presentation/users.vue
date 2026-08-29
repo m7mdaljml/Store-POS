@@ -67,12 +67,33 @@
                 </span>
               </td>
               <td>
-                <span
-                  class="badge"
-                  :class="u.isActive ? 'text-bg-success' : 'text-bg-danger'"
-                >
-                  {{ u.isActive ? t("common.active") : t("users.deactivated") }}
-                </span>
+                <div class="d-flex flex-column gap-1">
+                  <span
+                    class="badge"
+                    :class="u.isActive ? 'text-bg-success' : 'text-bg-danger'"
+                  >
+                    {{
+                      u.isActive
+                        ? t("common.active")
+                        : t("users.deactivated")
+                    }}
+                  </span>
+                  <span
+                    v-if="u.isActive && u.passwordState === 'pending'"
+                    class="badge text-bg-warning"
+                    >{{ t("users.statePending") }}</span
+                  >
+                  <span
+                    v-else-if="u.isActive && u.passwordState === 'reset'"
+                    class="badge text-bg-danger"
+                    >{{ t("users.stateReset") }}</span
+                  >
+                  <span
+                    v-else-if="u.isActive"
+                    class="badge text-bg-light border"
+                    >{{ t("users.stateActive") }}</span
+                  >
+                </div>
               </td>
               <td>
                 <div class="d-flex flex-wrap gap-1">
@@ -90,6 +111,14 @@
               </td>
               <td class="text-end text-nowrap">
                 <template v-if="u.username !== auth.user?.username">
+                  <button
+                    class="btn btn-sm btn-outline-warning mx-1"
+                    type="button"
+                    :title="t('users.resetPasswordTitle')"
+                    @click="resetPassword(u)"
+                  >
+                    <i class="bi bi-key"></i>
+                  </button>
                   <button
                     class="btn btn-sm btn-outline-primary mx-1"
                     type="button"
@@ -186,21 +215,6 @@
                 <div class="invalid-feedback">{{ addErrors.username }}</div>
               </div>
               <div class="mb-3">
-                <label class="form-label" for="new-password">{{
-                  t("common.password")
-                }}</label>
-                <input
-                  id="new-password"
-                  v-model="addForm.password"
-                  class="form-control"
-                  :class="{ 'is-invalid': addErrors.password }"
-                  type="password"
-                  autocomplete="new-password"
-                  @input="clearFieldError(addErrors, 'password')"
-                />
-                <div class="invalid-feedback">{{ addErrors.password }}</div>
-              </div>
-              <div class="mb-0">
                 <label class="form-label" for="new-role">{{
                   t("users.role")
                 }}</label>
@@ -213,6 +227,9 @@
                   :class="{ 'is-invalid': addErrors.roleId }"
                 />
                 <div class="invalid-feedback">{{ addErrors.roleId }}</div>
+              </div>
+              <div class="alert alert-info py-2 small mb-0">
+                <i class="bi bi-key mx-1"></i>{{ t("users.noPasswordNote") }}
               </div>
               <div
                 class="d-flex justify-content-end gap-2 mt-3 pt-3 border-top"
@@ -284,21 +301,6 @@
                 <div class="invalid-feedback">{{ editErrors.username }}</div>
               </div>
               <div class="mb-3">
-                <label class="form-label" for="edit-password">
-                  {{ t("common.password") }}
-                  <span class="text-muted fw-normal">{{
-                    t("users.passwordKeep")
-                  }}</span>
-                </label>
-                <input
-                  id="edit-password"
-                  v-model="editForm.password"
-                  class="form-control"
-                  type="password"
-                  autocomplete="new-password"
-                />
-              </div>
-              <div class="mb-3">
                 <label class="form-label" for="edit-role">{{
                   t("users.role")
                 }}</label>
@@ -355,6 +357,47 @@
               </div>
             </div>
           </form>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="tempPassword" class="modal-backdrop show"></div>
+    <div v-if="tempPassword" class="modal d-block" tabindex="-1">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">{{ t("users.tempPasswordTitle") }}</h5>
+            <button
+              type="button"
+              class="btn-close"
+              @click="tempPassword = null"
+            ></button>
+          </div>
+          <div class="modal-body">
+            <div class="alert alert-warning py-2 small">
+              <i class="bi bi-exclamation-triangle mx-1"></i>{{
+                t("users.tempPasswordNote")
+              }}
+            </div>
+            <div
+              class="text-center border rounded-3 py-3 mb-3 font-monospace fw-bold"
+              style="font-size: 1.4rem; letter-spacing: 0.1em"
+            >
+              {{ tempPassword }}
+            </div>
+            <p class="text-muted small mb-0">
+              {{ t("users.tempPasswordHandoff") }}
+            </p>
+          </div>
+          <div class="modal-footer">
+            <button
+              type="button"
+              class="btn btn-primary w-100"
+              @click="tempPassword = null"
+            >
+              {{ t("common.close") }}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -425,10 +468,12 @@ const {
 
 const showAdd = ref(false);
 const adding = ref(false);
-const addForm = ref({ username: "", fullName: "", password: "", roleId: 0 });
+const addForm = ref({ username: "", fullName: "", roleId: 0 });
 const addErrors = reactive<Record<string, string>>({});
 const addGuard = useFormGuard(addForm);
 const canAdd = computed(() => addGuard.isDirty.value && !adding.value);
+/** Temporary password shown exactly once after creating/resetting a user. */
+const tempPassword = ref<string | null>(null);
 
 function resetErrors(errors: Record<string, string>) {
   for (const key of Object.keys(errors)) delete errors[key];
@@ -438,7 +483,6 @@ function validateAdd(): boolean {
   const ok = applyFieldRules(addErrors, [
     ["fullName", !!addForm.value.fullName.trim(), t("users.fullName")],
     ["username", !!addForm.value.username.trim(), t("common.username")],
-    ["password", !!addForm.value.password, t("common.password")],
     ["roleId", !!addForm.value.roleId, t("users.role")],
   ]);
   return ok;
@@ -447,12 +491,11 @@ function validateAdd(): boolean {
 const editTarget = ref<UserRecord | null>(null);
 const saving = ref(false);
 const editSelection = ref<string[]>([]);
-const editForm = ref({ username: "", fullName: "", password: "", roleId: 0 });
+const editForm = ref({ username: "", fullName: "", roleId: 0 });
 const editErrors = reactive<Record<string, string>>({});
 const editState = computed(() => ({
   username: editForm.value.username,
   fullName: editForm.value.fullName,
-  password: editForm.value.password,
   roleId: editForm.value.roleId,
   perms: [...editSelection.value].sort().join(","),
 }));
@@ -495,7 +538,6 @@ function openAdd() {
   addForm.value = {
     username: "",
     fullName: "",
-    password: "",
     roleId: cashierRoleId(),
   };
   resetErrors(addErrors);
@@ -510,9 +552,8 @@ async function submitAdd() {
   }
   adding.value = true;
   try {
-    await invoke<number>("create_user", {
+    const temp = await invoke<string>("create_user", {
       username: addForm.value.username.trim(),
-      password: addForm.value.password,
       fullName: addForm.value.fullName.trim(),
       roleId: addForm.value.roleId,
       createdBy: auth.user?.id ?? null,
@@ -521,6 +562,7 @@ async function submitAdd() {
     showAdd.value = false;
     toast.success(t("users.cashierCreated"));
     await refresh();
+    tempPassword.value = temp;
   } catch (e) {
     toast.error(e instanceof Error ? e.message : String(e));
   } finally {
@@ -534,7 +576,6 @@ function openEdit(u: UserRecord) {
   editForm.value = {
     username: u.username,
     fullName: u.fullName,
-    password: "",
     roleId: u.roleId,
   };
   resetErrors(editErrors);
@@ -561,7 +602,6 @@ async function saveUser() {
       userId: editTarget.value.id,
       username: editForm.value.username.trim(),
       fullName: editForm.value.fullName.trim(),
-      password: editForm.value.password || null,
       roleId: editForm.value.roleId,
       updatedBy: auth.user?.id ?? null,
     });
@@ -602,6 +642,25 @@ async function activate(u: UserRecord) {
     await invoke("set_user_active", { userId: u.id, active: true, toggledBy: auth.user?.id ?? null });
     toast.success(t("users.reactivated", { name: u.fullName }));
     await reloadUsers();
+  } catch (e) {
+    toast.error(e instanceof Error ? e.message : String(e));
+  }
+}
+
+async function resetPassword(u: UserRecord) {
+  if (
+    !(await confirmDialog({
+      message: t("users.resetConfirm", { name: u.fullName }),
+    }))
+  )
+    return;
+  try {
+    const temp = await invoke<string>("reset_user_password", {
+      userId: u.id,
+      resetBy: auth.user?.id ?? null,
+    });
+    await reloadUsers();
+    tempPassword.value = temp;
   } catch (e) {
     toast.error(e instanceof Error ? e.message : String(e));
   }

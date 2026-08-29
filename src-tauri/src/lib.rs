@@ -7,7 +7,9 @@ pub mod export;
 pub mod format;
 pub mod seed;
 
-fn initial_migrations() -> Vec<Migration> {
+// Public so integration tests can (re)build a full schema identical to the
+// production migration list before seeding.
+pub fn initial_migrations() -> Vec<Migration> {
   vec![
     Migration {
       version: 1,
@@ -54,6 +56,18 @@ fn initial_migrations() -> Vec<Migration> {
       sql: "ALTER TABLE sale_items ADD COLUMN refunded_qty REAL NOT NULL DEFAULT 0;\nCREATE TABLE refunds (\n  id         INTEGER PRIMARY KEY AUTOINCREMENT,\n  refund_no  TEXT UNIQUE NOT NULL,\n  sale_id    INTEGER NOT NULL REFERENCES sales(id),\n  user_id    INTEGER REFERENCES users(id),\n  amount     REAL NOT NULL DEFAULT 0,\n  method     TEXT NOT NULL DEFAULT 'cash',\n  reason     TEXT,\n  created_at TEXT NOT NULL DEFAULT (datetime('now'))\n);\nCREATE TABLE refund_items (\n  id           INTEGER PRIMARY KEY AUTOINCREMENT,\n  refund_id    INTEGER NOT NULL REFERENCES refunds(id) ON DELETE CASCADE,\n  sale_item_id INTEGER NOT NULL REFERENCES sale_items(id),\n  product_id   INTEGER NOT NULL REFERENCES products(id),\n  qty          REAL NOT NULL,\n  amount       REAL NOT NULL\n);",
       kind: MigrationKind::Up,
     },
+    // v8: track the password lifecycle so admins never set or know a user's
+    // permanent password. `password_state` is one of:
+    //   'set'     -> Active (user has a real password and can sign in normally)
+    //   'pending' -> Pending Activation (created by admin, temp password only)
+    //   'reset'   -> Password Reset Required (admin reset, must choose new one)
+    // Combined with `is_active`, this gives Disabled (is_active = 0).
+    Migration {
+      version: 8,
+      description: "users_password_state",
+      sql: "ALTER TABLE users ADD COLUMN password_state TEXT NOT NULL DEFAULT 'set';",
+      kind: MigrationKind::Up,
+    },
   ]
 }
 
@@ -97,7 +111,11 @@ pub fn run() {
       commands::auth::login,
       commands::auth::logout,
       commands::auth::verify_session,
+      commands::auth::needs_setup,
+      commands::auth::setup_admin,
+      commands::auth::set_own_password,
       commands::auth::create_user,
+      commands::auth::reset_user_password,
       commands::auth::delete_user,
       commands::auth::set_user_active,
       commands::auth::remove_user,
@@ -117,6 +135,8 @@ pub fn run() {
       commands::catalog::adjust_stock,
       commands::catalog::import_product_image,
       commands::catalog::import_products_csv,
+      commands::catalog::import_products_xlsx,
+      commands::catalog::export_products_xlsx,
       commands::catalog::list_stock_movements,
       commands::suppliers::list_suppliers,
       commands::suppliers::get_supplier,

@@ -1,4 +1,4 @@
-use argon2::password_hash::rand_core::OsRng;
+use argon2::password_hash::rand_core::{OsRng, RngCore};
 use argon2::password_hash::SaltString;
 use argon2::{Argon2, PasswordHasher, PasswordHash, PasswordVerifier};
 use serde::Serialize;
@@ -17,6 +17,10 @@ pub struct AuthUser {
     pub full_name: String,
     pub role_name: String,
     pub permissions: Vec<String>,
+    /// True when the user signed in with a temporary/initial password and must
+    /// choose a permanent one before using the POS (Pending Activation or
+    /// Password Reset Required).
+    pub must_change_password: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -35,6 +39,7 @@ pub struct UserRecord {
     pub role_id: i64,
     pub role_name: String,
     pub is_active: bool,
+    pub password_state: String,
     pub permissions: Vec<String>,
 }
 
@@ -53,10 +58,26 @@ fn verify_password_inner(password: &str, hash: &str) -> Result<bool, String> {
         .is_ok())
 }
 
+/// A temporary/reset password is only ever shown once to an administrator so
+/// they can hand it to the user; it is replaced the moment the user chooses
+/// their own permanent password. We deliberately use a cryptographically
+/// random token built from a human-friendly character set.
+fn generate_temporary_password() -> String {
+    const CHARSET: &[u8] =
+        b"ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+    let mut rng = OsRng;
+    let mut pw = String::with_capacity(10);
+    for _ in 0..10 {
+        let idx = (rng.next_u32() as usize) % CHARSET.len();
+        pw.push(CHARSET[idx] as char);
+    }
+    pw
+}
+
 async fn authenticate(pool: &SqlitePool, username: &str, password: &str) -> Result<AuthUser, String> {
     let row = sqlx::query(
         "SELECT u.id, u.password_hash, u.full_name, u.role_id, u.is_active,
-                r.name AS role_name
+                u.password_state, r.name AS role_name
          FROM users u
          JOIN roles r ON r.id = u.role_id
          WHERE u.username = ?",
@@ -80,6 +101,9 @@ async fn authenticate(pool: &SqlitePool, username: &str, password: &str) -> Resu
     if !verify_password_inner(password, &hash)? {
         return Err("Invalid username or password".into());
     }
+
+    let must_change_password =
+        matches!(row.try_get::<String, _>("password_state").map_err(|e| e.to_string())?.as_str(), "pending" | "reset");
 
     let id: i64 = row.try_get("id").map_err(|e| e.to_string())?;
     let full_name: String = row.try_get("full_name").map_err(|e| e.to_string())?;
@@ -109,6 +133,7 @@ async fn authenticate(pool: &SqlitePool, username: &str, password: &str) -> Resu
         full_name,
         role_name,
         permissions,
+        must_change_password,
     })
 }
 
@@ -156,15 +181,39 @@ pub async fn verify_session<R: Runtime>(
 pub async fn create_user<R: Runtime>(
     app: AppHandle<R>,
     username: String,
-    password: String,
     full_name: String,
     role_id: i64,
     created_by: Option<i64>,
-) -> Result<i64, String> {
+) -> Result<String, String> {
     let pool = db::pool(&app).await?;
-    let hash = hash_password_inner(&password)?;
+
+    let username = username.trim().to_string();
+    let full_name = full_name.trim().to_string();
+    if username.is_empty() {
+        return Err("Username is required".into());
+    }
+    if full_name.is_empty() {
+        return Err("Full name is required".into());
+    }
+    let taken: Option<(i64,)> =
+        sqlx::query_as("SELECT id FROM users WHERE username = ?")
+            .bind(&username)
+            .fetch_optional(&pool)
+            .await
+            .map_err(|e| e.to_string())?;
+    if taken.is_some() {
+        return Err("Username already taken".into());
+    }
+
+    // The admin never sets or knows the user's permanent password. We create
+    // the account in "Pending Activation" with a generated temporary password
+    // that is returned exactly once (to be handed to the user). The user must
+    // choose their own password on first login.
+    let temporary = generate_temporary_password();
+    let hash = hash_password_inner(&temporary)?;
     let result = sqlx::query(
-        "INSERT INTO users (username, password_hash, full_name, role_id) VALUES (?, ?, ?, ?)",
+        "INSERT INTO users (username, password_hash, full_name, role_id, password_state)
+         VALUES (?, ?, ?, ?, 'pending')",
     )
     .bind(&username)
     .bind(&hash)
@@ -184,7 +233,7 @@ pub async fn create_user<R: Runtime>(
     .execute(&pool)
     .await
     .map_err(|e| e.to_string())?;
-    Ok(id)
+    Ok(temporary)
 }
 
 #[tauri::command]
@@ -320,7 +369,6 @@ pub async fn update_user<R: Runtime>(
     user_id: i64,
     username: String,
     full_name: String,
-    password: Option<String>,
     role_id: i64,
     updated_by: Option<i64>,
 ) -> Result<(), String> {
@@ -346,35 +394,17 @@ pub async fn update_user<R: Runtime>(
         return Err("Username already taken".into());
     }
 
-    let result = match password.filter(|p| !p.is_empty()) {
-        Some(pw) => {
-            let hash = hash_password_inner(&pw)?;
-            sqlx::query(
-                "UPDATE users SET username = ?, full_name = ?, password_hash = ?, role_id = ?
-                 WHERE id = ?",
-            )
-            .bind(&username)
-            .bind(&full_name)
-            .bind(&hash)
-            .bind(role_id)
-            .bind(user_id)
-            .execute(&pool)
-            .await
-            .map_err(|e| e.to_string())?
-        }
-        None => {
-            sqlx::query(
-                "UPDATE users SET username = ?, full_name = ?, role_id = ? WHERE id = ?",
-            )
-            .bind(&username)
-            .bind(&full_name)
-            .bind(role_id)
-            .bind(user_id)
-            .execute(&pool)
-            .await
-            .map_err(|e| e.to_string())?
-        }
-    };
+    // The admin can update profile fields and role but never the password.
+    let result = sqlx::query(
+        "UPDATE users SET username = ?, full_name = ?, role_id = ? WHERE id = ?",
+    )
+    .bind(&username)
+    .bind(&full_name)
+    .bind(role_id)
+    .bind(user_id)
+    .execute(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
 
     if result.rows_affected() == 0 {
         return Err("User not found".into());
@@ -390,6 +420,151 @@ pub async fn update_user<R: Runtime>(
     .await
     .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// Returns whether the database is on first run (no users exist yet), which
+/// triggers the first-install administrator setup screen.
+#[tauri::command]
+pub async fn needs_setup<R: Runtime>(app: AppHandle<R>) -> Result<bool, String> {
+    let pool = db::pool(&app).await?;
+    let count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM users").fetch_one(&pool).await.map_err(|e| e.to_string())?;
+    Ok(count == 0)
+}
+
+/// First-install: creates the initial administrator with a username and
+/// password of the owner's choosing (never a hard-coded credential). Passwords
+/// are stored only as an argon2 hash.
+#[tauri::command]
+pub async fn setup_admin<R: Runtime>(
+    app: AppHandle<R>,
+    username: String,
+    password: String,
+    full_name: String,
+) -> Result<(), String> {
+    let pool = db::pool(&app).await?;
+
+    let username = username.trim().to_string();
+    let full_name = full_name.trim().to_string();
+    if username.is_empty() {
+        return Err("Username is required".into());
+    }
+    if password.len() < 4 {
+        return Err("Password must be at least 4 characters".into());
+    }
+    if full_name.is_empty() {
+        return Err("Full name is required".into());
+    }
+
+    let count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM users").fetch_one(&pool).await.map_err(|e| e.to_string())?;
+    if count > 0 {
+        return Err("Setup has already been completed".into());
+    }
+    let taken: Option<(i64,)> =
+        sqlx::query_as("SELECT id FROM users WHERE username = ?")
+            .bind(&username)
+            .fetch_optional(&pool)
+            .await
+            .map_err(|e| e.to_string())?;
+    if taken.is_some() {
+        return Err("Username already taken".into());
+    }
+
+    let admin_role_id: i64 = sqlx::query_scalar("SELECT id FROM roles WHERE name = 'Admin'")
+        .fetch_one(&pool)
+        .await
+        .map_err(|e| format!("Admin role is missing: {e}"))?;
+
+    let hash = hash_password_inner(&password)?;
+    sqlx::query(
+        "INSERT INTO users (username, password_hash, full_name, role_id, password_state)
+         VALUES (?, ?, ?, ?, 'set')",
+    )
+    .bind(&username)
+    .bind(&hash)
+    .bind(&full_name)
+    .bind(admin_role_id)
+    .execute(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Lets a user set their own permanent password. Called from the forced
+/// "choose a new password" screen after first login (Pending Activation) or
+/// after an admin reset. The temporary password is immediately invalidated
+/// because it is overwritten by the new hash.
+#[tauri::command]
+pub async fn set_own_password<R: Runtime>(
+    app: AppHandle<R>,
+    user_id: i64,
+    new_password: String,
+) -> Result<(), String> {
+    let pool = db::pool(&app).await?;
+    if new_password.len() < 4 {
+        return Err("Password must be at least 4 characters".into());
+    }
+    let hash = hash_password_inner(&new_password)?;
+    let result = sqlx::query(
+        "UPDATE users SET password_hash = ?, password_state = 'set' WHERE id = ?",
+    )
+    .bind(&hash)
+    .bind(user_id)
+    .execute(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+    if result.rows_affected() == 0 {
+        return Err("User not found".into());
+    }
+    sqlx::query(
+        "INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
+         VALUES (?, 'user.password_set', 'user', ?, ?)",
+    )
+    .bind(user_id)
+    .bind(user_id)
+    .bind("User set their own password")
+    .execute(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Admin-only: resets a user's password. A new temporary password is generated
+/// and returned exactly once (to be handed to the user); the user must choose a
+/// new permanent password at their next login. The existing password is never
+/// disclosed.
+#[tauri::command]
+pub async fn reset_user_password<R: Runtime>(
+    app: AppHandle<R>,
+    user_id: i64,
+    reset_by: Option<i64>,
+) -> Result<String, String> {
+    let pool = db::pool(&app).await?;
+    let temporary = generate_temporary_password();
+    let hash = hash_password_inner(&temporary)?;
+    let result = sqlx::query(
+        "UPDATE users SET password_hash = ?, password_state = 'reset' WHERE id = ?",
+    )
+    .bind(&hash)
+    .bind(user_id)
+    .execute(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+    if result.rows_affected() == 0 {
+        return Err("User not found".into());
+    }
+    sqlx::query(
+        "INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
+         VALUES (?, 'user.password_reset', 'user', ?, ?)",
+    )
+    .bind(reset_by)
+    .bind(user_id)
+    .bind("Admin reset user password (temporary credential issued)")
+    .execute(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+    Ok(temporary)
 }
 
 #[tauri::command]
@@ -511,7 +686,7 @@ pub async fn list_users<R: Runtime>(
     };
     let sql = format!(
         "SELECT u.id, u.username, u.full_name, u.role_id, u.is_active,
-                r.name AS role_name
+                u.password_state, r.name AS role_name
          FROM users u
          JOIN roles r ON r.id = u.role_id
          WHERE 1=1{search_cond}
@@ -560,6 +735,7 @@ pub async fn list_users<R: Runtime>(
                     let v: i64 = row.try_get("is_active").map_err(|e| e.to_string())?;
                     v != 0
                 },
+                password_state: row.try_get("password_state").map_err(|e| e.to_string())?,
                 permissions: perms_by_role.get(&role_id).cloned().unwrap_or_default(),
             })
         })
@@ -595,14 +771,63 @@ mod tests {
         seed::seed_db(&path).await.unwrap();
         let pool = db::connect(&path).await.unwrap();
 
-        let user = authenticate(&pool, "admin", "admin").await.unwrap();
+        let admin_role_id: i64 =
+            sqlx::query_scalar("SELECT id FROM roles WHERE name = 'Admin'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let hash = hash_password_inner("S0mePass!").unwrap();
+        sqlx::query(
+            "INSERT INTO users (username, password_hash, full_name, role_id, password_state)
+             VALUES ('admin', ?, 'Administrator', ?, 'set')",
+        )
+        .bind(&hash)
+        .bind(admin_role_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let user = authenticate(&pool, "admin", "S0mePass!").await.unwrap();
         assert_eq!(user.username, "admin");
         assert_eq!(user.full_name, "Administrator");
         assert_eq!(user.role_name, "Admin");
+        assert!(!user.must_change_password);
         assert!(user.permissions.contains(&"users.manage".to_string()));
 
         assert!(authenticate(&pool, "admin", "wrong").await.is_err());
-        assert!(authenticate(&pool, "nobody", "admin").await.is_err());
+        assert!(authenticate(&pool, "nobody", "S0mePass!").await.is_err());
+
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[tokio::test]
+    async fn pending_or_reset_user_must_change_password() {
+        let path = std::env::temp_dir().join(format!(
+            "store-pos-auth-pending-test-{}.db",
+            std::process::id()
+        ));
+        seed::tests::create_schema(&path).await;
+        seed::seed_db(&path).await.unwrap();
+        let pool = db::connect(&path).await.unwrap();
+
+        let cashier_role_id: i64 =
+            sqlx::query_scalar("SELECT id FROM roles WHERE name = 'Cashier'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let hash = hash_password_inner("TempPass1").unwrap();
+        sqlx::query(
+            "INSERT INTO users (username, password_hash, full_name, role_id, password_state)
+             VALUES ('cash', ?, 'Cashier', ?, 'pending')",
+        )
+        .bind(&hash)
+        .bind(cashier_role_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let user = authenticate(&pool, "cash", "TempPass1").await.unwrap();
+        assert!(user.must_change_password);
 
         std::fs::remove_file(&path).ok();
     }

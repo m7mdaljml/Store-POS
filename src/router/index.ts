@@ -9,6 +9,12 @@ const routes = [
     meta: { public: true },
   },
   {
+    path: "/change-password",
+    name: "change-password",
+    component: () => import("../app/presentation/change-password.vue"),
+    meta: { requiresPasswordChange: true },
+  },
+  {
     path: "/",
     name: "dashboard",
     component: () => import("../app/presentation/dashboard.vue"),
@@ -102,6 +108,7 @@ interface RouteMetaLike {
   public?: boolean;
   adminOnly?: boolean;
   permission?: string;
+  requiresPasswordChange?: boolean;
 }
 
 function isAdminRole(auth: ReturnType<typeof useAuthStore>): boolean {
@@ -128,6 +135,21 @@ function firstAllowedName(auth: ReturnType<typeof useAuthStore>): string | null 
 
 router.beforeEach((to) => {
   const auth = useAuthStore();
+
+  // A signed-in user who must set a permanent password (first activation or
+  // after an admin reset) may only reach the change-password screen until they
+  // choose one.
+  if (auth.isAuthenticated && auth.mustChangePassword) {
+    if (to.name !== "change-password") {
+      return { name: "change-password" };
+    }
+    return true;
+  }
+  if (to.name === "change-password") {
+    const home = firstAllowedName(auth);
+    return home ? { name: home } : { name: "login" };
+  }
+
   if (!to.meta.public && !auth.isAuthenticated) {
     return { name: "login" };
   }

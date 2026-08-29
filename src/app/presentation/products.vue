@@ -6,10 +6,19 @@
         <AsyncButton
           variant="outline-primary"
           :loading="csvImporting"
-          @click="importCsv"
+          @click="importFile"
         >
-          <i v-if="!csvImporting" class="bi bi-filetype-csv mx-1"></i
+          <i v-if="!csvImporting" class="bi bi-filetype-xlsx mx-1"></i
           >{{ t("products.importCsv") }}
+        </AsyncButton>
+        <AsyncButton
+          v-can="'export.excel'"
+          variant="outline-success"
+          :loading="exporting"
+          @click="exportProducts"
+        >
+          <i v-if="!exporting" class="bi bi-file-earmark-arrow-down mx-1"></i
+          >{{ t("products.exportXlsx") }}
         </AsyncButton>
         <button class="btn btn-primary" type="button" @click="openAddProduct">
           <i class="bi bi-plus-lg mx-1"></i>{{ t("products.addProduct") }}
@@ -685,7 +694,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { useI18n } from "vue-i18n";
 import EmptyState from "../../components/EmptyState.vue";
 import AsyncButton from "../../components/AsyncButton.vue";
@@ -802,29 +811,52 @@ const taxProfileOptions = computed<{ id: number | null; label: string }[]>(() =>
 ]);
 
 const csvImporting = ref(false);
+const exporting = ref(false);
 const csvResult = ref<{
   imported: number;
   errors: { row: number; message: string }[];
 } | null>(null);
 
-async function importCsv() {
+async function importFile() {
   const filePath = await open({
     multiple: false,
-    filters: [{ name: "CSV", extensions: ["csv"] }],
+    filters: [
+      { name: "Excel", extensions: ["xlsx"] },
+      { name: "CSV", extensions: ["csv"] },
+    ],
   });
   if (typeof filePath !== "string") return;
+  const isXlsx = filePath.toLowerCase().endsWith(".xlsx");
   csvImporting.value = true;
   csvResult.value = null;
   try {
-    csvResult.value = await invoke("import_products_csv", {
-      sourcePath: filePath,
-      userId: auth.user?.id ?? null,
-    });
+    csvResult.value = await invoke(
+      isXlsx ? "import_products_xlsx" : "import_products_csv",
+      { sourcePath: filePath, userId: auth.user?.id ?? null },
+    );
     await Promise.all([loadCategories(), catalog.load()]);
   } catch (e) {
     toast.error(e instanceof Error ? e.message : String(e));
   } finally {
     csvImporting.value = false;
+  }
+}
+
+async function exportProducts() {
+  const path = await saveDialog({
+    title: t("products.exportXlsx"),
+    defaultPath: `products-${new Date().toISOString().slice(0, 10)}.xlsx`,
+    filters: [{ name: "Excel", extensions: ["xlsx"] }],
+  });
+  if (!path) return;
+  exporting.value = true;
+  try {
+    await invoke("export_products_xlsx", { path });
+    toast.success(t("products.exportedTo", { path }));
+  } catch (e) {
+    toast.error(e instanceof Error ? e.message : String(e));
+  } finally {
+    exporting.value = false;
   }
 }
 

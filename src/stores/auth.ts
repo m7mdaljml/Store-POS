@@ -19,6 +19,7 @@ export const useAuthStore = defineStore("auth", () => {
   const isAuthenticated = computed(() => user.value !== null);
   const role = computed(() => user.value?.roleName ?? null);
   const permissions = computed(() => user.value?.permissions ?? []);
+  const mustChangePassword = computed(() => user.value?.mustChangePassword ?? false);
 
   function persist() {
     if (!user.value) return;
@@ -81,9 +82,19 @@ export const useAuthStore = defineStore("auth", () => {
     invoke("logout").catch(() => {});
   }
 
+  async function setOwnPassword(newPassword: string): Promise<void> {
+    if (!user.value) throw new Error("Not authenticated");
+    await invoke("set_own_password", {
+      userId: user.value.id,
+      newPassword,
+    });
+    user.value = { ...user.value, mustChangePassword: false };
+    persist();
+  }
+
   function can(code: string): boolean {
     return user.value?.permissions.includes(code) ?? false;
   }
 
-  return { user, role, permissions, expiresAt, isAuthenticated, login, logout, hydrate, verifySession, can };
+  return { user, role, permissions, expiresAt, isAuthenticated, mustChangePassword, login, logout, hydrate, verifySession, setOwnPassword, can };
 });

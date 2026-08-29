@@ -90,6 +90,28 @@ export const ar = {
     invalidCredentials: "اسم المستخدم أو كلمة المرور غير صحيحة",
     showPassword: "إظهار كلمة المرور",
     hidePassword: "إخفاء كلمة المرور",
+    mustChangeSubtitle:
+      "سجّلت الدخول بكلمة مرور مؤقتة. اختر كلمة مرور دائمة أدناه.",
+  },
+  setup: {
+    subtitle: "الإعداد الأول — إنشاء حساب المسؤول",
+    fullName: "الاسم الكامل",
+    choosePassword: "اختر كلمة مرور",
+    createAdmin: "إنشاء المسؤول",
+    requiredFullName: "أدخل الاسم الكامل للمسؤول",
+    securityNote:
+      "يتم تخزين كلمة المرور كتجزئة آمنة فقط. لا تُشحن أي كلمة مرور افتراضية.",
+  },
+  changePassword: {
+    title: "تعيين كلمة المرور",
+    subtitle: "اختر كلمة المرور التي ستستخدمها لتسجيل الدخول من الآن",
+    note: "كلمة المرور السابقة (المؤقتة) لم تعد صالحة بعد الحفظ.",
+    newPassword: "كلمة المرور الجديدة",
+    confirm: "تأكيد كلمة المرور الجديدة",
+    tooShort: "يجب ألا تقل كلمة المرور عن 4 أحرف",
+    mismatch: "كلمتا المرور غير متطابقتين",
+    save: "حفظ كلمة المرور",
+    saved: "تم حفظ كلمة المرور",
   },
   dashboard: {
     title: "لوحة التحكم",
@@ -246,6 +268,8 @@ export const ar = {
   products: {
     title: "المنتجات",
     importCsv: "استيراد CSV",
+    exportXlsx: "تصدير Excel",
+    exportedTo: "تم التصدير إلى {path}",
     addProduct: "إضافة منتج",
     importResult: "تم استيراد {imported} منتج",
     importRowsSkipped: "، تم تخطي {count} صف",
@@ -585,11 +609,15 @@ export const ar = {
     searchPlaceholder: "ابحث بالاسم أو اسم المستخدم…",
     noUsers: "لا يوجد مستخدمون بعد",
     deactivated: "معطّل",
+    stateActive: "نشط",
+    statePending: "في انتظار التفعيل",
+    stateReset: "مطلوب تغيير كلمة المرور",
     you: "أنت",
     editUserTitle: "تعديل المستخدم",
     deactivateTitle: "تعطيل",
     reactivateTitle: "إعادة تفعيل",
     deletePermTitle: "حذف نهائي",
+    resetPasswordTitle: "إعادة تعيين كلمة المرور",
     addCashierTitle: "إضافة أمين صندوق",
     fullName: "الاسم الكامل",
     create: "إنشاء",
@@ -599,12 +627,20 @@ export const ar = {
     cashierCreated: "تم إنشاء أمين الصندوق",
     usernameNameRequired: "اسم المستخدم والاسم الكامل مطلوبان",
     userUpdated: "تم تحديث المستخدم",
+    noPasswordNote:
+      "يختار المستخدم كلمة مروره بنفسه. يتم إنشاء كلمة مرور مؤقتة تُعرض مرة واحدة لتسجيل الدخول الأول.",
+    resetConfirm:
+      'إعادة تعيين كلمة مرور "{name}"؟\n\nستتوقف كلمة المرور الحالية عن العمل، ويجب عليه اختيار كلمة مرور جديدة عند تسجيل الدخول التالي. لن تُعرض كلمة مروره أبدًا لك.',
     deactivateConfirm: 'تعطيل "{name}"؟ لن يتمكن بعد الآن من تسجيل الدخول.',
     deactivated2: "تم تعطيل {name}",
     reactivated: "تمت إعادة تفعيل {name}",
     deleteConfirm:
       'حذف "{name}" ({username}) نهائيًا؟\n\nلا يمكن التراجع عن هذا وسيتم إزالة المستخدم من النظام.',
     deleted: "تم حذف {name}",
+    tempPasswordTitle: "كلمة مرور مؤقتة",
+    tempPasswordNote:
+      "اكتبها وأعطها للمستخدم. يمكن عرضها مرة واحدة فقط وتُلغى بمجرد تعيين كلمة مروره الخاصة.",
+    tempPasswordHandoff: "يجب على المستخدم تعيين كلمة مروره عند تسجيل الدخول التالي.",
   },
   sessions: {
     title: "جلسات الصندوق",
@@ -780,6 +816,8 @@ export const ar = {
       "user-activate": "تم تفعيل المستخدم",
       "user-deactivate": "تم تعطيل المستخدم",
       "user-permissions": "تم تحديث الصلاحيات",
+      "user-password_set": "تم تغيير كلمة المرور",
+      "user-password_reset": "إعادة تعيين كلمة المرور من قبل المدير",
     },
     detail: {
       createdCategory: 'تم إنشاء فئة "{name}"',
@@ -802,6 +840,8 @@ export const ar = {
       activateUser: "تم تفعيل المستخدم {id}",
       deactivateUser: "تم تعطيل المستخدم {id}",
       updatedPermissions: "تم تحديث صلاحيات المستخدم {id}: {count} صلاحية(ات)",
+      setOwnPassword: "اختار المستخدم كلمة مرور جديدة",
+      adminResetPassword: "أصدر المدير بيانات اعتماد مؤقتة لهذا المستخدم",
       createdSale:
         "تم إنشاء بيع {no} لـ {items} منتج(ات)، المجموع {total}، المدفوع {paid}، الباقي {change}",
       heldSale: "تم تعليق بيع {no} لـ {items} منتج(ات)، المجموع {total}",
