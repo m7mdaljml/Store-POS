@@ -129,6 +129,21 @@
             :placeholder="t('products.searchPlaceholder')"
           />
           <select
+            v-model="selected"
+            class="form-select form-select-sm"
+            style="width: auto"
+            :aria-label="t('products.filterCategory')"
+          >
+            <option :value="null">{{ t("products.allCategories") }}</option>
+            <option
+              v-for="c in categories"
+              :key="c.id"
+              :value="c.id"
+            >
+              {{ c.name }}
+            </option>
+          </select>
+          <select
             v-model="statusFilter"
             class="form-select form-select-sm"
             style="width: auto"
@@ -147,16 +162,17 @@
                 <th>{{ t("common.name") }}</th>
                 <th>{{ t("products.category") }}</th>
                 <th>{{ t("products.skuBarcode") }}</th>
-                <th class="text-end">{{ t("products.cost") }}</th>
-                <th class="text-end">{{ t("products.sell") }}</th>
-                <th class="text-end">{{ t("products.stock") }}</th>
+                <th class="text-start">{{ t("products.cost") }}</th>
+                <th class="text-start">{{ t("products.sell") }}</th>
+                <th class="text-start">{{ t("products.sellAfterTax") }}</th>
+                <th class="text-start">{{ t("products.stock") }}</th>
                 <th>{{ t("common.status") }}</th>
-                <th class="text-end">{{ t("common.actions") }}</th>
+                <th class="text-start">{{ t("common.actions") }}</th>
               </tr>
             </thead>
             <tbody v-if="loading">
               <tr v-for="i in 6" :key="i">
-                <td colspan="9" class="py-2">
+                <td colspan="10" class="py-2">
                   <div
                     class="skeleton"
                     style="height: 0.8rem"
@@ -167,7 +183,7 @@
             </tbody>
             <tbody v-else-if="!visibleProducts.length">
               <tr>
-                <td colspan="9" class="p-0 border-0">
+                <td colspan="10" class="p-0 border-0">
                   <EmptyState
                     :image="emptyProducts"
                     :message="
@@ -206,9 +222,10 @@
                   <div v-if="p.barcode">{{ p.barcode }}</div>
                   <span v-if="!p.barcode">—</span>
                 </td>
-                <td class="text-end">{{ fmt(p.cost_price) }}</td>
-                <td class="text-end">{{ fmt(p.sell_price) }}</td>
-                <td class="text-end">{{ p.stock_qty }} {{ p.unit }}</td>
+                <td class="text-start">{{ fmt(p.cost_price) }}</td>
+                <td class="text-start">{{ fmt(p.sell_price) }}</td>
+                <td class="text-start">{{ fmt(sellWithTax(p)) }}</td>
+                <td class="text-start">{{ p.stock_qty }} {{ p.unit }}</td>
                 <td>
                   <span
                     class="badge mt-1"
@@ -221,14 +238,14 @@
                     }}
                   </span>
                 </td>
-                <td class="text-end text-nowrap">
+                <td class="text-start text-nowrap">
                   <button
                     class="btn btn-sm btn-outline-secondary mx-1"
                     type="button"
                     :title="t('products.adjustStock')"
                     @click="openAdjust(p)"
                   >
-                    <i class="bi bi-box-arrow-up-down mx-1"></i
+                    <i class="bi bi-arrow-down-up mx-1"></i
                     >{{ t("products.stock") }}
                   </button>
                   <button
@@ -787,6 +804,11 @@ const canAdjust = computed(
 
 const taxProfiles = ref<TaxProfile[]>([]);
 
+/** The default tax profile (pre-selected for every new product). */
+const defaultTaxProfile = computed<TaxProfile | undefined>(() =>
+  taxProfiles.value.find((tp) => tp.is_default === 1),
+);
+
 /** Dropdown option lists: a leading "None" entry plus the DB rows. */
 const categoryFormOptions = computed<{ id: number | null; name: string }[]>(
   () => [
@@ -802,13 +824,12 @@ const parentCategoryOptions = computed<{ id: number | null; name: string }[]>(
       .map((c) => ({ id: c.id, name: c.name })),
   ],
 );
-const taxProfileOptions = computed<{ id: number | null; label: string }[]>(() => [
-  { id: null, label: t("products.noTax") },
-  ...taxProfiles.value.map((tp) => ({
+const taxProfileOptions = computed<{ id: number; label: string }[]>(() =>
+  taxProfiles.value.map((tp) => ({
     id: tp.id,
     label: `${tp.name} (${tp.rate}%)`,
   })),
-]);
+);
 
 const csvImporting = ref(false);
 const exporting = ref(false);
@@ -862,6 +883,11 @@ async function exportProducts() {
 
 function fmt(n: number): string {
   return formatMoney(n);
+}
+
+/** Sell price including tax: price * (1 + tax_rate/100). */
+function sellWithTax(p: Product): number {
+  return p.sell_price * (1 + (p.tax_rate ?? 0) / 100);
 }
 
 const filteredProducts = computed(() => {
@@ -994,7 +1020,8 @@ function openAddProduct() {
     categoryId: selected.value,
     costPrice: 0,
     sellPrice: 0,
-    taxProfileId: null,
+    taxProfileId:
+      defaultTaxProfile.value?.id ?? (taxProfiles.value[0]?.id ?? null),
     unit: "store item",
     reorderLevel: 0,
     stock: 0,
@@ -1094,6 +1121,11 @@ function validateProduct(): boolean {
       t("products.sellPrice"),
     ],
     ["unit", !!form.value.unit.trim(), t("products.unit")],
+    [
+      "taxProfile",
+      form.value.taxProfileId != null,
+      t("products.taxProfile"),
+    ],
     [
       "reorderLevel",
       typeof reorder === "number" && !isNaN(reorder) && reorder >= 0,
@@ -1227,7 +1259,7 @@ async function saveAdjust() {
 
 onMounted(async () => {
   taxProfiles.value = await select<TaxProfile>(
-    "SELECT id, name, rate FROM tax_profiles ORDER BY name",
+    "SELECT id, name, rate, is_default FROM tax_profiles ORDER BY is_default DESC, name",
   ).catch(() => []);
   await Promise.allSettled([loadCategories(), catalog.load(), settings.load()]);
 });

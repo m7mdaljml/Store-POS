@@ -62,12 +62,12 @@
               <td class="text-muted" style="direction: ltr">
                 {{ c.phone ?? "—" }}
               </td>
-              <td class="text-end">
+              <td class="text-start">
                 <span class="badge text-bg-danger rounded-pill">{{
                   fmt(c.balance)
                 }}</span>
               </td>
-              <td class="text-end text-nowrap">
+              <td class="text-start text-nowrap">
                 <button
                   class="btn btn-sm btn-outline-secondary"
                   type="button"
@@ -108,9 +108,9 @@
               <th>{{ t("customers.phone") }}</th>
               <th>{{ t("suppliers.email") }}</th>
               <th>{{ t("suppliers.address") }}</th>
-              <th class="text-end">{{ t("customers.balance") }}</th>
-              <th class="text-end">{{ t("customers.memberSince") }}</th>
-              <th class="text-end">{{ t("common.actions") }}</th>
+              <th class="text-start">{{ t("customers.balance") }}</th>
+              <th class="text-start">{{ t("customers.memberSince") }}</th>
+              <th class="text-start">{{ t("common.actions") }}</th>
             </tr>
           </thead>
           <tbody v-if="loading">
@@ -152,7 +152,7 @@
               </td>
               <td class="text-muted">{{ c.email ?? "—" }}</td>
               <td class="text-muted">{{ c.address ?? "—" }}</td>
-              <td class="text-end">
+              <td class="text-start">
                 <span
                   v-if="c.balance > 0.005"
                   class="badge text-bg-danger rounded-pill"
@@ -161,8 +161,8 @@
                 </span>
                 <span v-else class="text-muted">—</span>
               </td>
-              <td class="text-end text-muted">{{ dateLabel(c.created_at) }}</td>
-              <td class="text-end text-nowrap">
+              <td class="text-start text-muted">{{ dateLabel(c.created_at) }}</td>
+              <td class="text-start text-nowrap">
                 <button
                   class="btn btn-sm btn-outline-secondary mx-1"
                   type="button"
@@ -419,8 +419,8 @@
                     <tr>
                       <th>{{ t("sales.saleNo") }}</th>
                       <th>{{ t("common.date") }}</th>
-                      <th class="text-end">{{ t("common.total") }}</th>
-                      <th class="text-end">{{ t("common.paid") }}</th>
+                      <th class="text-start">{{ t("common.total") }}</th>
+                      <th class="text-start">{{ t("common.paid") }}</th>
                       <th>{{ t("common.status") }}</th>
                     </tr>
                   </thead>
@@ -428,8 +428,8 @@
                     <tr v-for="s in detail.sales" :key="s.id">
                       <td class="fw-semibold">{{ s.sale_no }}</td>
                       <td class="text-muted">{{ dateLabel(s.created_at) }}</td>
-                      <td class="text-end">{{ fmt(s.net_total) }}</td>
-                      <td class="text-end">{{ fmt(s.paid_amount) }}</td>
+                      <td class="text-start">{{ fmt(s.net_total) }}</td>
+                      <td class="text-start">{{ fmt(s.paid_amount) }}</td>
                       <td>
                         <span
                           class="badge"
@@ -463,8 +463,8 @@
                     <tr>
                       <th>{{ t("common.date") }}</th>
                       <th>{{ t("common.type") }}</th>
-                      <th class="text-end">{{ t("common.amount") }}</th>
-                      <th class="text-end">
+                      <th class="text-start">{{ t("common.amount") }}</th>
+                      <th class="text-start">
                         {{ t("customers.balanceAfter") }}
                       </th>
                       <th>{{ t("common.notes") }}</th>
@@ -478,10 +478,10 @@
                           {{ ledgerLabel(e.type) }}
                         </span>
                       </td>
-                      <td class="text-end" :class="ledgerClass(e.type)">
+                      <td class="text-start" :class="ledgerClass(e.type)">
                         {{ ledgerSign(e.type) }}{{ fmt(e.amount) }}
                       </td>
-                      <td class="text-end fw-semibold">
+                      <td class="text-start fw-semibold">
                         {{ fmt(e.balance_after) }}
                       </td>
                       <td class="text-muted">{{ e.notes ?? "—" }}</td>

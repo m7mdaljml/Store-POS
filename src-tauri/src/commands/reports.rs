@@ -41,6 +41,8 @@ pub struct SalesSummary {
     pub gross_profit: f64,
     pub expenses_total: f64,
     pub net_position: f64,
+    /// Taxes collected, net of the tax share carried by refunds.
+    pub taxes_total: f64,
 }
 
 pub async fn compute_summary(
@@ -75,6 +77,23 @@ pub async fn compute_summary(
             .await
             .map_err(|e| e.to_string())?;
 
+    // Taxes collected = sum of each completed sale's tax, minus the tax share
+    // refunded (allocated proportionally to the refunded share of the sale).
+    let taxes: (f64,) = sqlx::query_as(
+        "SELECT TOTAL(
+            s.tax
+            - COALESCE(
+                s.tax * (SELECT TOTAL(r.amount) FROM refunds r WHERE r.sale_id = s.id) / NULLIF(s.total, 0.0),
+                0.0)
+         )
+         FROM sales s WHERE s.status = 'completed' AND date(s.created_at, 'localtime') BETWEEN ?1 AND ?2",
+    )
+    .bind(from)
+    .bind(to)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
     let revenue = agg.0;
     let orders = agg.1;
     Ok(SalesSummary {
@@ -84,6 +103,7 @@ pub async fn compute_summary(
         gross_profit: profit.0,
         expenses_total: expenses.0,
         net_position: revenue - expenses.0,
+        taxes_total: taxes.0,
     })
 }
 
@@ -452,17 +472,19 @@ pub struct InventoryRow {
     pub reorder_level: f64,
     pub cost_price: f64,
     pub sell_price: f64,
+    pub tax_rate: f64,
     pub stock_value: f64,
     pub low_stock: bool,
 }
 
 pub(crate) async fn compute_inventory(pool: &sqlx::SqlitePool) -> Result<Vec<InventoryRow>, String> {
-    let rows: Vec<(i64, String, Option<String>, Option<String>, f64, f64, f64, f64)> =
+    let rows: Vec<(i64, String, Option<String>, Option<String>, f64, f64, f64, f64, f64)> =
         sqlx::query_as(
             "SELECT p.id, p.name, p.sku, c.name, p.stock_qty, p.reorder_level,
-                    p.cost_price, p.sell_price
+                    p.cost_price, p.sell_price, COALESCE(tp.rate, 0.0)
              FROM products p
              LEFT JOIN categories c ON c.id = p.category_id
+             LEFT JOIN tax_profiles tp ON tp.id = p.tax_profile_id
              WHERE p.is_active = 1
              ORDER BY p.name COLLATE NOCASE",
         )
@@ -472,7 +494,7 @@ pub(crate) async fn compute_inventory(pool: &sqlx::SqlitePool) -> Result<Vec<Inv
     Ok(rows
         .into_iter()
         .map(
-            |(id, name, sku, category, stock_qty, reorder_level, cost_price, sell_price)| {
+            |(id, name, sku, category, stock_qty, reorder_level, cost_price, sell_price, tax_rate)| {
                 InventoryRow {
                     id,
                     stock_value: stock_qty * cost_price,
@@ -484,6 +506,7 @@ pub(crate) async fn compute_inventory(pool: &sqlx::SqlitePool) -> Result<Vec<Inv
                     reorder_level,
                     cost_price,
                     sell_price,
+                    tax_rate,
                 }
             },
         )
@@ -697,6 +720,7 @@ pub async fn export_inventory<R: Runtime>(app: AppHandle<R>, path: String) -> Re
         "Reorder level",
         "Cost price",
         "Sell price",
+        "Sell price (incl. tax)",
         "Stock value",
         "Low stock",
     ];
@@ -711,6 +735,7 @@ pub async fn export_inventory<R: Runtime>(app: AppHandle<R>, path: String) -> Re
                 num(i.reorder_level),
                 money(i.cost_price),
                 money(i.sell_price),
+                money(i.sell_price * (1.0 + i.tax_rate / 100.0)),
                 money(i.stock_value),
                 if i.low_stock { "YES" } else { "" }.to_string(),
             ]
@@ -755,6 +780,12 @@ mod tests {
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           name TEXT UNIQUE NOT NULL
         );
+        CREATE TABLE tax_profiles (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT UNIQUE NOT NULL,
+          rate REAL NOT NULL DEFAULT 0,
+          is_default INTEGER NOT NULL DEFAULT 0
+        );
         CREATE TABLE products (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           name TEXT NOT NULL,
@@ -762,6 +793,7 @@ mod tests {
           category_id INTEGER REFERENCES categories(id),
           cost_price REAL NOT NULL DEFAULT 0,
           sell_price REAL NOT NULL DEFAULT 0,
+          tax_profile_id INTEGER,
           stock_qty REAL NOT NULL DEFAULT 0,
           reorder_level REAL NOT NULL DEFAULT 0,
           is_active INTEGER NOT NULL DEFAULT 1

@@ -28,11 +28,11 @@
               <th>{{ t("purchases.invoice") }}</th>
               <th>{{ t("purchases.supplier") }}</th>
               <th>{{ t("common.date") }}</th>
-              <th class="text-end">{{ t("common.total") }}</th>
-              <th class="text-end">{{ t("common.paid") }}</th>
-              <th class="text-end">{{ t("common.due") }}</th>
+              <th class="text-start">{{ t("common.total") }}</th>
+              <th class="text-start">{{ t("common.paid") }}</th>
+              <th class="text-start">{{ t("common.due") }}</th>
               <th>{{ t("common.status") }}</th>
-              <th class="text-end">{{ t("common.actions") }}</th>
+              <th class="text-start">{{ t("common.actions") }}</th>
             </tr>
           </thead>
           <tbody v-if="loading">
@@ -57,9 +57,9 @@
               <td class="fw-semibold">{{ inv.invoice_no }}</td>
               <td>{{ inv.supplier_name }}</td>
               <td class="text-muted">{{ inv.date }}</td>
-              <td class="text-end">{{ fmt(inv.total) }}</td>
-              <td class="text-end">{{ fmt(inv.paid_amount) }}</td>
-              <td class="text-end">
+              <td class="text-start">{{ fmt(inv.total) }}</td>
+              <td class="text-start">{{ fmt(inv.paid_amount) }}</td>
+              <td class="text-start">
                 <span v-if="inv.due_amount > 0" class="text-danger fw-semibold">
                   {{ fmt(inv.due_amount) }}
                 </span>
@@ -70,7 +70,7 @@
                   {{ statusLabel(inv.status) }}
                 </span>
               </td>
-              <td class="text-end text-nowrap">
+              <td class="text-start text-nowrap">
                 <button
                   v-if="inv.due_amount > 0"
                   class="btn btn-sm btn-outline-success"
@@ -410,7 +410,7 @@
                       <th>{{ t("common.date") }}</th>
                       <th>{{ t("common.method") }}</th>
                       <th>{{ t("common.notes") }}</th>
-                      <th class="text-end">{{ t("common.amount") }}</th>
+                      <th class="text-start">{{ t("common.amount") }}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -420,7 +420,7 @@
                         {{ paymentMethodLabel(p.method) }}
                       </td>
                       <td class="text-muted">{{ p.notes ?? "—" }}</td>
-                      <td class="text-end fw-semibold">{{ fmt(p.amount) }}</td>
+                      <td class="text-start fw-semibold">{{ fmt(p.amount) }}</td>
                     </tr>
                   </tbody>
                 </table>

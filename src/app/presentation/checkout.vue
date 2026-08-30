@@ -73,7 +73,7 @@
               </span>
             </span>
             <span class="ms-auto text-nowrap">
-              <span class="fw-semibold">{{ fmt(s.sell_price) }}</span>
+              <span class="fw-semibold">{{ fmt(sellWithTax(s)) }}</span>
               <span class="text-muted small ms-2">
                 {{ s.stock_qty }} {{ s.unit }}
               </span>
@@ -120,7 +120,7 @@
             </div>
             <div class="product-card-name">{{ p.name }}</div>
             <div class="product-card-foot">
-              <span class="product-card-price">{{ fmt(p.sell_price) }}</span>
+              <span class="product-card-price">{{ fmt(sellWithTax(p)) }}</span>
               <span v-if="inCart(p.id)" class="product-card-badge">
                 {{ inCart(p.id) }}
               </span>
@@ -228,7 +228,8 @@
                 item.name
               }}</span>
               <span class="ticket-line-unit"
-                >{{ fmt(item.price) }} {{ t("checkout.eachUnit") }}</span
+                >{{ fmt(cart.unitPriceWithTax(item)) }}
+                {{ t("checkout.eachUnit") }}</span
               >
               <button
                 class="line-remove"
@@ -269,7 +270,7 @@
                 :aria-label="`${t('checkout.discountPerUnit')} — ${item.name}`"
                 @input="onItemDiscount(item.productId, $event)"
               />
-              <span class="line-total">{{ fmt(cart.lineTotal(item)) }}</span>
+              <span class="line-total">{{ fmt(cart.lineTotalWithTax(item)) }}</span>
             </div>
           </div>
         </div>
@@ -359,6 +360,10 @@
                 ({{ cart.orderDiscountValue }}%)
               </span>
             </span>
+          </div>
+          <div v-if="cart.tax" class="t-row">
+            <span>{{ t("checkout.tax") }}</span>
+            <span class="fw-semibold">{{ fmt(cart.tax) }}</span>
           </div>
           <div class="t-total-row">
             <span>{{ t("common.total") }}</span>
@@ -919,6 +924,11 @@ function fmt(n: number): string {
   return formatMoney(n);
 }
 
+/** Product sell price including tax. */
+function sellWithTax(p: { sell_price: number; tax_rate: number | null }): number {
+  return p.sell_price * (1 + (p.tax_rate ?? 0) / 100);
+}
+
 function dateLabel(d: string): string {
   const date = new Date(d + (d.includes("T") ? "" : "Z"));
   if (isNaN(date.getTime())) return d;
@@ -955,6 +965,7 @@ function addToCart(p: Product) {
     qty: 1,
     discount: 0,
     costPrice: p.cost_price ?? 0,
+    taxRate: p.tax_rate ?? 0,
   });
   playBeep("click");
 }
@@ -1121,7 +1132,7 @@ async function submitSale() {
         })),
       ],
       discount: cart.orderDiscountAmount,
-      tax: 0,
+      tax: cart.tax,
       customerId: heldCustomerId.value ?? selectedCustomerId.value,
       userId: auth.user?.id ?? null,
       heldSaleId: heldSaleId.value,
@@ -1187,7 +1198,7 @@ function holdCurrentSale() {
         discount: i.discount,
       })),
       discount: cart.orderDiscountAmount,
-      tax: 0,
+      tax: cart.tax,
       customerId: null,
       userId: auth.user?.id ?? null,
     },
@@ -1244,6 +1255,7 @@ function resumeHeldSale(sale: SaleRecord) {
           qty: li.qty,
           discount: li.discount,
           costPrice: li.costPrice,
+          taxRate: li.taxRate ?? 0,
         }),
       );
       cart.setOrderDiscount("fixed", record.discount);

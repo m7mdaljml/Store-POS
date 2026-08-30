@@ -74,9 +74,30 @@ export function buildReceiptHtml(r: SaleReceipt): string {
   const orderDiscountRows = r.orderDiscount > 0
     ? `<div class="row sub"><span>${esc(t("receipt.orderDiscount"))}</span><span>-${money(r.orderDiscount)}</span></div>`
     : "";
-  const taxRows = r.tax > 0
-    ? `<div class="row"><span>${esc(t("receipt.tax"))}</span><span>${money(r.tax)}</span></div>`
-    : "";
+  // Per-rate tax breakdown gathered from line items, shown as "Tax (16%)".
+  const rateMap = new Map<number, number>();
+  for (const it of r.items) {
+    const base = Math.max(0, it.price - it.discount) * it.qty;
+    const rate = it.taxRate || 0;
+    if (rate > 0) {
+      rateMap.set(rate, (rateMap.get(rate) ?? 0) + (base * rate) / 100);
+    }
+  }
+  const taxRows =
+    rateMap.size > 0
+      ? [...rateMap.entries()]
+          .sort((a, b) => a[0] - b[0])
+          .map(
+            ([rate, amt]) =>
+              `<div class="row"><span>${esc(t("receipt.tax"))} (${rate}%)</span><span>${money(amt)}</span></div>`,
+          )
+          .join("")
+      : r.tax > 0
+        ? `<div class="row"><span>${esc(t("receipt.tax"))}</span><span>${money(r.tax)}</span></div>`
+        : "";
+  // Total before tax = subtotal - discounts, before the tax amount is added.
+  const beforeTax = r.total - r.tax;
+  const beforeTaxRows = `<div class="row"><span>${esc(t("receipt.totalBeforeTax"))}</span><span>${money(beforeTax)}</span></div>`;
 
   const paymentRows = r.payments
     .map(
@@ -174,6 +195,7 @@ export function buildReceiptHtml(r: SaleReceipt): string {
   <div class="row"><span>${esc(t("receipt.subtotal"))}</span><span>${money(r.subtotal)}</span></div>
   ${discountRows}
   ${orderDiscountRows}
+  ${beforeTaxRows}
   ${taxRows}
   <div class="row b total-row"><span>${esc(t("receipt.total"))}</span><span>${money(r.total)}</span></div>
   <div class="hr"></div>

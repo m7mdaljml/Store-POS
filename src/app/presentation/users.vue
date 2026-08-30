@@ -31,7 +31,7 @@
               <th>{{ t("users.role") }}</th>
               <th>{{ t("common.status") }}</th>
               <th>{{ t("users.permissions") }}</th>
-              <th class="text-end">{{ t("common.actions") }}</th>
+              <th class="text-start">{{ t("common.actions") }}</th>
             </tr>
           </thead>
           <tbody v-if="loading">
@@ -109,7 +109,7 @@
                   >
                 </div>
               </td>
-              <td class="text-end text-nowrap">
+              <td class="text-start text-nowrap">
                 <template v-if="u.username !== auth.user?.username">
                   <button
                     class="btn btn-sm btn-outline-warning mx-1"

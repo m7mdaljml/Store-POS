@@ -87,6 +87,7 @@ pub struct ResumeSaleItem {
     pub price: f64,
     pub cost_price: f64,
     pub discount: f64,
+    pub tax_rate: f64,
 }
 
 #[derive(Debug, Serialize)]
@@ -168,6 +169,7 @@ pub struct RefundableItem {
     pub refunded_qty: f64,
     pub price: f64,
     pub discount: f64,
+    pub tax_rate: f64,
 }
 
 #[derive(Debug, Serialize)]
@@ -224,6 +226,8 @@ pub struct ReceiptItem {
     pub price: f64,
     pub discount: f64,
     pub subtotal: f64,
+    /// Tax rate (%) applied to this line, from its product's tax profile.
+    pub tax_rate: f64,
 }
 
 #[derive(Debug, Serialize)]
@@ -732,9 +736,10 @@ pub async fn load_held_sale(
     }
 
     let rows = sqlx::query(
-        "SELECT si.product_id, p.name, si.qty, si.price, si.cost_price, si.discount
+        "SELECT si.product_id, p.name, si.qty, si.price, si.cost_price, si.discount, COALESCE(tp.rate, 0.0) AS tax_rate
          FROM sale_items si
          JOIN products p ON p.id = si.product_id
+         LEFT JOIN tax_profiles tp ON tp.id = p.tax_profile_id
          WHERE si.sale_id = ?",
     )
     .bind(input.sale_id)
@@ -751,6 +756,7 @@ pub async fn load_held_sale(
             price: row.try_get("price").map_err(|e| e.to_string())?,
             cost_price: row.try_get("cost_price").map_err(|e| e.to_string())?,
             discount: row.try_get("discount").map_err(|e| e.to_string())?,
+            tax_rate: row.try_get("tax_rate").map_err(|e| e.to_string())?,
         });
     }
 
@@ -1102,9 +1108,10 @@ pub async fn load_refundable(
     .await
     .map_err(|e| e.to_string())?;
 
-    let rows: Vec<(i64, String, f64, f64, f64, f64)> = sqlx::query_as(
-        "SELECT si.id, p.name, si.qty, si.refunded_qty, si.price, si.discount
+    let rows: Vec<(i64, String, f64, f64, f64, f64, f64)> = sqlx::query_as(
+        "SELECT si.id, p.name, si.qty, si.refunded_qty, si.price, si.discount, COALESCE(tp.rate, 0.0)
          FROM sale_items si JOIN products p ON p.id = si.product_id
+         LEFT JOIN tax_profiles tp ON tp.id = p.tax_profile_id
          WHERE si.sale_id = ?
          ORDER BY si.id",
     )
@@ -1115,16 +1122,15 @@ pub async fn load_refundable(
 
     let items: Vec<RefundableItem> = rows
         .into_iter()
-        .map(
-            |(sale_item_id, name, qty, refunded_qty, price, discount)| RefundableItem {
-                sale_item_id,
-                name,
-                qty,
-                refunded_qty,
-                price,
-                discount,
-            },
-        )
+        .map(|(sale_item_id, name, qty, refunded_qty, price, discount, tax_rate)| RefundableItem {
+            sale_item_id,
+            name,
+            qty,
+            refunded_qty,
+            price,
+            discount,
+            tax_rate,
+        })
         .collect();
 
     let fully_refunded = items.iter().all(|i| i.qty - i.refunded_qty <= 0.005);
@@ -1460,9 +1466,10 @@ pub async fn fetch_receipt(
             .map(|r: (String,)| r.0);
 
     let item_rows = sqlx::query(
-        "SELECT p.name, si.qty, si.price, si.discount, si.subtotal
+        "SELECT p.name, si.qty, si.price, si.discount, si.subtotal, COALESCE(tp.rate, 0.0) AS tax_rate
          FROM sale_items si
          JOIN products p ON p.id = si.product_id
+         LEFT JOIN tax_profiles tp ON tp.id = p.tax_profile_id
          WHERE si.sale_id = ?",
     )
     .bind(input.sale_id)
@@ -1482,6 +1489,7 @@ pub async fn fetch_receipt(
             price: row.try_get("price").map_err(|e| e.to_string())?,
             discount,
             subtotal: row.try_get("subtotal").map_err(|e| e.to_string())?,
+            tax_rate: row.try_get("tax_rate").map_err(|e| e.to_string())?,
         });
     }
 
@@ -1609,6 +1617,12 @@ mod tests {
           notes TEXT,
           created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
+        CREATE TABLE tax_profiles (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT UNIQUE NOT NULL,
+          rate REAL NOT NULL DEFAULT 0,
+          is_default INTEGER NOT NULL DEFAULT 0
+        );
         CREATE TABLE products (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           name TEXT NOT NULL,
@@ -1617,7 +1631,8 @@ mod tests {
           sku TEXT,
           stock_qty REAL NOT NULL DEFAULT 0,
           unit_price REAL NOT NULL DEFAULT 0,
-          cost_price REAL NOT NULL DEFAULT 0
+          cost_price REAL NOT NULL DEFAULT 0,
+          tax_profile_id INTEGER
         );
         CREATE TABLE sales (
           id INTEGER PRIMARY KEY AUTOINCREMENT,

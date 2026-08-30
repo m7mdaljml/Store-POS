@@ -232,6 +232,9 @@ fn validate_product(input: &ProductInput) -> Result<(), String> {
     if input.unit.trim().is_empty() {
         return Err("Unit is required".into());
     }
+    if input.tax_profile_id.is_none() {
+        return Err("A tax profile is required".into());
+    }
     if input.opening_stock < 0.0 {
         return Err("Opening stock cannot be negative".into());
     }
@@ -274,6 +277,18 @@ async fn ensure_sku_unique(
 
 fn empty_to_none(value: &Option<String>) -> Option<String> {
     value.as_ref().map(|v| v.trim()).filter(|v| !v.is_empty()).map(String::from)
+}
+
+/// Id of the default tax profile (falls back to the first defined profile),
+/// used so imported/created products always keep a tax profile.
+async fn default_tax_id(conn: &mut sqlx::SqliteConnection) -> Option<i64> {
+    sqlx::query_scalar(
+        "SELECT id FROM tax_profiles WHERE is_default = 1 ORDER BY id LIMIT 1",
+    )
+    .fetch_optional(conn)
+    .await
+    .ok()
+    .flatten()
 }
 
 #[tauri::command]
@@ -1308,9 +1323,9 @@ pub async fn import_products_xlsx<R: Runtime>(
                 .fetch_optional(&mut *tx)
                 .await
                 .map_err(|e| e.to_string())?;
-                existing.map(|(id,)| id)
+                existing.map(|(id,)| id).or(default_tax_id(&mut *tx).await)
             }
-            _ => None,
+            _ => default_tax_id(&mut *tx).await,
         };
 
         let description = empty_to_none(&Some(cell(c_description)));

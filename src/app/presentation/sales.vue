@@ -63,8 +63,8 @@
               <th>{{ t("common.date") }}</th>
               <th>{{ t("common.cashier") }}</th>
               <th>{{ t("common.customer") }}</th>
-              <th class="text-end">{{ t("sales.items") }}</th>
-              <th class="text-end">{{ t("common.total") }}</th>
+              <th class="text-start">{{ t("sales.items") }}</th>
+              <th class="text-start">{{ t("common.total") }}</th>
               <th>{{ t("common.status") }}</th>
               <th></th>
             </tr>
@@ -99,9 +99,9 @@
               <td class="text-muted">{{ dateLabel(sale.createdAt) }}</td>
               <td>{{ sale.userName || "—" }}</td>
               <td>{{ sale.customerName || "—" }}</td>
-              <td class="text-end">{{ sale.itemCount }}</td>
+              <td class="text-start">{{ sale.itemCount }}</td>
               <td
-                class="text-end fw-semibold"
+                class="text-start fw-semibold"
                 :title="
                   sale.refundedAmount > 0.005
                     ? `${fmt(sale.total)} − ${fmt(sale.refundedAmount)}`
@@ -141,7 +141,7 @@
                   }}
                 </span>
               </td>
-              <td class="text-end">
+              <td class="text-start">
                 <button
                   v-if="sale.status === 'completed' || sale.status === 'voided'"
                   class="btn btn-sm btn-outline-secondary mx-1"
@@ -309,9 +309,9 @@
                   <thead>
                     <tr>
                       <th>{{ t("common.name") }}</th>
-                      <th class="text-end">{{ t("products.sell") }}</th>
-                      <th class="text-end">{{ t("sales.sold") }}</th>
-                      <th class="text-end" style="width: 140px">
+                      <th class="text-start">{{ t("products.sell") }}</th>
+                      <th class="text-start">{{ t("sales.sold") }}</th>
+                      <th class="text-start" style="width: 140px">
                         {{ t("sales.refundQty") }}
                       </th>
                     </tr>
@@ -319,10 +319,10 @@
                   <tbody>
                     <tr v-for="item in refundData.items" :key="item.saleItemId">
                       <td>{{ item.name }}</td>
-                      <td class="text-end">
-                        {{ fmt(item.price - item.discount) }}
+                      <td class="text-start">
+                        {{ fmt((item.price - item.discount) * (1 + (item.taxRate ?? 0) / 100)) }}
                       </td>
-                      <td class="text-end text-muted">
+                      <td class="text-start text-muted">
                         {{ item.qty }}
                         <span v-if="item.refundedQty > 0.005">
                           ({{
@@ -330,7 +330,7 @@
                           }})
                         </span>
                       </td>
-                      <td class="text-end">
+                      <td class="text-start">
                         <input
                           v-if="remaining(item) > 0.005"
                           v-model.number="refundQtys[item.saleItemId]"

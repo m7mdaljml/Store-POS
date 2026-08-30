@@ -39,6 +39,8 @@ export interface CartItem {
   discount: number;
   /** Cost price snapshot at the time the item was added. */
   costPrice: number;
+  /** Tax rate (%) from the product's tax profile, 0 when none. */
+  taxRate: number;
 }
 
 /** A non-cash payment line (card / customer credit). */
@@ -91,6 +93,8 @@ export interface RefundableItem {
   refundedQty: number;
   price: number;
   discount: number;
+  /** Tax rate (%) applied to this line, 0 when none. */
+  taxRate: number;
 }
 
 /** A completed sale prepared for full or partial refund. */
@@ -136,6 +140,8 @@ export interface ResumeSaleItem {
   price: number;
   costPrice: number;
   discount: number;
+  /** Tax rate (%) applied to this line, 0 when none. */
+  taxRate: number;
 }
 
 /** Held cart returned by `resume_sale`. */
@@ -157,6 +163,7 @@ export interface SaleReceiptItem {
   price: number;
   discount: number;
   subtotal: number;
+  taxRate: number;
 }
 
 /** A payment method/amount line as returned on a receipt. */
@@ -229,6 +236,8 @@ export interface Product {
   cost_price: number;
   sell_price: number;
   tax_profile_id: number | null;
+  /** Tax rate (%) from the product's tax profile, 0 when none. */
+  tax_rate: number | null;
   unit: string;
   stock_qty: number;
   reorder_level: number;
@@ -283,6 +292,7 @@ export interface SalesSummary {
   grossProfit: number;
   expensesTotal: number;
   netPosition: number;
+  taxesTotal: number;
 }
 
 export interface TrendPoint {
@@ -335,6 +345,8 @@ export interface InventoryRow {
   reorderLevel: number;
   costPrice: number;
   sellPrice: number;
+  /** Tax rate (%) from the product's tax profile, 0 when none. */
+  taxRate: number;
   stockValue: number;
   lowStock: boolean;
 }

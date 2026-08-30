@@ -21,8 +21,19 @@ export const useCartStore = defineStore("cart", () => {
     }
     return Math.min(subtotal.value, value);
   });
+  /** Order tax = sum of each line (price - discount) * qty * taxRate / 100. */
+  const tax = computed(() => {
+    const raw = items.value.reduce(
+      (sum, item) => sum + Math.max(0, item.price - item.discount) * item.qty * (item.taxRate ?? 0) / 100,
+      0
+    );
+    return Math.max(0, raw);
+  });
   const total = computed(() =>
-    Math.max(0, subtotal.value - itemDiscountTotal.value - orderDiscountAmount.value)
+    Math.max(
+      0,
+      subtotal.value - itemDiscountTotal.value - orderDiscountAmount.value + tax.value
+    )
   );
   const itemCount = computed(() =>
     items.value.reduce((sum, item) => sum + item.qty, 0)
@@ -55,6 +66,16 @@ export const useCartStore = defineStore("cart", () => {
   /** Line total after item discount: (price - discount) * qty, floor 0. */
   function lineTotal(item: CartItem): number {
     return Math.max(0, item.price - item.discount) * item.qty;
+  }
+
+  /** Unit price including tax (tax-inclusive display price). */
+  function unitPriceWithTax(item: CartItem): number {
+    return item.price * (1 + (item.taxRate ?? 0) / 100);
+  }
+
+  /** Line total including tax: (price - discount) * qty * (1 + rate/100). */
+  function lineTotalWithTax(item: CartItem): number {
+    return lineTotal(item) * (1 + (item.taxRate ?? 0) / 100);
   }
 
   /** Order-level discount; type is "fixed" (currency) or "percent" of subtotal. */
@@ -120,6 +141,7 @@ export const useCartStore = defineStore("cart", () => {
     subtotal,
     itemDiscountTotal,
     total,
+    tax,
     itemCount,
     cashReceived,
     splitLines,
@@ -133,6 +155,8 @@ export const useCartStore = defineStore("cart", () => {
     setQty,
     setDiscount,
     lineTotal,
+    unitPriceWithTax,
+    lineTotalWithTax,
     setOrderDiscount,
     syncCashToTotal,
     addSplitLine,

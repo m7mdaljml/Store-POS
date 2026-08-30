@@ -141,9 +141,9 @@
         <thead v-if="taxProfiles.length">
           <tr>
             <th>{{ t("settings.profileName") }}</th>
-            <th class="text-end">{{ t("settings.ratePercent") }}</th>
+            <th class="text-start">{{ t("settings.ratePercent") }}</th>
             <th class="text-center">{{ t("settings.isDefault") }}</th>
-            <th class="text-end">{{ t("common.actions") }}</th>
+            <th class="text-start">{{ t("common.actions") }}</th>
           </tr>
         </thead>
         <tbody v-if="!taxProfiles.length">
@@ -159,13 +159,13 @@
         <tbody v-for="p in taxProfiles" :key="p.id">
           <tr>
             <td>{{ p.name }}</td>
-            <td class="text-end">{{ p.rate }}%</td>
+            <td class="text-start">{{ p.rate }}%</td>
             <td class="text-center">
               <span v-if="p.is_default" class="badge text-bg-success">{{
                 t("settings.isBase")
               }}</span>
             </td>
-            <td class="text-end text-nowrap">
+            <td class="text-start text-nowrap">
               <button
                 type="button"
                 class="btn btn-sm btn-outline-secondary mx-1"
@@ -219,9 +219,9 @@
             <th>{{ t("settings.currencyCode") }}</th>
             <th>{{ t("settings.currencyName") }}</th>
             <th>{{ t("settings.currencySymbol") }}</th>
-            <th class="text-end">{{ t("settings.exchangeRate") }}</th>
+            <th class="text-start">{{ t("settings.exchangeRate") }}</th>
             <th class="text-center">{{ t("settings.isBase") }}</th>
-            <th class="text-end">{{ t("common.actions") }}</th>
+            <th class="text-start">{{ t("common.actions") }}</th>
           </tr>
         </thead>
         <tbody v-if="!currencies.length">
@@ -239,13 +239,13 @@
             <td class="fw-semibold">{{ c.code }}</td>
             <td>{{ c.name }}</td>
             <td>{{ c.symbol }}</td>
-            <td class="text-end">{{ c.rate }}</td>
+            <td class="text-start">{{ c.rate }}</td>
             <td class="text-center">
               <span v-if="c.is_base" class="badge text-bg-success">{{
                 t("settings.isBase")
               }}</span>
             </td>
-            <td class="text-end text-nowrap">
+            <td class="text-start text-nowrap">
               <button
                 type="button"
                 class="btn btn-sm btn-outline-secondary mx-1"
@@ -586,9 +586,9 @@
             <tr>
               <th>{{ t("common.date") }}</th>
               <th>{{ t("common.type") }}</th>
-              <th class="text-end">{{ t("settings.sizeCol") }}</th>
+              <th class="text-start">{{ t("settings.sizeCol") }}</th>
               <th>{{ t("settings.backupFolderLabel") }}</th>
-              <th class="text-end">{{ t("common.actions") }}</th>
+              <th class="text-start">{{ t("common.actions") }}</th>
             </tr>
           </thead>
           <tbody v-if="!backups.length">
@@ -607,7 +607,7 @@
               <td>
                 <span class="badge text-bg-secondary">{{ backupKindLabel(b.kind) }}</span>
               </td>
-              <td class="text-end">{{ fmtSize(b.sizeBytes) }}</td>
+              <td class="text-start">{{ fmtSize(b.sizeBytes) }}</td>
               <td
                 class="text-truncate"
                 style="max-width: 320px"
@@ -615,7 +615,7 @@
               >
                 {{ b.path }}
               </td>
-              <td class="text-end text-nowrap">
+              <td class="text-start text-nowrap">
                 <button
                   type="button"
                   class="btn btn-sm btn-outline-primary mx-1"
@@ -860,20 +860,20 @@
             <tbody>
               <tr>
                 <td>{{ t("checkout.expectedCash") }}</td>
-                <td class="text-end fw-semibold">
+                <td class="text-start fw-semibold">
                   {{ fmt(closeResult.expectedCash ?? 0) }}
                 </td>
               </tr>
               <tr>
                 <td>{{ t("checkout.countedCash") }}</td>
-                <td class="text-end">
+                <td class="text-start">
                   {{ fmt(closeResult.closingCash ?? 0) }}
                 </td>
               </tr>
               <tr>
                 <td>{{ t("checkout.variance") }}</td>
                 <td
-                  class="text-end fw-semibold"
+                  class="text-start fw-semibold"
                   :class="
                     (closeResult.variance ?? 0) < -0.005
                       ? 'text-danger'

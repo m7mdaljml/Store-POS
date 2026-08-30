@@ -62,12 +62,12 @@
               <th>{{ t("sessions.opened") }}</th>
               <th>{{ t("sessions.closedCol") }}</th>
               <th>{{ t("common.cashier") }}</th>
-              <th class="text-end">{{ t("sessions.opening") }}</th>
-              <th class="text-end">{{ t("sessions.sales") }}</th>
-              <th class="text-end">{{ t("common.total") }}</th>
-              <th class="text-end">{{ t("sessions.expected") }}</th>
-              <th class="text-end">{{ t("sessions.counted") }}</th>
-              <th class="text-end">{{ t("sessions.variance") }}</th>
+              <th class="text-start">{{ t("sessions.opening") }}</th>
+              <th class="text-start">{{ t("sessions.sales") }}</th>
+              <th class="text-start">{{ t("common.total") }}</th>
+              <th class="text-start">{{ t("sessions.expected") }}</th>
+              <th class="text-start">{{ t("sessions.counted") }}</th>
+              <th class="text-start">{{ t("sessions.variance") }}</th>
               <th>{{ t("common.status") }}</th>
             </tr>
           </thead>
@@ -100,17 +100,17 @@
                 {{ s.closedAt ? dateLabel(s.closedAt) : "—" }}
               </td>
               <td>{{ s.userName || "—" }}</td>
-              <td class="text-end">{{ fmt(s.openingCash) }}</td>
-              <td class="text-end">{{ s.salesCount }}</td>
-              <td class="text-end">{{ fmt(s.salesTotal) }}</td>
-              <td class="text-end">
+              <td class="text-start">{{ fmt(s.openingCash) }}</td>
+              <td class="text-start">{{ s.salesCount }}</td>
+              <td class="text-start">{{ fmt(s.salesTotal) }}</td>
+              <td class="text-start">
                 {{ s.expectedCash != null ? fmt(s.expectedCash) : "—" }}
               </td>
-              <td class="text-end">
+              <td class="text-start">
                 {{ s.closingCash != null ? fmt(s.closingCash) : "—" }}
               </td>
               <td
-                class="text-end fw-semibold"
+                class="text-start fw-semibold"
                 :class="
                   s.status === 'closed' && (s.variance ?? 0) < -0.005
                     ? 'text-danger'

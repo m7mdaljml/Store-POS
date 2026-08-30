@@ -1338,6 +1338,37 @@ body {
 }
 
 /* ------------------------------------------------------------------ */
+/* Responsive data tables                                              */
+/* By default Bootstrap's `.table` is `width: 100%; table-layout: auto`,*/
+/* so a wide table gets compressed to fit the viewport: columns shrink,*/
+/* content wraps and gets cut, and th/td fall out of alignment.        */
+/* These rules make tables keep their natural, content-based column    */
+/* widths. When a table is wider than its container, the wrapper       */
+/* scrolls horizontally instead of compressing the columns.            */
+/* ------------------------------------------------------------------ */
+.table-responsive {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.table-responsive > .table {
+  /* Natural content width, never shrunk below the container. The       */
+  /* horizontal scrollbar appears only when the table's content is      */
+  /* actually wider than the available width.                           */
+  width: max-content;
+  min-width: 100%;
+  margin-bottom: 0;
+  table-layout: auto;
+}
+
+/* Thead and tbody share one column model, so th/td in the same column  */
+/* stay perfectly aligned and never jump or shift.                      */
+.table-responsive > .table > :not(caption) > * > * {
+  border-collapse: separate;
+}
+
+/* ------------------------------------------------------------------ */
 /* F9.2 Theme transition                                               */
 /* ------------------------------------------------------------------ */
 body,

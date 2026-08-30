@@ -3,7 +3,7 @@
     <h1 class="h4 mb-3">{{ t("dashboard.title") }}</h1>
 
     <div class="row g-3 mb-3">
-      <div class="col-6 col-lg-3">
+      <div class="col-6 col-lg">
         <div class="kpi-card">
           <div class="kpi-icon"><i class="bi bi-cash-stack"></i></div>
           <div>
@@ -12,7 +12,7 @@
           </div>
         </div>
       </div>
-      <div class="col-6 col-lg-3">
+      <div class="col-6 col-lg">
         <div class="kpi-card">
           <div class="kpi-icon"><i class="bi bi-receipt"></i></div>
           <div>
@@ -21,7 +21,7 @@
           </div>
         </div>
       </div>
-      <div class="col-6 col-lg-3">
+      <div class="col-6 col-lg">
         <div class="kpi-card">
           <div class="kpi-icon"><i class="bi bi-graph-up-arrow"></i></div>
           <div>
@@ -30,7 +30,7 @@
           </div>
         </div>
       </div>
-      <div class="col-6 col-lg-3">
+      <div class="col-6 col-lg">
         <div class="kpi-card">
           <div class="kpi-icon"><i class="bi bi-calendar-month"></i></div>
           <div>
@@ -39,10 +39,19 @@
           </div>
         </div>
       </div>
+      <div class="col-6 col-lg">
+        <div class="kpi-card">
+          <div class="kpi-icon"><i class="bi bi-percent"></i></div>
+          <div>
+            <div class="kpi-label">{{ t("dashboard.todayTaxes") }}</div>
+            <div class="kpi-value">{{ fmt(kpi.todayTaxes) }}</div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div class="row g-3 mb-3">
-      <div class="col-6 col-lg-3">
+      <div class="col-6 col-lg">
         <div class="kpi-card">
           <div class="kpi-icon"><i class="bi bi-box-seam"></i></div>
           <div>
@@ -51,7 +60,7 @@
           </div>
         </div>
       </div>
-      <div class="col-6 col-lg-3">
+      <div class="col-6 col-lg">
         <div class="kpi-card">
           <div class="kpi-icon"><i class="bi bi-check-circle"></i></div>
           <div>
@@ -60,7 +69,7 @@
           </div>
         </div>
       </div>
-      <div class="col-6 col-lg-3">
+      <div class="col-6 col-lg">
         <div class="kpi-card">
           <div class="kpi-icon"><i class="bi bi-boxes"></i></div>
           <div>
@@ -69,7 +78,7 @@
           </div>
         </div>
       </div>
-      <div class="col-6 col-lg-3">
+      <div class="col-6 col-lg">
         <div class="kpi-card" :class="lowStock.length ? 'border-danger' : ''">
           <div
             class="kpi-icon"
@@ -109,8 +118,8 @@
               <th style="width: 52px"></th>
               <th>{{ t("dashboard.product") }}</th>
               <th>{{ t("dashboard.category") }}</th>
-              <th class="text-end">{{ t("dashboard.inStock") }}</th>
-              <th class="text-end">{{ t("dashboard.reorderLevel") }}</th>
+              <th class="text-start">{{ t("dashboard.inStock") }}</th>
+              <th class="text-start">{{ t("dashboard.reorderLevel") }}</th>
               <th>{{ t("common.status") }}</th>
             </tr>
           </thead>
@@ -146,10 +155,10 @@
               </td>
               <td class="fw-semibold">{{ p.name }}</td>
               <td class="text-muted">{{ categoryName(p.category_id) }}</td>
-              <td class="text-end fw-semibold text-danger">
+              <td class="text-start fw-semibold text-danger">
                 {{ p.stock_qty }}
               </td>
-              <td class="text-end text-muted">{{ p.reorder_level }}</td>
+              <td class="text-start text-muted">{{ p.reorder_level }}</td>
               <td>
                 <span
                   class="badge"
@@ -193,6 +202,7 @@ interface SalesKpi {
   orders: number;
   avgTicket: number;
   monthRevenue: number;
+  todayTaxes: number;
 }
 
 const kpi = ref<SalesKpi>({
@@ -200,15 +210,19 @@ const kpi = ref<SalesKpi>({
   orders: 0,
   avgTicket: 0,
   monthRevenue: 0,
+  todayTaxes: 0,
 });
 
 async function loadKpis() {
-  const [today, month] = await Promise.all([
+  const [today, month, taxes] = await Promise.all([
     select<{ revenue: number | null; orders: number }>(
       "SELECT COALESCE(SUM(total - COALESCE((SELECT SUM(amount) FROM refunds WHERE sale_id = sales.id), 0)), 0) AS revenue, COUNT(*) AS orders FROM sales WHERE status = 'completed' AND date(created_at, 'localtime') = date('now', 'localtime')",
     ),
     select<{ revenue: number | null }>(
       "SELECT COALESCE(SUM(total - COALESCE((SELECT SUM(amount) FROM refunds WHERE sale_id = sales.id), 0)), 0) AS revenue FROM sales WHERE status = 'completed' AND strftime('%Y-%m', created_at, 'localtime') = strftime('%Y-%m', 'now', 'localtime')",
+    ),
+    select<{ taxes: number | null }>(
+      "SELECT COALESCE(SUM(tax - COALESCE(tax * (SELECT SUM(amount) FROM refunds WHERE sale_id = sales.id) / NULLIF(total, 0), 0)), 0) AS taxes FROM sales WHERE status = 'completed' AND date(created_at, 'localtime') = date('now', 'localtime')",
     ),
   ]);
   const t = today[0] ?? { revenue: 0, orders: 0 };
@@ -218,6 +232,7 @@ async function loadKpis() {
     orders: t.orders,
     avgTicket: t.orders > 0 ? revenue / t.orders : 0,
     monthRevenue: month[0]?.revenue ?? 0,
+    todayTaxes: taxes[0]?.taxes ?? 0,
   };
 }
 

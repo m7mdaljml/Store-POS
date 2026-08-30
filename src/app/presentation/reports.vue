@@ -60,7 +60,7 @@
     <!-- ============ F6.2 Overview ============ -->
     <template v-if="activeTab === 'overview'">
       <div v-if="summary" class="row g-3 mb-3">
-        <div class="col-6 col-md-4 col-xl-2">
+        <div class="col-6 col-md-4 col-xl">
           <div class="kpi-card">
             <div class="kpi-icon"><i class="bi bi-cash-stack"></i></div>
             <div>
@@ -69,7 +69,7 @@
             </div>
           </div>
         </div>
-        <div class="col-6 col-md-4 col-xl-2">
+        <div class="col-6 col-md-4 col-xl">
           <div class="kpi-card">
             <div class="kpi-icon"><i class="bi bi-receipt"></i></div>
             <div>
@@ -78,7 +78,7 @@
             </div>
           </div>
         </div>
-        <div class="col-6 col-md-4 col-xl-2">
+        <div class="col-6 col-md-4 col-xl">
           <div class="kpi-card">
             <div class="kpi-icon"><i class="bi bi-basket"></i></div>
             <div>
@@ -87,7 +87,7 @@
             </div>
           </div>
         </div>
-        <div class="col-6 col-md-4 col-xl-2">
+        <div class="col-6 col-md-4 col-xl">
           <div class="kpi-card">
             <div class="kpi-icon"><i class="bi bi-graph-up-arrow"></i></div>
             <div>
@@ -96,7 +96,7 @@
             </div>
           </div>
         </div>
-        <div class="col-6 col-md-4 col-xl-2">
+        <div class="col-6 col-md-4 col-xl">
           <div class="kpi-card">
             <div class="kpi-icon"><i class="bi bi-wallet2"></i></div>
             <div>
@@ -107,7 +107,7 @@
             </div>
           </div>
         </div>
-        <div class="col-6 col-md-4 col-xl-2">
+        <div class="col-6 col-md-4 col-xl">
           <div class="kpi-card">
             <div class="kpi-icon"><i class="bi bi-speedometer2"></i></div>
             <div>
@@ -120,6 +120,15 @@
               >
                 {{ fmt(summary.netPosition) }}
               </div>
+            </div>
+          </div>
+        </div>
+        <div class="col-6 col-md-4 col-xl">
+          <div class="kpi-card">
+            <div class="kpi-icon"><i class="bi bi-percent"></i></div>
+            <div>
+              <div class="kpi-label">{{ t("reports.kpiTaxes") }}</div>
+              <div class="kpi-value">{{ fmt(summary.taxesTotal) }}</div>
             </div>
           </div>
         </div>
@@ -202,9 +211,9 @@
                 <th style="width: 40px">#</th>
                 <th>{{ t("common.name") }}</th>
                 <th>{{ t("reports.category") }}</th>
-                <th class="text-end">{{ t("reports.qtySold") }}</th>
-                <th class="text-end">{{ t("reports.revenue") }}</th>
-                <th class="text-end">{{ t("reports.profit") }}</th>
+                <th class="text-start">{{ t("reports.qtySold") }}</th>
+                <th class="text-start">{{ t("reports.revenue") }}</th>
+                <th class="text-start">{{ t("reports.profit") }}</th>
               </tr>
             </thead>
             <tbody v-if="!topProducts.length">
@@ -222,10 +231,10 @@
                 <td class="fw-semibold">{{ i + 1 }}</td>
                 <td class="fw-semibold">{{ p.name }}</td>
                 <td class="text-muted">{{ p.category ?? "—" }}</td>
-                <td class="text-end">{{ num(p.qty) }}</td>
-                <td class="text-end">{{ fmt(p.revenue) }}</td>
+                <td class="text-start">{{ num(p.qty) }}</td>
+                <td class="text-start">{{ fmt(p.revenue) }}</td>
                 <td
-                  class="text-end"
+                  class="text-start"
                   :class="p.profit >= 0 ? 'text-success' : 'text-danger'"
                 >
                   {{ fmt(p.profit) }}
@@ -331,9 +340,9 @@
                 <th>{{ t("common.date") }}</th>
                 <th>{{ t("common.cashier") }}</th>
                 <th>{{ t("common.customer") }}</th>
-                <th class="text-end">{{ t("reports.subtotal") }}</th>
-                <th class="text-end">{{ t("reports.discount") }}</th>
-                <th class="text-end">{{ t("common.total") }}</th>
+                <th class="text-start">{{ t("reports.subtotal") }}</th>
+                <th class="text-start">{{ t("reports.discount") }}</th>
+                <th class="text-start">{{ t("common.total") }}</th>
                 <th>{{ t("common.status") }}</th>
               </tr>
             </thead>
@@ -353,12 +362,12 @@
                 <td class="text-muted">{{ dateLabel(r.createdAt) }}</td>
                 <td>{{ r.cashier }}</td>
                 <td>{{ r.customer ?? "—" }}</td>
-                <td class="text-end">{{ fmt(r.subtotal) }}</td>
-                <td class="text-end text-danger">
+                <td class="text-start">{{ fmt(r.subtotal) }}</td>
+                <td class="text-start text-danger">
                   {{ r.discount ? `−${fmt(r.discount)}` : "—" }}
                 </td>
                 <td
-                  class="text-end fw-semibold"
+                  class="text-start fw-semibold"
                   :title="
                     r.refunded
                       ? `${fmt(r.total)} − ${fmt(r.refunded)}`
@@ -417,9 +426,9 @@
                 <th style="width: 40px">{{ t("reports.rank") }}</th>
                 <th>{{ t("common.name") }}</th>
                 <th>{{ t("reports.category") }}</th>
-                <th class="text-end">{{ t("reports.qtySold") }}</th>
-                <th class="text-end">{{ t("reports.revenue") }}</th>
-                <th class="text-end">{{ t("reports.profit") }}</th>
+                <th class="text-start">{{ t("reports.qtySold") }}</th>
+                <th class="text-start">{{ t("reports.revenue") }}</th>
+                <th class="text-start">{{ t("reports.profit") }}</th>
               </tr>
             </thead>
             <tbody v-if="!topProducts.length">
@@ -437,10 +446,10 @@
                 <td class="fw-semibold">{{ i + 1 }}</td>
                 <td class="fw-semibold">{{ p.name }}</td>
                 <td class="text-muted">{{ p.category ?? "—" }}</td>
-                <td class="text-end">{{ num(p.qty) }}</td>
-                <td class="text-end">{{ fmt(p.revenue) }}</td>
+                <td class="text-start">{{ num(p.qty) }}</td>
+                <td class="text-start">{{ fmt(p.revenue) }}</td>
                 <td
-                  class="text-end"
+                  class="text-start"
                   :class="p.profit >= 0 ? 'text-success' : 'text-danger'"
                 >
                   {{ fmt(p.profit) }}
@@ -557,11 +566,11 @@
               <tr>
                 <th>{{ t("common.name") }}</th>
                 <th>{{ t("reports.category") }}</th>
-                <th class="text-end">{{ t("reports.stockCol") }}</th>
-                <th class="text-end">{{ t("reports.reorderCol") }}</th>
-                <th class="text-end">{{ t("reports.costPrice") }}</th>
-                <th class="text-end">{{ t("reports.sellPrice") }}</th>
-                <th class="text-end">{{ t("reports.stockValueCol") }}</th>
+                <th class="text-start">{{ t("reports.stockCol") }}</th>
+                <th class="text-start">{{ t("reports.reorderCol") }}</th>
+                <th class="text-start">{{ t("reports.costPrice") }}</th>
+                <th class="text-start">{{ t("reports.sellPrice") }}</th>
+                <th class="text-start">{{ t("reports.stockValueCol") }}</th>
               </tr>
             </thead>
             <tbody v-if="!visibleInventory.length">
@@ -584,15 +593,15 @@
                 </td>
                 <td class="text-muted">{{ i.category ?? "—" }}</td>
                 <td
-                  class="text-end fw-semibold"
+                  class="text-start fw-semibold"
                   :class="{ 'text-warning': i.lowStock }"
                 >
                   {{ num(i.stockQty) }}
                 </td>
-                <td class="text-end text-muted">{{ num(i.reorderLevel) }}</td>
-                <td class="text-end">{{ fmt(i.costPrice) }}</td>
-                <td class="text-end">{{ fmt(i.sellPrice) }}</td>
-                <td class="text-end fw-semibold">{{ fmt(i.stockValue) }}</td>
+                <td class="text-start text-muted">{{ num(i.reorderLevel) }}</td>
+                <td class="text-start">{{ fmt(i.costPrice) }}</td>
+                <td class="text-start">{{ fmt(i.sellPrice * (1 + (i.taxRate ?? 0) / 100)) }}</td>
+                <td class="text-start fw-semibold">{{ fmt(i.stockValue) }}</td>
               </tr>
             </tbody>
           </table>
@@ -618,11 +627,11 @@
             <thead v-if="marginData?.categories.length">
               <tr>
                 <th>{{ t("reports.category") }}</th>
-                <th class="text-end">{{ t("reports.qtySold") }}</th>
-                <th class="text-end">{{ t("reports.revenue") }}</th>
-                <th class="text-end">{{ t("reports.cogs") }}</th>
-                <th class="text-end">{{ t("reports.profit") }}</th>
-                <th class="text-end">{{ t("reports.marginPct") }}</th>
+                <th class="text-start">{{ t("reports.qtySold") }}</th>
+                <th class="text-start">{{ t("reports.revenue") }}</th>
+                <th class="text-start">{{ t("reports.cogs") }}</th>
+                <th class="text-start">{{ t("reports.profit") }}</th>
+                <th class="text-start">{{ t("reports.marginPct") }}</th>
               </tr>
             </thead>
             <tbody v-if="!marginData?.categories.length">
@@ -638,16 +647,16 @@
             <tbody v-for="c in marginData?.categories ?? []" :key="c.name">
               <tr>
                 <td class="fw-semibold">{{ c.name }}</td>
-                <td class="text-end">{{ num(c.qtySold) }}</td>
-                <td class="text-end">{{ fmt(c.revenue) }}</td>
-                <td class="text-end text-muted">{{ fmt(c.cogs) }}</td>
+                <td class="text-start">{{ num(c.qtySold) }}</td>
+                <td class="text-start">{{ fmt(c.revenue) }}</td>
+                <td class="text-start text-muted">{{ fmt(c.cogs) }}</td>
                 <td
-                  class="text-end"
+                  class="text-start"
                   :class="c.profit >= 0 ? 'text-success' : 'text-danger'"
                 >
                   {{ fmt(c.profit) }}
                 </td>
-                <td class="text-end">
+                <td class="text-start">
                   <span
                     class="badge rounded-pill"
                     :class="
@@ -679,11 +688,11 @@
               <tr>
                 <th>{{ t("common.name") }}</th>
                 <th>{{ t("reports.category") }}</th>
-                <th class="text-end">{{ t("reports.qtySold") }}</th>
-                <th class="text-end">{{ t("reports.revenue") }}</th>
-                <th class="text-end">{{ t("reports.cogs") }}</th>
-                <th class="text-end">{{ t("reports.profit") }}</th>
-                <th class="text-end">{{ t("reports.marginPct") }}</th>
+                <th class="text-start">{{ t("reports.qtySold") }}</th>
+                <th class="text-start">{{ t("reports.revenue") }}</th>
+                <th class="text-start">{{ t("reports.cogs") }}</th>
+                <th class="text-start">{{ t("reports.profit") }}</th>
+                <th class="text-start">{{ t("reports.marginPct") }}</th>
               </tr>
             </thead>
             <tbody v-if="!marginData?.products.length">
@@ -700,16 +709,16 @@
               <tr>
                 <td class="fw-semibold">{{ p.name }}</td>
                 <td class="text-muted">{{ p.category ?? "—" }}</td>
-                <td class="text-end">{{ num(p.qtySold) }}</td>
-                <td class="text-end">{{ fmt(p.revenue) }}</td>
-                <td class="text-end text-muted">{{ fmt(p.cogs) }}</td>
+                <td class="text-start">{{ num(p.qtySold) }}</td>
+                <td class="text-start">{{ fmt(p.revenue) }}</td>
+                <td class="text-start text-muted">{{ fmt(p.cogs) }}</td>
                 <td
-                  class="text-end"
+                  class="text-start"
                   :class="p.profit >= 0 ? 'text-success' : 'text-danger'"
                 >
                   {{ fmt(p.profit) }}
                 </td>
-                <td class="text-end">
+                <td class="text-start">
                   <span
                     class="badge rounded-pill"
                     :class="
@@ -760,7 +769,7 @@
                   <th>{{ t("common.date") }}</th>
                   <th>{{ t("common.product") }}</th>
                   <th>{{ t("stock.type") }}</th>
-                  <th class="text-end">{{ t("reports.movementsQty") }}</th>
+                  <th class="text-start">{{ t("reports.movementsQty") }}</th>
                   <th>{{ t("common.cashier") }}</th>
                   <th>{{ t("common.notes") }}</th>
                 </tr>
@@ -775,7 +784,7 @@
                     }}</span>
                   </td>
                   <td
-                    class="text-end"
+                    class="text-start"
                     :class="m.qty >= 0 ? 'text-success' : 'text-danger'"
                   >
                     {{ m.qty >= 0 ? "+" : "" }}{{ num(m.qty) }}

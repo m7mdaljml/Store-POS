@@ -3,7 +3,7 @@
     <div class="d-flex align-items-center justify-content-between mb-3">
       <h1 class="h4 mb-0">{{ t("stock.title") }}</h1>
       <button class="btn btn-primary" type="button" @click="openAdjust">
-        <i class="bi bi-plus-lg mx-1"></i>{{ t("stock.newAdjustment") }}
+        <i class="bi bi-arrow-down-up mx-1"></i>{{ t("stock.newAdjustment") }}
       </button>
     </div>
 
@@ -42,7 +42,7 @@
               <th>{{ t("common.date") }}</th>
               <th>{{ t("common.product") }}</th>
               <th>{{ t("stock.type") }}</th>
-              <th class="text-end">{{ t("stock.qty") }}</th>
+              <th class="text-start">{{ t("stock.qty") }}</th>
               <th>{{ t("common.notes") }}</th>
               <th>{{ t("stock.by") }}</th>
             </tr>
@@ -74,7 +74,7 @@
                 </span>
               </td>
               <td
-                class="text-end fw-semibold"
+                class="text-start fw-semibold"
                 :class="m.qty >= 0 ? 'text-success' : 'text-danger'"
               >
                 {{ m.qty >= 0 ? "+" : "" }}{{ m.qty }}

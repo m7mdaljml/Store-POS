@@ -51,6 +51,21 @@ pub async fn seed_db(path: &std::path::Path) -> Result<(), Box<dyn std::error::E
         .await?;
     }
 
+    // Seed the default tax profile ("Sales Tax" @ 16%). Every new product is
+    // pre-assigned to the default profile so a product is never created
+    // without a tax profile.
+    let has_default_tax: Option<(i64,)> =
+        sqlx::query_as("SELECT id FROM tax_profiles WHERE is_default = 1 LIMIT 1")
+            .fetch_optional(&pool)
+            .await?;
+    if has_default_tax.is_none() {
+        sqlx::query(
+            "INSERT INTO tax_profiles (name, rate, is_default) VALUES ('Sales Tax', 16, 1)",
+        )
+        .execute(&pool)
+        .await?;
+    }
+
     for &(role_name, perms) in ROLE_PERMISSIONS {
         let role_id: i64 = match sqlx::query_scalar("SELECT id FROM roles WHERE name = ?")
             .bind(role_name)
@@ -152,6 +167,7 @@ pub(crate) mod tests {
             "CREATE TABLE currencies (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT UNIQUE NOT NULL, name TEXT NOT NULL, symbol TEXT NOT NULL, rate REAL NOT NULL DEFAULT 1, is_base INTEGER NOT NULL DEFAULT 0)",
             "CREATE TABLE roles (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, description TEXT)",
             "CREATE TABLE permissions (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT UNIQUE NOT NULL)",
+            "CREATE TABLE tax_profiles (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, rate REAL NOT NULL DEFAULT 0, is_default INTEGER NOT NULL DEFAULT 0)",
             "CREATE TABLE role_permissions (role_id INTEGER NOT NULL REFERENCES roles(id) ON DELETE CASCADE, permission_id INTEGER NOT NULL REFERENCES permissions(id) ON DELETE CASCADE, PRIMARY KEY (role_id, permission_id))",
             "CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, full_name TEXT NOT NULL, role_id INTEGER NOT NULL REFERENCES roles(id), is_active INTEGER NOT NULL DEFAULT 1, password_state TEXT NOT NULL DEFAULT 'set')",
         ] {
@@ -201,6 +217,20 @@ pub(crate) mod tests {
                 .await
                 .unwrap();
         assert_eq!(threshold, "10");
+        // Default tax profile is seeded on a fresh install.
+        let tax_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM tax_profiles WHERE is_default = 1")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(tax_count, 1);
+        let tax: (String, f64) =
+            sqlx::query_as("SELECT name, rate FROM tax_profiles WHERE is_default = 1")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(tax.0, "Sales Tax");
+        assert!((tax.1 - 16.0).abs() < 0.001);
         pool.close().await;
 
         std::fs::remove_file(&path).ok();

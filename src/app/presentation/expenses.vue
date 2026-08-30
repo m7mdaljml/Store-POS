@@ -186,9 +186,9 @@
               <th>{{ t("suppliers.supplier") }}</th>
               <th>{{ t("common.date") }}</th>
               <th>{{ t("expenses.details") }}</th>
-              <th class="text-end">{{ t("common.amount") }}</th>
-              <th class="text-end">{{ t("common.paid") }}</th>
-              <th class="text-end">{{ t("common.due") }}</th>
+              <th class="text-start">{{ t("common.amount") }}</th>
+              <th class="text-start">{{ t("common.paid") }}</th>
+              <th class="text-start">{{ t("common.due") }}</th>
               <th>{{ t("common.status") }}</th>
             </tr>
           </thead>
@@ -226,15 +226,15 @@
               <td class="text-muted">{{ e.date }}</td>
               <td class="text-muted">{{ e.notes ?? "—" }}</td>
               <td
-                class="text-end fw-semibold"
+                class="text-start fw-semibold"
                 :class="e.kind === 'out' ? 'text-danger' : ''"
               >
                 {{ fmt(e.amount) }}
               </td>
-              <td class="text-end">
+              <td class="text-start">
                 {{ e.kind === "in" ? fmt(e.paid_amount) : "—" }}
               </td>
-              <td class="text-end">
+              <td class="text-start">
                 <span
                   v-if="e.kind === 'in' && e.due_amount > 0"
                   class="text-danger fw-semibold"
