@@ -56,6 +56,12 @@ export const useCartStore = defineStore("cart", () => {
     if (item) item.qty = Math.max(0, qty);
   }
 
+  /** Override the unit (pre-tax) sale price for one line on this invoice. */
+  function setPrice(productId: number, price: number) {
+    const item = items.value.find((i) => i.productId === productId);
+    if (item && !isNaN(price)) item.price = Math.max(0, price);
+  }
+
   /** Per-unit discount, clamped to [0, unit price]. */
   function setDiscount(productId: number, discount: number) {
     const item = items.value.find((i) => i.productId === productId);
@@ -153,6 +159,7 @@ export const useCartStore = defineStore("cart", () => {
     add,
     remove,
     setQty,
+    setPrice,
     setDiscount,
     lineTotal,
     unitPriceWithTax,

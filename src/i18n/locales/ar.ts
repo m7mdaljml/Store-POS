@@ -209,6 +209,17 @@ export const ar = {
     clearCartFirst: "افتح السلة الحالية قبل استئناف عملية بيع معلقة",
     heldLoaded: "تم تحميل البيع المعلق {saleNo} في السلة.",
     cancelHeld: "إلغاء البيع المعلق {saleNo}؟ لا يمكن التراجع عن هذا.",
+    cancelInvoiceConfirm:
+      "إلغاء الفاتورة الحالية؟ ستتم إزالة جميع الأصناف.",
+    cancelInvoiceLabel: "إلغاء الفاتورة",
+    invoiceCancelled: "تم إلغاء الفاتورة.",
+    selectedHint: "محدد — انقر مرة أخرى لإلغاء التحديد",
+    changeQty: "تغيير الكمية",
+    changePrice: "تغيير سعر الوحدة",
+    qtyHint: "الحد الأقصى المتاح: {max}",
+    priceIncludesTax: "السعر شامل الضريبة: {total}",
+    invalidQty: "أدخل كمية صحيحة (الحد الأدنى 1)",
+    invalidPrice: "أدخل سعرًا صحيحًا (0 أو أكثر)",
     heldNone: "لا توجد مبيعات معلقة",
     itemCount:
       "{count} عنصر | {count} عنصر | {count} عنصران | {count} عناصر | {count} عنصرًا | {count} عنصر",

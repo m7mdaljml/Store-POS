@@ -222,6 +222,13 @@
             v-for="item in cart.items"
             :key="item.productId"
             class="ticket-line"
+            :class="{ 'is-selected': isSelected(item.productId) }"
+            :title="
+              isSelected(item.productId)
+                ? t('checkout.selectedHint')
+                : undefined
+            "
+            @click="selectItem(item.productId)"
           >
             <div class="ticket-line-head">
               <span class="ticket-line-name" :title="item.name">{{
@@ -235,7 +242,7 @@
                 class="line-remove"
                 type="button"
                 :title="t('common.remove')"
-                @click="cart.remove(item.productId)"
+                @click.stop="cart.remove(item.productId)"
               >
                 <i class="bi bi-x-lg"></i>
               </button>
@@ -245,7 +252,7 @@
                 <button
                   type="button"
                   aria-label="-"
-                  @click="bumpQty(item.productId, -1)"
+                  @click.stop="bumpQty(item.productId, -1)"
                 >
                   <i class="bi bi-dash"></i>
                 </button>
@@ -254,7 +261,7 @@
                   type="button"
                   aria-label="+"
                   :disabled="item.qty >= stockFor(item.productId)"
-                  @click="bumpQty(item.productId, 1)"
+                  @click.stop="bumpQty(item.productId, 1)"
                 >
                   <i class="bi bi-plus"></i>
                 </button>
@@ -269,6 +276,7 @@
                 :value="item.discount"
                 :aria-label="`${t('checkout.discountPerUnit')} — ${item.name}`"
                 @input="onItemDiscount(item.productId, $event)"
+                @click.stop
               />
               <span class="line-total">{{ fmt(cart.lineTotalWithTax(item)) }}</span>
             </div>
@@ -393,7 +401,7 @@
               <label
                 class="form-label mb-1 small text-muted"
                 for="cash-received"
-                >{{ t("checkout.cashReceived") }} <small>(F5)</small></label
+                >{{ t("checkout.cashReceived") }}</label
               >
               <div class="input-group">
                 <input
@@ -590,7 +598,6 @@
                 "
                 :title="t('checkout.hold')"
                 @click="holdCurrentSale"
-                @keydown="onSearchKeydown"
               >
                 <span
                   v-if="holding"
@@ -599,7 +606,7 @@
                 ></span>
                 <i v-else class="bi bi-pause-circle mx-1"></i
                 >{{ t("checkout.hold") }}
-                <small class="text-muted">(F12)</small>
+                <small class="text-muted">(F10)</small>
               </button>
               <button
                 class="btn btn-soft flex-fill"
@@ -641,7 +648,7 @@
               <i v-else class="bi bi-cash-stack"></i>
               <span
                 >{{ t("checkout.completeSale") }}
-                <small class="text-muted">(F4)</small></span
+                <small class="text-muted">(F11)</small></span
               >
               <span class="btn-pay-amt">{{ fmt(cart.total) }}</span>
             </button>
@@ -689,9 +696,129 @@
                 >
                   <i class="bi bi-check-lg mx-1"></i
                   >{{ t("checkout.completeSale") }}
-                  <small class="text-white-50">(F4)</small>
+                  <small class="text-white-50">(F11)</small>
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Change quantity modal -->
+      <div
+        v-if="qtyModalOpen && qtyTargetItem"
+        class="modal fade show d-block"
+        tabindex="-1"
+        role="dialog"
+        @click.self="qtyModalOpen = false"
+      >
+        <div class="modal-dialog modal-dialog-centered" role="document">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title">
+                <i class="bi bi-plus-minus mx-2"></i
+                >{{ t("checkout.changeQty") }} — {{ qtyTargetItem.name }}
+              </h5>
+              <button
+                type="button"
+                class="btn-close"
+                :aria-label="t('common.close')"
+                @click="qtyModalOpen = false"
+              ></button>
+            </div>
+            <div class="modal-body">
+              <input
+                v-model.number="qtyValue"
+                class="form-control form-control-lg text-center"
+                type="number"
+                min="1"
+                :max="qtyMax"
+                step="1"
+                :aria-label="t('checkout.changeQty')"
+                @keydown.enter="confirmQuantity"
+              />
+              <div class="form-text text-center">
+                {{ t("checkout.qtyHint", { max: qtyMax }) }}
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button
+                type="button"
+                class="btn btn-outline-secondary"
+                @click="qtyModalOpen = false"
+              >
+                {{ t("common.cancel") }}
+              </button>
+              <button
+                type="button"
+                class="btn btn-primary"
+                @click="confirmQuantity"
+              >
+                <i class="bi bi-check-lg mx-1"></i>{{ t("common.confirm") }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Change unit price modal -->
+      <div
+        v-if="priceModalOpen && priceTargetItem"
+        class="modal fade show d-block"
+        tabindex="-1"
+        role="dialog"
+        @click.self="priceModalOpen = false"
+      >
+        <div class="modal-dialog modal-dialog-centered" role="document">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title">
+                <i class="bi bi-tag mx-2"></i
+                >{{ t("checkout.changePrice") }} — {{ priceTargetItem.name }}
+              </h5>
+              <button
+                type="button"
+                class="btn-close"
+                :aria-label="t('common.close')"
+                @click="priceModalOpen = false"
+              ></button>
+            </div>
+            <div class="modal-body">
+              <div class="input-group input-group-lg">
+                <input
+                  v-model.number="priceValue"
+                  class="form-control text-center"
+                  type="number"
+                  min="0"
+                  step="1"
+                  :aria-label="t('checkout.changePrice')"
+                  @keydown.enter="confirmPrice"
+                />
+                <span class="input-group-text">{{
+                  baseCurrencySymbol ||
+                  settings.currency ||
+                  t("checkout.currencyFallback")
+                }}</span>
+              </div>
+              <div class="form-text text-center">
+                {{ t("checkout.priceIncludesTax", { total: fmt(priceWithTax) }) }}
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button
+                type="button"
+                class="btn btn-outline-secondary"
+                @click="priceModalOpen = false"
+              >
+                {{ t("common.cancel") }}
+              </button>
+              <button
+                type="button"
+                class="btn btn-primary"
+                @click="confirmPrice"
+              >
+                <i class="bi bi-check-lg mx-1"></i>{{ t("common.confirm") }}
+              </button>
             </div>
           </div>
         </div>
@@ -858,6 +985,119 @@ const activeCategory = ref<number | null>(null);
 const searchOpen = ref(false);
 const activeSuggestion = ref(0);
 
+/** Cart line selected for removal (F5). Defaults to the latest added. */
+const selectedId = ref<number | null>(null);
+
+function isSelected(productId: number): boolean {
+  return selectedId.value === productId;
+}
+
+function selectItem(productId: number) {
+  selectedId.value = selectedId.value === productId ? null : productId;
+}
+
+/** Remove the selected cart line entirely. */
+function deleteSelected() {
+  if (selectedId.value === null) return;
+  cart.remove(selectedId.value);
+  selectedId.value = null;
+  playBeep("click");
+}
+
+// Prune selection whenever the line disappears from the cart.
+watch(
+  () => cart.items.map((i) => i.productId),
+  (ids) => {
+    if (selectedId.value !== null && !ids.includes(selectedId.value)) {
+      selectedId.value = null;
+    }
+  },
+);
+
+const qtyModalOpen = ref(false);
+const qtyTarget = ref<number | null>(null);
+const qtyValue = ref(1);
+
+const priceModalOpen = ref(false);
+const priceTarget = ref<number | null>(null);
+const priceValue = ref(0);
+
+const qtyTargetItem = computed(
+  () => cart.items.find((i) => i.productId === qtyTarget.value) ?? null,
+);
+const priceTargetItem = computed(
+  () => cart.items.find((i) => i.productId === priceTarget.value) ?? null,
+);
+const qtyMax = computed(() => {
+  if (qtyTarget.value === null) return 1;
+  const stock = stockFor(qtyTarget.value);
+  return stock > 0 ? stock : 9999;
+});
+/** Tax-inclusive price that the edited unit price will display as. */
+const priceWithTax = computed(() => {
+  const item = priceTargetItem.value;
+  if (!item) return 0;
+  return Math.max(0, priceValue.value) * (1 + (item.taxRate ?? 0) / 100);
+});
+
+function openQuantityDialog() {
+  if (selectedId.value === null) return;
+  const item = cart.items.find((i) => i.productId === selectedId.value);
+  if (!item) return;
+  qtyTarget.value = item.productId;
+  qtyValue.value = item.qty;
+  qtyModalOpen.value = true;
+}
+
+function confirmQuantity() {
+  if (qtyTarget.value === null) return;
+  const qty = Math.floor(Number(qtyValue.value));
+  if (isNaN(qty) || qty < 1) {
+    toast.error(t("checkout.invalidQty"));
+    return;
+  }
+  const max = qtyMax.value;
+  if (max < 9999 && qty > max) {
+    toast.error(
+      t("checkout.stockLimit", {
+        stock: max,
+        name: qtyTargetItem.value?.name ?? "",
+      }),
+    );
+    return;
+  }
+  cart.setQty(qtyTarget.value, qty);
+  qtyModalOpen.value = false;
+  qtyTarget.value = null;
+}
+
+function openPriceDialog() {
+  if (selectedId.value === null) return;
+  const item = cart.items.find((i) => i.productId === selectedId.value);
+  if (!item) return;
+  priceTarget.value = item.productId;
+  priceValue.value = Number(cart.unitPriceWithTax(item).toFixed(2));
+  priceModalOpen.value = true;
+}
+
+function confirmPrice() {
+  if (priceTarget.value === null) return;
+  const price = Math.max(0, Number(priceValue.value));
+  if (isNaN(price)) {
+    toast.error(t("checkout.invalidPrice"));
+    return;
+  }
+  const item = priceTargetItem.value;
+  const rate = item?.taxRate ?? 0;
+  if (price > 0 && rate > 0) {
+    cart.setPrice(priceTarget.value, price / (1 + rate / 100));
+  } else {
+    cart.setPrice(priceTarget.value, price);
+  }
+  priceModalOpen.value = false;
+  priceTarget.value = null;
+}
+
 // Quick items panel: manually collapsible while browsing; searching always
 // re-expands it so results are visible.
 const quickCollapsed = ref(false);
@@ -967,6 +1207,7 @@ function addToCart(p: Product) {
     costPrice: p.cost_price ?? 0,
     taxRate: p.tax_rate ?? 0,
   });
+  selectedId.value = p.id;
   playBeep("click");
 }
 
@@ -983,10 +1224,6 @@ function onSearchInput() {
 }
 
 function onSearchKeydown(e: KeyboardEvent) {
-  if (e.key === "Escape") {
-    searchOpen.value = false;
-    return;
-  }
   if (e.key === "ArrowDown") {
     e.preventDefault();
     searchOpen.value = true;
@@ -1348,21 +1585,17 @@ onBeforeUnmount(() => {
 });
 
 /**
- * F9.5 keyboard shortcuts:
- *   F2  → new sale: focus the product search box
- *   F4  → complete sale
- *   F5  → payment: focus the cash-received field
- *   Esc → cancel: close popovers / clear transient errors
- *   F12 → hold the current sale
+ * POS keyboard shortcuts:
+ *   F2   → new sale: focus the product search box
+ *   F4   → change quantity of the selected cart line
+ *   F5   → delete the selected cart line
+ *   F7   → change unit price of the selected cart line
+ *   F10  → hold the current sale and start a new one
+ *   F11  → complete sale
+ *   Esc  → progressively cancel: close popovers/modals, clear search,
+ *          then confirm-cancel the current invoice
  */
 function onGlobalKeydown(e: KeyboardEvent) {
-  const target = e.target as HTMLElement | null;
-  const inTextField =
-    target &&
-    (target.tagName === "INPUT" ||
-      target.tagName === "TEXTAREA" ||
-      target.tagName === "SELECT");
-
   switch (e.key) {
     case "F2": {
       e.preventDefault();
@@ -1370,6 +1603,33 @@ function onGlobalKeydown(e: KeyboardEvent) {
       break;
     }
     case "F4": {
+      if (searchOpen.value) return;
+      e.preventDefault();
+      openQuantityDialog();
+      break;
+    }
+    case "F5": {
+      if (searchOpen.value) return;
+      e.preventDefault();
+      deleteSelected();
+      break;
+    }
+    case "F7": {
+      if (searchOpen.value) return;
+      e.preventDefault();
+      openPriceDialog();
+      break;
+    }
+    case "F10": {
+      if (searchOpen.value || holding.value) return;
+      if (cart.items.length) {
+        e.preventDefault();
+        holdCurrentSale();
+      }
+      break;
+    }
+    case "F11": {
+      if (searchOpen.value) return;
       e.preventDefault();
       if (saleConfirmOpen.value) {
         submitSale();
@@ -1378,25 +1638,42 @@ function onGlobalKeydown(e: KeyboardEvent) {
       }
       break;
     }
-    case "F5": {
-      e.preventDefault();
-      document.getElementById("cash-received")?.focus();
-      break;
-    }
-    case "F12": {
-      // Don't hijack F12 while typing; otherwise hold the sale.
-      if (!inTextField && cart.items.length) {
+    case "Escape": {
+      if (saleConfirmOpen.value) {
+        saleConfirmOpen.value = false;
+      } else if (heldSalesOpen.value) {
+        heldSalesOpen.value = false;
+      } else if (searchOpen.value) {
+        searchOpen.value = false;
+      } else if (search.value.trim()) {
+        search.value = "";
+      } else if (cart.items.length) {
         e.preventDefault();
-        holdCurrentSale();
+        cancelInvoice();
       }
       break;
     }
-    case "Escape": {
-      if (!searchOpen.value) return;
-      searchOpen.value = false;
-      break;
-    }
   }
+}
+
+/** Confirm and cancel the current invoice, emptying the cart. */
+async function cancelInvoice() {
+  if (!cart.items.length) return;
+  const ok = await confirmDialog({
+    message: t("checkout.cancelInvoiceConfirm"),
+    confirmLabel: t("checkout.cancelInvoiceLabel"),
+    danger: true,
+  });
+  if (!ok) return;
+  cart.clear();
+  heldSaleId.value = null;
+  heldCustomerId.value = null;
+  selectedCustomerId.value = null;
+  selectedId.value = null;
+  search.value = "";
+  searchOpen.value = false;
+  toast.success(t("checkout.invoiceCancelled"));
+  playBeep("click");
 }
 
 function bumpQty(productId: number, delta: number) {
