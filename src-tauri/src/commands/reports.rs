@@ -43,6 +43,8 @@ pub struct SalesSummary {
     pub net_position: f64,
     /// Taxes collected, net of the tax share carried by refunds.
     pub taxes_total: f64,
+    pub withdrawals_total: f64,
+    pub cash_balance: f64,
 }
 
 pub async fn compute_summary(
@@ -94,16 +96,28 @@ pub async fn compute_summary(
     .await
     .map_err(|e| e.to_string())?;
 
+    let withdrawals: (f64,) = sqlx::query_as(
+        "SELECT TOTAL(amount) FROM cash_withdrawals WHERE date(date, 'localtime') BETWEEN ?1 AND ?2",
+    )
+    .bind(from)
+    .bind(to)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
     let revenue = agg.0;
     let orders = agg.1;
+    let cash_balance = revenue - expenses.0 - withdrawals.0;
     Ok(SalesSummary {
         revenue,
         orders,
         avg_ticket: if orders > 0 { revenue / orders as f64 } else { 0.0 },
         gross_profit: profit.0,
         expenses_total: expenses.0,
-        net_position: revenue - expenses.0,
+        net_position: revenue - expenses.0 - withdrawals.0,
         taxes_total: taxes.0,
+        withdrawals_total: withdrawals.0,
+        cash_balance,
     })
 }
 
@@ -770,6 +784,85 @@ pub async fn export_top_products<R: Runtime>(
     crate::export::write_xlsx(std::path::Path::new(&path), "Top Products", &headers, &rows)
 }
 
+/// Exports the whole Overview tab as one workbook: KPI summary plus the
+/// revenue trend, category breakdown and top-products tables.
+#[tauri::command]
+pub async fn export_overview<R: Runtime>(
+    app: AppHandle<R>,
+    path: String,
+    from: String,
+    to: String,
+    granularity: Option<String>,
+) -> Result<(), String> {
+    validate_range(&from, &to)?;
+    let pool = db::pool(&app).await?;
+
+    let summary = compute_summary(&pool, &from, &to).await?;
+    let trend =
+        compute_trend(&pool, &from, &to, granularity.as_deref().unwrap_or("day")).await?;
+    let categories = compute_category_breakdown(&pool, &from, &to).await?;
+    let top = compute_top_products(&pool, &from, &to, None).await?;
+
+    let mut summary_sheet =
+        crate::export::SheetData::new("Summary", &["Metric", "Value"]);
+    summary_sheet.rows = vec![
+        vec!["Period".into(), format!("{from} - {to}")],
+        vec!["Revenue".into(), money(summary.revenue)],
+        vec!["Orders".into(), summary.orders.to_string()],
+        vec!["Avg ticket".into(), money(summary.avg_ticket)],
+        vec!["Gross profit".into(), money(summary.gross_profit)],
+        vec!["Expenses".into(), money(summary.expenses_total)],
+        vec!["Withdrawals".into(), money(summary.withdrawals_total)],
+        vec!["Net position".into(), money(summary.net_position)],
+        vec!["Taxes".into(), money(summary.taxes_total)],
+    ];
+
+    let mut trend_sheet =
+        crate::export::SheetData::new("Revenue trend", &["Bucket", "Revenue", "Orders"]);
+    trend_sheet.rows = trend
+        .iter()
+        .map(|p| vec![p.bucket.clone(), money(p.revenue), p.orders.to_string()])
+        .collect();
+
+    let mut cat_sheet = crate::export::SheetData::new(
+        "Category breakdown",
+        &["Category", "Qty sold", "Revenue", "Profit"],
+    );
+    cat_sheet.rows = categories
+        .iter()
+        .map(|c| {
+            vec![
+                c.category.clone(),
+                num(c.qty),
+                money(c.revenue),
+                money(c.profit),
+            ]
+        })
+        .collect();
+
+    let mut top_sheet = crate::export::SheetData::new(
+        "Top products",
+        &["Name", "Category", "Qty sold", "Revenue", "Profit"],
+    );
+    top_sheet.rows = top
+        .iter()
+        .map(|p| {
+            vec![
+                p.name.clone(),
+                p.category.clone().unwrap_or_default(),
+                num(p.qty),
+                money(p.revenue),
+                money(p.profit),
+            ]
+        })
+        .collect();
+
+    crate::export::write_xlsx_multi(
+        std::path::Path::new(&path),
+        &[summary_sheet, trend_sheet, cat_sheet, top_sheet],
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -849,9 +942,20 @@ mod tests {
           amount REAL NOT NULL,
           date TEXT NOT NULL DEFAULT (datetime('now'))
         );
-        "#
+        );
+        CREATE TABLE cash_withdrawals (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          session_id INTEGER,
+          user_id INTEGER NOT NULL,
+          amount REAL NOT NULL,
+          date TEXT NOT NULL DEFAULT (datetime('now')),
+          notes TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        );
     }
-
+        );"#
+    }
     async fn mem_pool() -> sqlx::SqlitePool {
         let pool = sqlx::sqlite::SqlitePoolOptions::new()
             .max_connections(1)
@@ -954,7 +1058,7 @@ mod tests {
         assert!((s.avg_ticket - 6.5).abs() < 0.001);
         assert!((s.gross_profit - 8.0).abs() < 0.001); // 6 + 2
         assert!((s.expenses_total - 4.0).abs() < 0.001);
-        assert!((s.net_position - 9.0).abs() < 0.001); // revenue − expenses
+        assert!((s.net_position - 9.0).abs() < 0.001); // revenue − expenses − withdrawals
     }
 
     #[tokio::test]
@@ -1120,7 +1224,7 @@ mod tests {
         assert!((s.revenue - 8.0).abs() < 0.001); // 10 − 5 + 3
         assert!((s.avg_ticket - 4.0).abs() < 0.001);
         assert!((s.gross_profit - 5.0).abs() < 0.001); // 3 + 2
-        assert!((s.net_position - 4.0).abs() < 0.001); // 8 − 4
+        assert!((s.net_position - 4.0).abs() < 0.001); // 8 − 4 − 0
 
         let points = compute_trend(&pool, &from, &to, "day").await.unwrap();
         assert_eq!(points.len(), 1);

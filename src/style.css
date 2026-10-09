@@ -68,14 +68,14 @@
 
 [data-bs-theme="light"] {
   /* Surfaces & borders */
-  --pos-bg: #f1f5f9;
-  --pos-surface: #ffffff;
-  --pos-surface-2: #e2e8f0;
-  --pos-border: #e2e8f0;
+  --pos-bg: #dfe3e9;
+  --pos-surface: #eef1f5;
+  --pos-surface-2: #d3d9e1;
+  --pos-border: #ccd3dc;
 
   /* Text */
   --pos-text: #1e293b;
-  --pos-text-muted: #64748b;
+  --pos-text-muted: #5b6678;
 
   /* Accent */
   --pos-accent: #6366f1;

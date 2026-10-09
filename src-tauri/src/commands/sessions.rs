@@ -50,6 +50,7 @@ pub struct SaleSession {
     pub cash_paid: f64,
     /// Change given back on completed sales in the session.
     pub change_given: f64,
+    pub withdrawals_total: f64,
 }
 
 const SESSION_SELECT: &str = "
@@ -60,7 +61,8 @@ const SESSION_SELECT: &str = "
               FROM sales s WHERE s.session_id = ss.id AND s.status = 'completed') AS sales_total,
            (SELECT COALESCE(SUM(p.amount), 0.0) FROM payments p JOIN sales s ON s.id = p.sale_id
              WHERE s.session_id = ss.id AND s.status = 'completed' AND p.method = 'cash') AS cash_paid,
-           (SELECT COALESCE(SUM(s.change_given), 0.0) FROM sales s WHERE s.session_id = ss.id AND s.status = 'completed') AS change_given
+           (SELECT COALESCE(SUM(s.change_given), 0.0) FROM sales s WHERE s.session_id = ss.id AND s.status = 'completed') AS change_given,
+           (SELECT COALESCE(SUM(cw.amount), 0.0) FROM cash_withdrawals cw WHERE cw.session_id = ss.id) AS withdrawals_total
     FROM sale_sessions ss
     LEFT JOIN users u ON u.id = ss.user_id
 ";
@@ -80,6 +82,7 @@ fn map_session(row: &sqlx::sqlite::SqliteRow) -> Result<SaleSession, String> {
         sales_total: row.try_get("sales_total").map_err(|e| e.to_string())?,
         cash_paid: row.try_get("cash_paid").map_err(|e| e.to_string())?,
         change_given: row.try_get("change_given").map_err(|e| e.to_string())?,
+        withdrawals_total: row.try_get("withdrawals_total").map_err(|e| e.to_string())?,
     })
 }
 
@@ -181,7 +184,15 @@ pub async fn finalize_session(
     .await
     .map_err(|e| e.to_string())?;
 
-    let expected = opening_cash + cash_paid.0 - change_given.0;
+    let withdrawals: (f64,) = sqlx::query_as(
+        "SELECT COALESCE(SUM(amount), 0.0) FROM cash_withdrawals WHERE session_id = ?",
+    )
+    .bind(input.session_id)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let expected = opening_cash + cash_paid.0 - change_given.0 - withdrawals.0;
     let variance = input.closing_cash - expected;
 
     sqlx::query(
@@ -393,6 +404,15 @@ mod tests {
           method TEXT NOT NULL,
           amount REAL NOT NULL,
           reference TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE TABLE cash_withdrawals (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          session_id INTEGER,
+          user_id INTEGER NOT NULL,
+          amount REAL NOT NULL,
+          date TEXT NOT NULL DEFAULT (datetime('now')),
+          notes TEXT,
           created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
         CREATE TABLE refunds (

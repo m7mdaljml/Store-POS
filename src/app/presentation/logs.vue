@@ -127,6 +127,8 @@ const ALL_ACTIONS = [
   "sale.refund",
   "session.open",
   "session.close",
+  "cash.withdrawal",
+  "cash.withdrawal.delete",
   "expense.outgoing",
   "expense.incoming",
   "expense.payment",
@@ -421,6 +423,18 @@ const detailPatterns: Array<{
       actual: cleanMoney(m[2]),
       variance: cleanMoney(m[3]),
     }),
+  },
+  {
+    action: "cash.withdrawal",
+    regex: /^Recorded cash withdrawal of (.+)$/,
+    i18nKey: "logs.detail.recordedCashWithdrawal",
+    map: (m) => ({ amount: cleanMoney(m[1]) }),
+  },
+  {
+    action: "cash.withdrawal.delete",
+    regex: /^Deleted cash withdrawal of (.+)$/,
+    i18nKey: "logs.detail.deletedCashWithdrawal",
+    map: (m) => ({ amount: cleanMoney(m[1]) }),
   },
   {
     action: "expense.outgoing",

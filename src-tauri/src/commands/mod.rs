@@ -19,3 +19,5 @@ pub struct Page<T> {
     pub items: Vec<T>,
     pub total: i64,
 }
+
+pub mod withdrawals;

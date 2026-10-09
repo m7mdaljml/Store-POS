@@ -244,6 +244,12 @@ const navItems = computed(() => {
       permission: "expenses.manage",
     },
     {
+      to: "/withdrawals",
+      label: t("nav.withdrawals"),
+      icon: "bi-cash-stack",
+      permission: "reports.view",
+    },
+    {
       to: "/users",
       label: t("nav.users"),
       icon: "bi-person-gear",

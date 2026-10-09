@@ -59,6 +59,16 @@
 
     <!-- ============ F6.2 Overview ============ -->
     <template v-if="activeTab === 'overview'">
+      <div class="d-flex align-items-center justify-content-end mb-3" v-can="'export.excel'">
+        <AsyncButton
+          variant="outline-primary"
+          :loading="exporting"
+          @click="exportOverview"
+        >
+          <i v-if="!exporting" class="bi bi-file-earmark-excel mx-1"></i
+          >{{ t("reports.exportOverview") }}
+        </AsyncButton>
+      </div>
       <div v-if="summary" class="row g-3 mb-3">
         <div class="col-6 col-md-4 col-xl">
           <div class="kpi-card">
@@ -103,6 +113,17 @@
               <div class="kpi-label">{{ t("reports.kpiExpenses") }}</div>
               <div class="kpi-value text-danger">
                 {{ fmt(summary.expensesTotal) }}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="col-6 col-md-4 col-xl">
+          <div class="kpi-card">
+            <div class="kpi-icon"><i class="bi bi-cash-coin"></i></div>
+            <div>
+              <div class="kpi-label">{{ t("reports.kpiWithdrawals") }}</div>
+              <div class="kpi-value text-danger">
+                {{ fmt(summary.withdrawalsTotal) }}
               </div>
             </div>
           </div>
@@ -1081,17 +1102,61 @@ function cssVar(name: string, fallback: string): string {
   return v || fallback;
 }
 
+function hexToRgba(color: string, alpha: number): string {
+  const hex = color.trim().replace("#", "");
+  const full =
+    hex.length === 3
+      ? hex
+          .split("")
+          .map((c) => c + c)
+          .join("")
+      : hex;
+  const match = full.match(/^([0-9a-f]{6})$/i);
+  if (!match) return color;
+  const r = parseInt(full.slice(0, 2), 16);
+  const g = parseInt(full.slice(2, 4), 16);
+  const b = parseInt(full.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function compactMoney(v: number): string {
+  const abs = Math.abs(v);
+  if (abs >= 1_000_000)
+    return `${(v / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
+  if (abs >= 1_000) return `${(v / 1_000).toFixed(1).replace(/\.0$/, "")}k`;
+  return String(v);
+}
+
+const CHART_TOOLTIP = {
+  backgroundColor: "rgba(15, 23, 42, 0.94)",
+  padding: 12,
+  cornerRadius: 10,
+  displayColors: false,
+  titleColor: "#f8fafc",
+  bodyColor: "#e2e8f0",
+};
+
 function renderCharts() {
   if (activeTab.value !== "overview") return;
+
+  const accent = cssVar("--pos-accent", "#6366f1");
+  const textMuted = cssVar("--pos-text-muted", "#8a94ad");
+  const surface = cssVar("--pos-surface", "#111830");
+  const grid = hexToRgba(cssVar("--pos-border", "#1f2a4d"), 0.6);
+  const font = { family: cssVar("--pos-font", "system-ui"), size: 12 };
 
   if (trendCanvas.value) {
     const labels = trendPoints.value.map((p) => p.bucket);
     const revenue = trendPoints.value.map((p) => Number(p.revenue.toFixed(2)));
-    const accent = cssVar("--pos-accent", "#6366f1");
     if (trendChart) {
       trendChart.destroy();
       trendChart = null;
     }
+    const ctx = trendCanvas.value.getContext("2d");
+    const height = trendCanvas.value.clientHeight || 260;
+    const gradient = ctx?.createLinearGradient(0, 0, 0, height);
+    gradient?.addColorStop(0, hexToRgba(accent, 0.95));
+    gradient?.addColorStop(1, hexToRgba(accent, 0.35));
     trendChart = new Chart(trendCanvas.value, {
       type: "bar",
       data: {
@@ -1100,19 +1165,53 @@ function renderCharts() {
           {
             label: t("reports.kpiRevenue"),
             data: revenue,
-            backgroundColor: accent,
-            borderRadius: 6,
-            maxBarThickness: 42,
+            backgroundColor: gradient ?? accent,
+            hoverBackgroundColor: accent,
+            borderRadius: { topLeft: 8, topRight: 8, bottomLeft: 0, bottomRight: 0 },
+            borderSkipped: false,
+            maxBarThickness: 46,
           },
         ],
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
+        animation: { duration: 650, easing: "easeOutQuart" },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            ...CHART_TOOLTIP,
+            titleFont: { ...font, weight: 600 },
+            bodyFont: font,
+            callbacks: {
+              label: (c: any) =>
+                `${t("reports.kpiRevenue")}: ${fmt(Number(c.raw))}`,
+            },
+          },
+        },
         scales: {
-          y: { beginAtZero: true },
-          x: { ticks: { maxRotation: 0, autoSkipPadding: 12 } },
+          x: {
+            grid: { display: false },
+            border: { display: false },
+            ticks: {
+              color: textMuted,
+              font,
+              maxRotation: 0,
+              autoSkipPadding: 14,
+            },
+          },
+          y: {
+            beginAtZero: true,
+            border: { display: false },
+            grid: { color: grid, drawTicks: false },
+            ticks: {
+              color: textMuted,
+              font,
+              padding: 8,
+              maxTicksLimit: 6,
+              callback: (v: any) => compactMoney(Number(v)),
+            },
+          },
         },
       },
     });
@@ -1127,7 +1226,10 @@ function renderCharts() {
       "#06b6d4",
       "#a855f7",
       "#84cc16",
+      "#ec4899",
     ];
+    const values = categories.value.map((c) => Number(c.revenue.toFixed(2)));
+    const total = values.reduce((a, b) => a + b, 0);
     if (catChart) {
       catChart.destroy();
       catChart = null;
@@ -1140,18 +1242,49 @@ function renderCharts() {
         ),
         datasets: [
           {
-            data: categories.value.map((c) => Number(c.revenue.toFixed(2))),
+            data: values,
             backgroundColor: categories.value.map(
               (_, i) => palette[i % palette.length],
             ),
-            borderWidth: 0,
+            hoverBackgroundColor: categories.value.map(
+              (_, i) => palette[i % palette.length],
+            ),
+            borderColor: surface,
+            borderWidth: 3,
+            hoverOffset: 8,
           },
         ],
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        plugins: { legend: { position: "bottom", labels: { boxWidth: 12 } } },
+        cutout: "64%",
+        animation: { duration: 700, easing: "easeOutQuart" },
+        plugins: {
+          legend: {
+            position: "bottom",
+            labels: {
+              color: textMuted,
+              usePointStyle: true,
+              pointStyle: "circle",
+              boxWidth: 8,
+              padding: 14,
+              font,
+            },
+          },
+          tooltip: {
+            ...CHART_TOOLTIP,
+            titleFont: { ...font, weight: 600 },
+            bodyFont: font,
+            callbacks: {
+              label: (c: any) => {
+                const value = Number(c.raw);
+                const pct = total > 0 ? (value / total) * 100 : 0;
+                return `${c.label}: ${fmt(value)} (${pct.toFixed(1)}%)`;
+              },
+            },
+          },
+        },
       },
     });
   }
@@ -1200,6 +1333,14 @@ function exportTopProducts() {
   runExport(`top-products-${stamp()}.xlsx`, "export_top_products", {
     from: from.value,
     to: to.value,
+  });
+}
+
+function exportOverview() {
+  runExport(`overview-${stamp()}.xlsx`, "export_overview", {
+    from: from.value,
+    to: to.value,
+    granularity: granularity.value,
   });
 }
 

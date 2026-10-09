@@ -293,6 +293,8 @@ export interface SalesSummary {
   expensesTotal: number;
   netPosition: number;
   taxesTotal: number;
+  withdrawalsTotal: number;
+  cashBalance: number;
 }
 
 export interface TrendPoint {

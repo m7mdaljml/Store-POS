@@ -67,11 +67,10 @@ pub fn initial_migrations() -> Vec<Migration> {
       description: "users_password_state",
       sql: "ALTER TABLE users ADD COLUMN password_state TEXT NOT NULL DEFAULT 'set';",
       kind: MigrationKind::Up,
-    },
+    }
   ]
 }
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
     .plugin(tauri_plugin_dialog::init())
@@ -94,7 +93,6 @@ pub fn run() {
           Ok(()) => log::info!("Seed data ready"),
           Err(e) => log::error!("Seeding failed: {e}"),
         }
-        // F8.1: verify database health once at startup.
         match db::db_path(&handle) {
           Ok(path) => match db::integrity_check(&path).await {
             Ok(result) => log::info!("DB integrity check: {result}"),
@@ -154,6 +152,7 @@ pub fn run() {
       commands::reports::export_sales_report,
       commands::reports::export_inventory,
       commands::reports::export_top_products,
+      commands::reports::export_overview,
       commands::backup::create_backup,
       commands::backup::list_backups,
       commands::backup::delete_backup,
@@ -185,7 +184,11 @@ pub fn run() {
       commands::sessions::close_session,
       commands::sessions::get_open_session,
       commands::sessions::list_sessions,
-      commands::logs::list_audit_logs
+      commands::logs::list_audit_logs,
+      commands::withdrawals::add_cash_withdrawal,
+      commands::withdrawals::list_cash_withdrawals,
+      commands::withdrawals::export_cash_withdrawals,
+      commands::withdrawals::delete_cash_withdrawal
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

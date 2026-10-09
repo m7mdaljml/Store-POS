@@ -284,3 +284,18 @@ CREATE INDEX idx_invoices_supplier           ON supplier_invoices(supplier_id);
 CREATE INDEX idx_products_category           ON products(category_id);
 CREATE INDEX idx_expense_out_category        ON expense_out(category_id);
 CREATE INDEX idx_supplier_payments_invoice   ON supplier_payments(invoice_id);
+
+-- ============================================================
+-- 5.8 Cash Withdrawals
+-- ============================================================
+CREATE TABLE cash_withdrawals (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id INTEGER REFERENCES sale_sessions(id),
+  user_id    INTEGER NOT NULL REFERENCES users(id),
+  amount     REAL NOT NULL,
+  date       TEXT NOT NULL DEFAULT (datetime('now')),
+  notes      TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX idx_cash_withdrawals_session ON cash_withdrawals(session_id);
+CREATE INDEX idx_cash_withdrawals_date ON cash_withdrawals(date);

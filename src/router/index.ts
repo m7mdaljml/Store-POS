@@ -86,6 +86,12 @@ const routes = [
     meta: { permission: "expenses.manage" },
   },
   {
+    path: "/withdrawals",
+    name: "withdrawals",
+    component: () => import("../app/presentation/withdrawals.vue"),
+    meta: { permission: "reports.view" },
+  },
+  {
     path: "/users",
     name: "users",
     component: () => import("../app/presentation/users.vue"),
