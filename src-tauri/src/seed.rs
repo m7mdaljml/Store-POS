@@ -22,12 +22,22 @@ const ROLE_PERMISSIONS: &[(&str, &[&str])] = &[
 ];
 
 pub async fn seed_app<R: Runtime>(app: &AppHandle<R>) -> Result<(), Box<dyn std::error::Error>> {
-    let db_path = db::db_path(app)?;
-    seed_db(&db_path).await
+    let pool = db::pool(app)
+        .await
+        .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
+    seed_with_pool(&pool).await
 }
 
 pub async fn seed_db(path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
     let pool = db::connect(path).await?;
+    seed_with_pool(&pool).await?;
+    pool.close().await;
+    Ok(())
+}
+
+async fn seed_with_pool(pool: &sqlx::SqlitePool) -> Result<(), Box<dyn std::error::Error>> {
+    // Cheap Arc clone so the original body keeps its owned `pool` usage.
+    let pool = pool.clone();
 
     let threshold: Option<(String,)> =
         sqlx::query_as("SELECT value FROM settings WHERE key = 'discount_threshold'")
@@ -150,7 +160,6 @@ pub async fn seed_db(path: &std::path::Path) -> Result<(), Box<dyn std::error::E
         }
     }
 
-    pool.close().await;
     Ok(())
 }
 

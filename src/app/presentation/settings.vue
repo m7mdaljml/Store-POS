@@ -465,6 +465,19 @@
             >
               {{ t("settings.runCheck") }}
             </AsyncButton>
+            <AsyncButton
+              v-if="integrity && !integrity.ok"
+              size="sm"
+              variant="outline-danger"
+              class="ms-2"
+              :loading="repairing"
+              @click="runRepair"
+            >
+              {{ t("settings.repair") }}
+            </AsyncButton>
+            <p v-if="integrity && !integrity.ok" class="text-muted small mt-2 mb-0">
+              {{ t("settings.repairHint") }}
+            </p>
           </div>
         </div>
       </div>
@@ -1634,6 +1647,7 @@ function onSoundToggle(e: Event) {
 
 const integrity = ref<{ ok: boolean; text: string } | null>(null);
 const checkingIntegrity = ref(false);
+const repairing = ref(false);
 const backups = ref<BackupInfo[]>([]);
 const backingUp = ref(false);
 const restoringFile = ref(false);
@@ -1677,6 +1691,21 @@ async function runIntegrityCheck() {
     integrity.value = { ok: false, text: String(e) };
   } finally {
     checkingIntegrity.value = false;
+  }
+}
+
+async function runRepair() {
+  if (!(await confirmDialog({ message: t("settings.repairConfirm") }))) return;
+  repairing.value = true;
+  try {
+    // Release the webview's SQL connections so the file can be replaced.
+    await closeDb();
+    await invoke<string>("repair_database");
+    flash(t("settings.repairOk"));
+    window.setTimeout(() => window.location.reload(), 1200);
+  } catch (e: unknown) {
+    fail(String(e));
+    repairing.value = false;
   }
 }
 

@@ -314,8 +314,7 @@ pub async fn create_backup<R: Runtime>(
     dir: Option<String>,
     kind: Option<String>,
 ) -> Result<BackupRow, String> {
-    let live = db::db_path(&app)?;
-    let pool = db::connect(&live).await?;
+    let pool = db::pool(&app).await?;
     let target_dir = match dir.filter(|d| !d.trim().is_empty()) {
         Some(d) => PathBuf::from(d.trim()),
         None => app
@@ -333,7 +332,7 @@ pub async fn create_backup<R: Runtime>(
         let keep = retention_setting(&pool).await?;
         let _ = prune_backups(&pool, keep).await;
     }
-    pool.close().await;
+    // Pool is shared/stateful — never close it here.
     Ok(row)
 }
 
@@ -352,7 +351,7 @@ pub async fn list_backups<R: Runtime>(app: AppHandle<R>) -> Result<Vec<BackupRow
     let mut rows: Vec<BackupRow> = Vec::new();
     if let Ok(live) = db::db_path(&app) {
         if live.exists() {
-            if let Ok(pool) = db::connect(&live).await {
+            if let Ok(pool) = db::pool(&app).await {
                 let _ = ensure_backups_table(&pool).await;
                 if let Ok(r) = sqlx::query_as::<_, (i64, String, i64, String, String)>(
                     "SELECT id, file_path, size_bytes, status, created_at FROM backups
@@ -382,7 +381,6 @@ pub async fn list_backups<R: Runtime>(app: AppHandle<R>) -> Result<Vec<BackupRow
                         dirs.push(PathBuf::from(dir.trim().to_string()));
                     }
                 }
-                pool.close().await;
             }
         }
     }
@@ -446,13 +444,12 @@ pub async fn delete_backup<R: Runtime>(app: AppHandle<R>, path: String) -> Resul
     }
     if let Ok(live) = db::db_path(&app) {
         if live.exists() {
-            if let Ok(pool) = db::connect(&live).await {
+            if let Ok(pool) = db::pool(&app).await {
                 let _ = ensure_backups_table(&pool).await;
                 let _ = sqlx::query("DELETE FROM backups WHERE file_path = ?")
                     .bind(&path)
                     .execute(&pool)
                     .await;
-                pool.close().await;
             }
         }
     }
@@ -482,12 +479,70 @@ pub async fn restore_database<R: Runtime>(
     if !source.exists() {
         return Err("Backup file not found".to_string());
     }
+    // Drop our pooled connections so the file can be replaced safely.
+    db::reset_pool(&app).await;
     let safety_dir = app
         .path()
         .app_config_dir()
         .map_err(|e| e.to_string())?
         .join("backups");
     restore_from_file(&live, &source, &safety_dir).await
+}
+
+/// Rebuilds a corrupted database in place. `VACUUM INTO` rewrites the logical
+/// contents into a fresh file (it can even read past a damaged index), so a
+/// database that fails `PRAGMA integrity_check` — e.g. "wrong # of entries in
+/// index" which breaks every cascading delete — is recovered without losing
+/// data. The corrupt original is kept next to the backups for safety. The
+/// frontend must close its `tauri-plugin-sql` connection first.
+#[tauri::command]
+pub async fn repair_database<R: Runtime>(app: AppHandle<R>) -> Result<String, String> {
+    let live = db::db_path(&app)?;
+    if !live.exists() {
+        return Err("Database file not found".to_string());
+    }
+    // Release the shared Rust pool so nothing holds the file open.
+    db::reset_pool(&app).await;
+
+    let config = app
+        .path()
+        .app_config_dir()
+        .map_err(|e| e.to_string())?;
+    fs::create_dir_all(&config).map_err(|e| e.to_string())?;
+
+    let repaired = config.join(format!("store-repaired-{}.db", timestamp_label()));
+    let repaired_str = repaired.to_string_lossy().to_string();
+    let _ = fs::remove_file(&repaired);
+
+    // Rebuild a clean copy from the logical contents. A best-effort REINDEX
+    // first clears index-only damage; VACUUM INTO then writes a fresh file.
+    let pool = db::connect(&live).await?;
+    let _ = sqlx::query("REINDEX").execute(&pool).await;
+    let vacuum = sqlx::query("VACUUM INTO ?1")
+        .bind(&repaired_str)
+        .execute(&pool)
+        .await;
+    pool.close().await;
+    vacuum.map_err(|e| format!("Could not rebuild database: {e}"))?;
+
+    is_sqlite_file(&repaired)?;
+    let report = db::integrity_check(&repaired).await?;
+    if report.trim() != "ok" {
+        let _ = fs::remove_file(&repaired);
+        return Err(format!("Repaired copy is still inconsistent: {report}"));
+    }
+
+    // Preserve the corrupt original, then swap the repaired copy in.
+    let safety_dir = config.join("backups");
+    fs::create_dir_all(&safety_dir).map_err(|e| e.to_string())?;
+    let corrupt_copy = safety_dir.join(format!("store-corrupt-{}.db", timestamp_label()));
+    let _ = fs::copy(&live, &corrupt_copy);
+
+    remove_sidecars(&live);
+    fs::copy(&repaired, &live).map_err(|e| e.to_string())?;
+    let _ = fs::remove_file(&repaired);
+
+    Ok(report)
 }
 
 /// F8.4 — dumps every business table into a multi-sheet `.xlsx` workbook.

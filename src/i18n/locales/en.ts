@@ -772,6 +772,12 @@ export const en = {
       "Verifies the database structure and data on demand (also runs at startup).",
     runCheck: "Run check now",
     integrityOk: "Database OK",
+    repair: "Repair database",
+    repairHint:
+      "Rebuilds a corrupted database into a clean file. The damaged original is kept in the backups folder.",
+    repairOk: "Database repaired successfully.",
+    repairConfirm:
+      "Repair the database? It will be rebuilt into a clean file (the damaged copy is backed up first).",
     manualTitle: "Manual backup",
     backupFolderLabel: "Backup folder",
     defaultFolder: "(app data folder)",

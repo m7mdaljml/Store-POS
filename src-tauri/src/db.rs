@@ -4,6 +4,23 @@ use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePool, SqlitePo
 use tauri::{AppHandle, Manager, Runtime};
 use tauri_plugin_sql::Migration;
 
+/// Process-wide database handle managed as Tauri state.
+///
+/// Every Rust command used to open its own short-lived `SqlitePool` and drop it
+/// again. On a WAL database that means the last connection of each pool keeps
+/// checkpointing and deleting the `-wal`/`-shm` sidecars, racing with the
+/// long-lived pool the frontend's `tauri-plugin-sql` holds. Under concurrent
+/// reads/writes SQLite then reports `database disk image is malformed`
+/// (`SQLITE_CORRUPT`, code 11) — most visibly "wrong # of entries in index"
+/// when a cascading delete (for example deleting a product) touches the index.
+///
+/// Opening the pool once and reusing it removes that churn: exactly one Rust
+/// pool and one plugin pool, both stable, safely sharing one WAL file.
+#[derive(Default)]
+pub struct Db {
+    pool: tauri::async_runtime::Mutex<Option<SqlitePool>>,
+}
+
 pub fn db_path<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
     app.path()
         .app_config_dir()
@@ -29,9 +46,29 @@ pub async fn apply_migrations(path: &Path, migrations: &[Migration]) -> Result<(
     Ok(())
 }
 
+/// Returns the shared, lazily-opened pool. All Rust commands must use this so
+/// only a single pool ever touches the database file.
 pub async fn pool<R: Runtime>(app: &AppHandle<R>) -> Result<SqlitePool, String> {
+    let db = app.state::<Db>();
+    let mut guard = db.pool.lock().await;
+    if let Some(pool) = guard.as_ref() {
+        return Ok(pool.clone());
+    }
     let path = db_path(app)?;
-    connect(&path).await
+    let pool = connect(&path).await?;
+    *guard = Some(pool.clone());
+    Ok(pool)
+}
+
+/// Closes and forgets the shared pool so the next [`pool`] call reconnects to
+/// whatever is currently on disk. Call this before the database file is
+/// replaced (restore/repair) so no connection keeps the old file open.
+pub async fn reset_pool<R: Runtime>(app: &AppHandle<R>) {
+    let db = app.state::<Db>();
+    let mut guard = db.pool.lock().await;
+    if let Some(pool) = guard.take() {
+        pool.close().await;
+    }
 }
 
 pub async fn connect(path: &Path) -> Result<SqlitePool, String> {

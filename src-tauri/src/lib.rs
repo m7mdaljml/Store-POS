@@ -1,3 +1,4 @@
+use tauri::Manager;
 use tauri_plugin_sql::{Migration, MigrationKind};
 
 // Public so integration tests (tests/) can exercise the data layer.
@@ -80,6 +81,8 @@ pub fn run() {
         .build(),
     )
     .setup(|app| {
+      // Single shared SQLite pool for every Rust command (see db::Db).
+      app.manage(db::Db::default());
       if cfg!(debug_assertions) {
         app.handle().plugin(
           tauri_plugin_log::Builder::default()
@@ -89,16 +92,26 @@ pub fn run() {
       }
       let handle = app.handle().clone();
       tauri::async_runtime::spawn(async move {
-        match seed::seed_app(&handle).await {
-          Ok(()) => log::info!("Seed data ready"),
-          Err(e) => log::error!("Seeding failed: {e}"),
-        }
+        // Corruption guard: check integrity *before* anything writes to the DB.
+        // A corrupt file (e.g. "wrong # of entries in index", which makes every
+        // cascading delete fail with SQLITE_CORRUPT/code 11) is reported and
+        // seeding is skipped so we never mutate/re-seed a damaged database.
         match db::db_path(&handle) {
           Ok(path) => match db::integrity_check(&path).await {
-            Ok(result) => log::info!("DB integrity check: {result}"),
+            Ok(result) if result.trim() == "ok" => log::info!("DB integrity check: ok"),
+            Ok(result) => {
+              log::error!(
+                "DB integrity check reported corruption: {result}. Seeding skipped; run repair_database to recover."
+              );
+              return;
+            }
             Err(e) => log::error!("DB integrity check failed: {e}"),
           },
           Err(e) => log::error!("Cannot resolve DB path for integrity check: {e}"),
+        }
+        match seed::seed_app(&handle).await {
+          Ok(()) => log::info!("Seed data ready"),
+          Err(e) => log::error!("Seeding failed: {e}"),
         }
       });
       Ok(())
@@ -158,6 +171,7 @@ pub fn run() {
       commands::backup::delete_backup,
       commands::backup::check_db_integrity,
       commands::backup::restore_database,
+      commands::backup::repair_database,
       commands::backup::export_full_workbook,
       commands::purchasing::create_supplier_invoice,
       commands::purchasing::list_supplier_invoices,
