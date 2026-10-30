@@ -981,7 +981,7 @@ import type {
   Currency,
   CustomerLite,
   HoldSaleResult,
-  PaymentLine,
+  // PaymentLine,
   Product,
   ResumeSaleRecord,
   SaleReceipt,
@@ -1344,41 +1344,41 @@ function pickCustomer(id: number | null) {
   if (customerDetails.value) customerDetails.value.open = false;
 }
 
-const quickCashAmounts = computed(() => {
-  const total = cart.total;
-  if (total <= 0) return [] as number[];
-  const amounts = new Set<number>();
-  for (const step of [5, 10, 20, 50]) {
-    amounts.add(Math.ceil(total / step) * step);
-  }
-  return [...amounts].filter((a) => a > total);
-});
+// const quickCashAmounts = computed(() => {
+//   const total = cart.total;
+//   if (total <= 0) return [] as number[];
+//   const amounts = new Set<number>();
+//   for (const step of [5, 10, 20, 50]) {
+//     amounts.add(Math.ceil(total / step) * step);
+//   }
+//   return [...amounts].filter((a) => a > total);
+// });
 
-function onCashReceived(e: Event) {
-  const value = Number((e.target as HTMLInputElement).value);
-  cart.cashReceived = isNaN(value) || value < 0 ? 0 : value;
-}
+// function onCashReceived(e: Event) {
+//   const value = Number((e.target as HTMLInputElement).value);
+//   cart.cashReceived = isNaN(value) || value < 0 ? 0 : value;
+// }
 
-function onSplitAmount(index: number, e: Event) {
-  const value = Number((e.target as HTMLInputElement).value);
-  cart.setSplitLine(index, { amount: isNaN(value) || value < 0 ? 0 : value });
-}
+// function onSplitAmount(index: number, e: Event) {
+//   const value = Number((e.target as HTMLInputElement).value);
+//   cart.setSplitLine(index, { amount: isNaN(value) || value < 0 ? 0 : value });
+// }
 
-function chargeToTab() {
-  if (!selectedCustomerId.value) return;
-  const amount = Number(cart.shortfall.toFixed(2));
-  if (amount <= 0.004) return;
-  const idx = cart.splitLines.findIndex((l) => l.method === "credit");
-  if (idx >= 0) {
-    cart.setSplitLine(idx, { customerId: selectedCustomerId.value, amount });
-  } else {
-    cart.addSplitLine({
-      method: "credit",
-      customerId: selectedCustomerId.value,
-      amount,
-    });
-  }
-}
+// function chargeToTab() {
+//   if (!selectedCustomerId.value) return;
+//   const amount = Number(cart.shortfall.toFixed(2));
+//   if (amount <= 0.004) return;
+//   const idx = cart.splitLines.findIndex((l) => l.method === "credit");
+//   if (idx >= 0) {
+//     cart.setSplitLine(idx, { customerId: selectedCustomerId.value, amount });
+//   } else {
+//     cart.addSplitLine({
+//       method: "credit",
+//       customerId: selectedCustomerId.value,
+//       amount,
+//     });
+//   }
+// }
 
 function completeSale() {
   if (!cart.items.length) return;
