@@ -7,6 +7,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager, Runtime};
 
+use super::guard;
+
 const SQLITE_HEADER: &[u8; 16] = b"SQLite format 3\x00";
 
 #[derive(Debug, Serialize)]
@@ -227,7 +229,7 @@ fn is_sqlite_file(path: &Path) -> Result<(), String> {
 }
 
 /// Removes WAL/SHM sidecars of a database file. Must run whenever the main
-/// file is replaced externally — keeping stale sidecars from the previous
+/// file is replaced externally - keeping stale sidecars from the previous
 /// generation next to a new file corrupts it on open.
 fn remove_sidecars(db_file: &Path) {
     for suffix in ["-wal", "-shm"] {
@@ -306,7 +308,7 @@ pub async fn restore_from_file(
 /* Tauri commands                                                      */
 /* ------------------------------------------------------------------ */
 
-/// F8.2/F8.3 — snapshot the database into `dir` (or `<config>/backups`) and
+/// F8.2/F8.3 - snapshot the database into `dir` (or `<config>/backups`) and
 /// apply the retention policy afterwards.
 #[tauri::command]
 pub async fn create_backup<R: Runtime>(
@@ -314,6 +316,7 @@ pub async fn create_backup<R: Runtime>(
     dir: Option<String>,
     kind: Option<String>,
 ) -> Result<BackupRow, String> {
+    guard::require(&app, Some("settings.manage"))?;
     let pool = db::pool(&app).await?;
     let target_dir = match dir.filter(|d| !d.trim().is_empty()) {
         Some(d) => PathBuf::from(d.trim()),
@@ -332,7 +335,7 @@ pub async fn create_backup<R: Runtime>(
         let keep = retention_setting(&pool).await?;
         let _ = prune_backups(&pool, keep).await;
     }
-    // Pool is shared/stateful — never close it here.
+    // Pool is shared/stateful - never close it here.
     Ok(row)
 }
 
@@ -340,9 +343,10 @@ pub async fn create_backup<R: Runtime>(
 /// (default `<config>/backups` plus the custom `backup_dir` setting) merged
 /// with the registry rows stored in the database. The folder scan is
 /// authoritative, so backups stay visible even after `store.db` is deleted
-/// or replaced — entries found only on disk get negative synthetic ids.
+/// or replaced - entries found only on disk get negative synthetic ids.
 #[tauri::command]
 pub async fn list_backups<R: Runtime>(app: AppHandle<R>) -> Result<Vec<BackupRow>, String> {
+    guard::require(&app, Some("settings.manage"))?;
     let config = app.path().app_config_dir().map_err(|e| e.to_string())?;
     let mut dirs = vec![config.join("backups")];
 
@@ -438,6 +442,7 @@ pub async fn list_backups<R: Runtime>(app: AppHandle<R>) -> Result<Vec<BackupRow
 /// best-effort so deletion still works when the database is absent.
 #[tauri::command]
 pub async fn delete_backup<R: Runtime>(app: AppHandle<R>, path: String) -> Result<(), String> {
+    guard::require(&app, Some("settings.manage"))?;
     let p = PathBuf::from(&path);
     if !managed_backup_file(&p) {
         return Err("Only files created by the app's backups can be deleted here".to_string());
@@ -460,20 +465,22 @@ pub async fn delete_backup<R: Runtime>(app: AppHandle<R>, path: String) -> Resul
     }
 }
 
-/// F8.1 — on-demand integrity check for the Settings screen.
+/// F8.1 - on-demand integrity check for the Settings screen.
 #[tauri::command]
 pub async fn check_db_integrity<R: Runtime>(app: AppHandle<R>) -> Result<String, String> {
+    guard::require(&app, Some("settings.manage"))?;
     let path = db::db_path(&app)?;
     db::integrity_check(&path).await
 }
 
-/// F8.5 — replace the current database with the chosen backup file.
+/// F8.5 - replace the current database with the chosen backup file.
 /// The frontend must close its SQL connections before invoking this.
 #[tauri::command]
 pub async fn restore_database<R: Runtime>(
     app: AppHandle<R>,
     source_path: String,
 ) -> Result<BackupRow, String> {
+    guard::require(&app, Some("settings.manage"))?;
     let live = db::db_path(&app)?;
     let source = PathBuf::from(&source_path);
     if !source.exists() {
@@ -491,12 +498,13 @@ pub async fn restore_database<R: Runtime>(
 
 /// Rebuilds a corrupted database in place. `VACUUM INTO` rewrites the logical
 /// contents into a fresh file (it can even read past a damaged index), so a
-/// database that fails `PRAGMA integrity_check` — e.g. "wrong # of entries in
-/// index" which breaks every cascading delete — is recovered without losing
+/// database that fails `PRAGMA integrity_check` - e.g. "wrong # of entries in
+/// index" which breaks every cascading delete - is recovered without losing
 /// data. The corrupt original is kept next to the backups for safety. The
 /// frontend must close its `tauri-plugin-sql` connection first.
 #[tauri::command]
 pub async fn repair_database<R: Runtime>(app: AppHandle<R>) -> Result<String, String> {
+    guard::require(&app, Some("settings.manage"))?;
     let live = db::db_path(&app)?;
     if !live.exists() {
         return Err("Database file not found".to_string());
@@ -545,12 +553,13 @@ pub async fn repair_database<R: Runtime>(app: AppHandle<R>) -> Result<String, St
     Ok(report)
 }
 
-/// F8.4 — dumps every business table into a multi-sheet `.xlsx` workbook.
+/// F8.4 - dumps every business table into a multi-sheet `.xlsx` workbook.
 #[tauri::command]
 pub async fn export_full_workbook<R: Runtime>(
     app: AppHandle<R>,
     path: String,
 ) -> Result<usize, String> {
+    guard::require(&app, Some("export.excel"))?;
     let pool = db::pool(&app).await?;
 
     async fn dump_table(pool: &SqlitePool, table: &str, sheet: &str) -> Result<SheetData, String> {

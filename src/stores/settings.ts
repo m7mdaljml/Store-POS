@@ -1,6 +1,6 @@
 import { computed, ref } from "vue";
 import { defineStore } from "pinia";
-import { execute, select } from "../lib/db";
+import { invoke } from "@tauri-apps/api/core";
 import type { SettingsMap } from "../types";
 
 /** Allowed rows-per-page values for list screens. */
@@ -38,8 +38,8 @@ export const useSettingsStore = defineStore("settings", () => {
   });
 
   async function load() {
-    const rows = await select<{ key: string; value: string }>(
-      "SELECT key, value FROM settings",
+    const rows = await invoke<Array<{ key: string; value: string }>>(
+      "list_settings",
     );
     const map: SettingsMap = {};
     for (const row of rows) map[row.key] = row.value;
@@ -52,13 +52,12 @@ export const useSettingsStore = defineStore("settings", () => {
    * reacts immediately without reloading.
    */
   async function setValue(key: string, value: string) {
-    await execute(
-      "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-      [key, value],
-    ).catch((e: unknown) => {
+    try {
+      await invoke("set_setting", { key, value });
+    } catch (e: unknown) {
       console.error(`Failed saving setting "${key}"`, e);
       throw e;
-    });
+    }
     values.value[key] = value;
   }
 

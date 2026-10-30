@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use tauri::{AppHandle, Runtime};
 
+use super::guard;
 use super::Page;
 use crate::db;
 
@@ -321,6 +322,11 @@ pub async fn open_session<R: Runtime>(
     app: AppHandle<R>,
     input: OpenSessionInput,
 ) -> Result<SaleSession, String> {
+    let actor = guard::require(&app, Some("sales.checkout"))?;
+    let input = OpenSessionInput {
+        opening_cash: input.opening_cash,
+        user_id: actor.user_id,
+    };
     let pool = db::pool(&app).await?;
     insert_session(&pool, input).await
 }
@@ -330,6 +336,12 @@ pub async fn close_session<R: Runtime>(
     app: AppHandle<R>,
     input: CloseSessionInput,
 ) -> Result<SaleSession, String> {
+    let actor = guard::require(&app, Some("sales.checkout"))?;
+    let input = CloseSessionInput {
+        session_id: input.session_id,
+        closing_cash: input.closing_cash,
+        user_id: actor.user_id,
+    };
     let pool = db::pool(&app).await?;
     finalize_session(&pool, input).await
 }
@@ -338,6 +350,7 @@ pub async fn close_session<R: Runtime>(
 pub async fn get_open_session<R: Runtime>(
     app: AppHandle<R>,
 ) -> Result<Option<SaleSession>, String> {
+    guard::require(&app, None)?;
     let pool = db::pool(&app).await?;
     query_open_session(&pool).await
 }
@@ -347,6 +360,7 @@ pub async fn list_sessions<R: Runtime>(
     app: AppHandle<R>,
     input: Option<ListSessionsInput>,
 ) -> Result<Page<SaleSession>, String> {
+    guard::require(&app, Some("reports.view"))?;
     let pool = db::pool(&app).await?;
     query_sessions(
         &pool,

@@ -70,7 +70,7 @@ import { useI18n } from "vue-i18n";
 
 /**
  * Page-number pagination bar with a sliding window:
- * 1 2 3 … 8 9 10 — clicking an ellipsis slides the window toward the hidden
+ * 1 2 3 … 8 9 10 - clicking an ellipsis slides the window toward the hidden
  * pages. Works in two modes:
  *  - Known totals: pass `total-items` (+ `page-size`) and every page is
  *    reachable.

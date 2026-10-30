@@ -188,8 +188,7 @@ import { useI18n } from "vue-i18n";
 import EmptyState from "../../components/EmptyState.vue";
 import { useCatalogStore } from "../../stores/catalog";
 import { useSettingsStore } from "../../stores/settings";
-import { convertFileSrc } from "@tauri-apps/api/core";
-import { select } from "../../lib/db";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { formatMoney } from "../../lib/currency";
 import emptyLowStock from "../../assets/empty/low-stock.svg";
 
@@ -214,26 +213,11 @@ const kpi = ref<SalesKpi>({
 });
 
 async function loadKpis() {
-  const [today, month, taxes] = await Promise.all([
-    select<{ revenue: number | null; orders: number }>(
-      "SELECT COALESCE(SUM(total - COALESCE((SELECT SUM(amount) FROM refunds WHERE sale_id = sales.id), 0)), 0) AS revenue, COUNT(*) AS orders FROM sales WHERE status = 'completed' AND date(created_at, 'localtime') = date('now', 'localtime')",
-    ),
-    select<{ revenue: number | null }>(
-      "SELECT COALESCE(SUM(total - COALESCE((SELECT SUM(amount) FROM refunds WHERE sale_id = sales.id), 0)), 0) AS revenue FROM sales WHERE status = 'completed' AND strftime('%Y-%m', created_at, 'localtime') = strftime('%Y-%m', 'now', 'localtime')",
-    ),
-    select<{ taxes: number | null }>(
-      "SELECT COALESCE(SUM(tax - COALESCE(tax * (SELECT SUM(amount) FROM refunds WHERE sale_id = sales.id) / NULLIF(total, 0), 0)), 0) AS taxes FROM sales WHERE status = 'completed' AND date(created_at, 'localtime') = date('now', 'localtime')",
-    ),
-  ]);
-  const t = today[0] ?? { revenue: 0, orders: 0 };
-  const revenue = t.revenue ?? 0;
-  kpi.value = {
-    revenue,
-    orders: t.orders,
-    avgTicket: t.orders > 0 ? revenue / t.orders : 0,
-    monthRevenue: month[0]?.revenue ?? 0,
-    todayTaxes: taxes[0]?.taxes ?? 0,
-  };
+  try {
+    kpi.value = await invoke<SalesKpi>("dashboard_kpis");
+  } catch {
+    // Leave zeros when the KPIs cannot be loaded (e.g. no session yet).
+  }
 }
 
 function fmt(n: number): string {
@@ -258,7 +242,7 @@ const unitsOnHand = computed(() =>
 );
 
 const categoryName = (id: number | null) =>
-  catalog.categories.find((c) => c.id === id)?.name ?? "—";
+  catalog.categories.find((c) => c.id === id)?.name ?? "-";
 
 onMounted(async () => {
   await Promise.allSettled([catalog.load(), settings.load(), loadKpis()]);

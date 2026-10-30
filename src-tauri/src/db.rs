@@ -11,7 +11,7 @@ use tauri_plugin_sql::Migration;
 /// checkpointing and deleting the `-wal`/`-shm` sidecars, racing with the
 /// long-lived pool the frontend's `tauri-plugin-sql` holds. Under concurrent
 /// reads/writes SQLite then reports `database disk image is malformed`
-/// (`SQLITE_CORRUPT`, code 11) — most visibly "wrong # of entries in index"
+/// (`SQLITE_CORRUPT`, code 11) - most visibly "wrong # of entries in index"
 /// when a cascading delete (for example deleting a product) touches the index.
 ///
 /// Opening the pool once and reusing it removes that churn: exactly one Rust
@@ -76,7 +76,7 @@ pub async fn connect(path: &Path) -> Result<SqlitePool, String> {
         .filename(path)
         .create_if_missing(true)
         // F8.1: WAL improves crash safety and allows concurrent readers. The
-        // setting is persistent — once written to the file it also applies to
+        // setting is persistent - once written to the file it also applies to
         // connections opened by the frontend's plugin-sql pool. Note: the very
         // first conversion of a rollback-journal file needs a brief exclusive
         // lock, hence the generous busy timeout below.

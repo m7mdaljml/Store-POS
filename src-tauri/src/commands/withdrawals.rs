@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use tauri::{AppHandle, Runtime};
 
+use super::guard;
 use super::Page;
 use crate::db;
 
@@ -42,10 +43,26 @@ pub async fn create_cash_withdrawal(
 
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
+    // A withdrawal recorded while the register is open belongs to the current
+    // session so the drawer math (expected cash) stays correct. Only fall back
+    // to a null session when nothing is open.
+    let session_id = match input.session_id {
+        Some(id) => Some(id),
+        None => {
+            let open: Option<(i64,)> = sqlx::query_as(
+                "SELECT id FROM sale_sessions WHERE status = 'open' ORDER BY id DESC LIMIT 1",
+            )
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+            open.map(|(id,)| id)
+        }
+    };
+
     let date = match optional_field(&input.date) {
         Some(d) => d,
         None => {
-            let d: (String,) = sqlx::query_as("SELECT date('now')")
+            let d: (String,) = sqlx::query_as("SELECT date('now','localtime')")
                 .fetch_one(&mut *tx)
                 .await
                 .map_err(|e| e.to_string())?;
@@ -57,7 +74,7 @@ pub async fn create_cash_withdrawal(
         "INSERT INTO cash_withdrawals (session_id, user_id, amount, date, notes)
          VALUES (?, ?, ?, ?, ?)",
     )
-    .bind(input.session_id)
+    .bind(session_id)
     .bind(input.user_id)
     .bind(input.amount)
     .bind(&date)
@@ -91,6 +108,14 @@ pub async fn add_cash_withdrawal<R: Runtime>(
     app: AppHandle<R>,
     input: CashWithdrawalInput,
 ) -> Result<i64, String> {
+    let actor = guard::require(&app, Some("sales.checkout"))?;
+    let input = CashWithdrawalInput {
+        session_id: input.session_id,
+        user_id: actor.user_id,
+        amount: input.amount,
+        date: input.date,
+        notes: input.notes,
+    };
     let pool = db::pool(&app).await?;
     create_cash_withdrawal(&pool, input).await
 }
@@ -106,6 +131,7 @@ pub async fn list_cash_withdrawals<R: Runtime>(
     limit: Option<i64>,
     offset: Option<i64>,
 ) -> Result<Page<CashWithdrawalRecord>, String> {
+    guard::require(&app, Some("reports.view"))?;
     let pool = db::pool(&app).await?;
     let limit = limit.unwrap_or(100).max(1).min(500);
     let offset = offset.unwrap_or(0).max(0);
@@ -212,6 +238,7 @@ pub async fn export_cash_withdrawals<R: Runtime>(
     to: Option<String>,
     user_id: Option<i64>,
 ) -> Result<(), String> {
+    guard::require(&app, Some("reports.view"))?;
     let page = list_cash_withdrawals(app.clone(), None, user_id, from, to, None, Some(100000), Some(0)).await?;
     let headers = ["ID", "Date", "Amount", "User", "Notes", "Session"];
     let rows: Vec<Vec<String>> = page
@@ -237,6 +264,8 @@ pub async fn delete_cash_withdrawal<R: Runtime>(
     withdrawal_id: i64,
     user_id: Option<i64>,
 ) -> Result<(), String> {
+    let actor = guard::require(&app, Some("sales.void"))?;
+    let _ = user_id;
     let pool = db::pool(&app).await?;
 
     let amount_row: Option<(f64,)> =
@@ -264,7 +293,7 @@ pub async fn delete_cash_withdrawal<R: Runtime>(
         "INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
          VALUES (?, 'cash.withdrawal.delete', 'cash_withdrawal', ?, ?)",
     )
-    .bind(user_id)
+    .bind(Some(actor.user_id))
     .bind(withdrawal_id)
     .bind(format!(
         "Deleted cash withdrawal of {}",

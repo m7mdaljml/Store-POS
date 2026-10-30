@@ -43,8 +43,6 @@
       </div>
     </div>
 
-
-
     <div class="card">
       <div class="p-2 border-bottom">
         <input
@@ -97,17 +95,17 @@
               <td class="text-muted">{{ s.id }}</td>
               <td class="text-muted">{{ dateLabel(s.openedAt) }}</td>
               <td class="text-muted">
-                {{ s.closedAt ? dateLabel(s.closedAt) : "—" }}
+                {{ s.closedAt ? dateLabel(s.closedAt) : "-" }}
               </td>
-              <td>{{ s.userName || "—" }}</td>
+              <td>{{ s.userName || "-" }}</td>
               <td class="text-start">{{ fmt(s.openingCash) }}</td>
               <td class="text-start">{{ s.salesCount }}</td>
               <td class="text-start">{{ fmt(s.salesTotal) }}</td>
               <td class="text-start">
-                {{ s.expectedCash != null ? fmt(s.expectedCash) : "—" }}
+                {{ s.expectedCash != null ? fmt(s.expectedCash) : "-" }}
               </td>
               <td class="text-start">
-                {{ s.closingCash != null ? fmt(s.closingCash) : "—" }}
+                {{ s.closingCash != null ? fmt(s.closingCash) : "-" }}
               </td>
               <td
                 class="text-start fw-semibold"
@@ -119,7 +117,7 @@
                       : 'text-success'
                 "
               >
-                {{ s.variance != null ? fmt(s.variance) : "—" }}
+                {{ s.variance != null ? fmt(s.variance) : "-" }}
               </td>
               <td>
                 <span

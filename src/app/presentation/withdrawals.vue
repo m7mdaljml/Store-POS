@@ -93,8 +93,10 @@
               </td>
             </tr>
             <tr v-for="w in withdrawals" :key="w.id">
-              <td>{{ w.date || (w.createdAt ? w.createdAt.slice(0, 10) : "") }}</td>
-              <td>{{ w.userName || w.userId || "—" }}</td>
+              <td>
+                {{ w.date || (w.createdAt ? w.createdAt.slice(0, 10) : "") }}
+              </td>
+              <td>{{ w.userName || w.userId || "-" }}</td>
               <td class="text-start fw-semibold">{{ fmt(w.amount) }}</td>
               <td>{{ w.notes }}</td>
               <td class="text-start">
@@ -209,7 +211,6 @@ import { formatMoney } from "../../lib/currency";
 import { useToast } from "../../composables/useToast";
 import { useConfirm } from "../../composables/useConfirm";
 import type { Paged } from "../../composables/usePagedList";
-import type { UserRecord } from "../../types";
 
 const { t } = useI18n();
 const authStore = useAuthStore();
@@ -250,7 +251,12 @@ const errors = ref<Record<string, string>>({});
 
 const today = () => new Date().toISOString().slice(0, 10);
 function defaultFilters() {
-  return { from: today(), to: today(), userId: null as number | null, search: "" };
+  return {
+    from: today(),
+    to: today(),
+    userId: null as number | null,
+    search: "",
+  };
 }
 const filters = ref(defaultFilters());
 
@@ -276,13 +282,11 @@ const filteredCount = computed(() => totalCount.value);
 
 async function loadUsers() {
   try {
-    const res = await invoke<Paged<UserRecord>>("list_users", {
-      limit: 1000,
-      offset: 0,
-    });
-    users.value = (res.items ?? [])
-      .filter((u) => u.isActive)
-      .map((u) => ({ id: u.id, name: u.fullName }));
+    const options =
+      await invoke<Array<{ id: number; fullName: string }>>(
+        "list_user_options",
+      );
+    users.value = options.map((u) => ({ id: u.id, name: u.fullName }));
   } catch {}
 }
 async function loadData() {

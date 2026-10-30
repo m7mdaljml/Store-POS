@@ -79,8 +79,8 @@
               >
                 {{ m.qty >= 0 ? "+" : "" }}{{ m.qty }}
               </td>
-              <td class="text-muted small">{{ m.notes ?? "—" }}</td>
-              <td class="text-muted small">{{ m.userName ?? "—" }}</td>
+              <td class="text-muted small">{{ noteLabel(m.notes) }}</td>
+              <td class="text-muted small">{{ m.userName ?? "-" }}</td>
             </tr>
           </tbody>
         </table>
@@ -277,6 +277,36 @@ const TYPE_BADGES: Record<string, string> = {
 const typeLabel = (key: string) =>
   TYPE_ORDER.includes(key) ? t("stock.typeLabels." + key) : key;
 const typeBadge = (key: string) => TYPE_BADGES[key] ?? "text-bg-secondary";
+
+function noteLabel(notes: string | null) {
+  if (!notes) return "-";
+  const note = notes.trim();
+  const texts = "stock.noteTexts.";
+  if (note === "Opening stock set on create")
+    return t(texts + "openingCreate");
+  if (note === "Imported from CSV") return t(texts + "importedCsv");
+  if (note === "Imported from Excel") return t(texts + "importedExcel");
+
+  let match = /^Sale\s+(.+)$/.exec(note);
+  if (match) return t(texts + "sale", { saleNo: match[1] });
+
+  match = /^Supplier invoice\s+(.+)$/.exec(note);
+  if (match)
+    return t(texts + "supplierInvoice", { invoiceNo: match[1] });
+
+  match = /^Refund\s+(.+?)\s+of sale\s+(.+)$/.exec(note);
+  if (match)
+    return t(texts + "refund", { refundNo: match[1], saleNo: match[2] });
+
+  match = /^Void sale\s+([^:]+):\s*(.*)$/.exec(note);
+  if (match)
+    return t(texts + "voidSale", {
+      saleNo: match[1],
+      reason: match[2],
+    });
+
+  return note;
+}
 
 const showModal = ref(false);
 const saving = ref(false);

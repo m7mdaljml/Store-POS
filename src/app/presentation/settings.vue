@@ -475,7 +475,10 @@
             >
               {{ t("settings.repair") }}
             </AsyncButton>
-            <p v-if="integrity && !integrity.ok" class="text-muted small mt-2 mb-0">
+            <p
+              v-if="integrity && !integrity.ok"
+              class="text-muted small mt-2 mb-0"
+            >
               {{ t("settings.repairHint") }}
             </p>
           </div>
@@ -618,7 +621,9 @@
             <tr>
               <td>{{ fmtDateTime(b.createdAt) }}</td>
               <td>
-                <span class="badge text-bg-secondary">{{ backupKindLabel(b.kind) }}</span>
+                <span class="badge text-bg-secondary">{{
+                  backupKindLabel(b.kind)
+                }}</span>
               </td>
               <td class="text-start">{{ fmtSize(b.sizeBytes) }}</td>
               <td
@@ -744,12 +749,12 @@
               class="form-control text-end"
               type="number"
               min="0"
-              step="1"
+              step="0.01"
             />
             <span class="input-group-text">{{
               baseCurrencySymbol ||
-                settings.currency ||
-                t("checkout.currencyFallback")
+              settings.currency ||
+              t("checkout.currencyFallback")
             }}</span>
           </div>
           <div class="d-flex justify-content-end gap-2 mt-3 pt-3 border-top">
@@ -809,12 +814,12 @@
               class="form-control text-end"
               type="number"
               min="0"
-              step="1"
+              step="0.01"
             />
             <span class="input-group-text">{{
               baseCurrencySymbol ||
-                settings.currency ||
-                t("checkout.currencyFallback")
+              settings.currency ||
+              t("checkout.currencyFallback")
             }}</span>
           </div>
           <div class="d-flex justify-content-end gap-2 mt-3 pt-3 border-top">
@@ -958,7 +963,7 @@
               type="number"
               min="0"
               max="100"
-              step="1"
+              step="0.01"
               @input="clearFieldError(taxErrors, 'rate')"
             />
             <div v-if="taxErrors.rate" class="invalid-feedback">
@@ -1079,7 +1084,7 @@
                 :class="{ 'is-invalid': !!curErrors.rate }"
                 type="number"
                 min="0.000001"
-                step="1"
+                step="any"
                 @input="clearFieldError(curErrors, 'rate')"
               />
               <div v-if="curErrors.rate" class="invalid-feedback">
@@ -1128,8 +1133,11 @@ import {
 } from "../../composables/useFormGuard";
 import { useToast } from "../../composables/useToast";
 import { useConfirm } from "../../composables/useConfirm";
-import { closeDb, execute, insert, select, selectOne } from "../../lib/db";
-import { baseCurrencySymbol, formatMoney, loadBaseCurrencySymbol } from "../../lib/currency";
+import {
+  baseCurrencySymbol,
+  formatMoney,
+  loadBaseCurrencySymbol,
+} from "../../lib/currency";
 import { useAuthStore } from "../../stores/auth";
 import { useSettingsStore, PAGE_SIZE_OPTIONS } from "../../stores/settings";
 import { useThemeStore } from "../../stores/theme";
@@ -1314,9 +1322,7 @@ const taxGuard = useFormGuard(taxForm);
 const canSaveTax = computed(() => taxGuard.isDirty.value && !saving.value);
 
 async function loadTaxProfiles() {
-  taxProfiles.value = await select<TaxProfile>(
-    "SELECT id, name, rate, is_default FROM tax_profiles ORDER BY is_default DESC, name",
-  );
+  taxProfiles.value = await invoke<TaxProfile[]>("list_tax_profiles");
 }
 
 function openTaxModal(p?: TaxProfile) {
@@ -1346,24 +1352,12 @@ async function saveTaxProfile() {
   }
   saving.value = true;
   try {
-    let id = taxEditingId.value;
-    if (id) {
-      await execute(
-        "UPDATE tax_profiles SET name = ?, rate = ?, is_default = ? WHERE id = ?",
-        [taxForm.name.trim(), taxForm.rate, taxForm.isDefault ? 1 : 0, id],
-      );
-    } else {
-      id = await insert(
-        "INSERT INTO tax_profiles (name, rate, is_default) VALUES (?, ?, ?)",
-        [taxForm.name.trim(), taxForm.rate, taxForm.isDefault ? 1 : 0],
-      );
-    }
-    if (taxForm.isDefault && id !== null) {
-      await execute(
-        "UPDATE tax_profiles SET is_default = CASE WHEN id = ? THEN 1 ELSE 0 END",
-        [id],
-      );
-    }
+    await invoke<number>("save_tax_profile", {
+      id: taxEditingId.value,
+      name: taxForm.name.trim(),
+      rate: taxForm.rate,
+      isDefault: taxForm.isDefault,
+    });
     await loadTaxProfiles();
     taxGuard.markSaved();
     showTaxModal.value = false;
@@ -1376,23 +1370,17 @@ async function saveTaxProfile() {
 }
 
 async function makeTaxDefault(id: number) {
-  await execute(
-    "UPDATE tax_profiles SET is_default = CASE WHEN id = ? THEN 1 ELSE 0 END",
-    [id],
-  );
+  await invoke("set_default_tax_profile", { id });
   await loadTaxProfiles();
 }
 
 async function deleteTaxProfile(p: TaxProfile) {
-  const used = await selectOne<{ n: number }>(
-    "SELECT COUNT(*) AS n FROM products WHERE tax_profile_id = ?",
-    [p.id],
-  );
-  if (used && used.n > 0) {
+  try {
+    await invoke("delete_tax_profile", { id: p.id });
+  } catch {
     fail(t("settings.deleteProfileBlocked", { name: p.name }));
     return;
   }
-  await execute("DELETE FROM tax_profiles WHERE id = ?", [p.id]);
   await loadTaxProfiles();
   flash(t("settings.saved"));
 }
@@ -1410,9 +1398,7 @@ const canSaveCurrency = computed(
 );
 
 async function loadCurrencies() {
-  currencies.value = await select<Currency>(
-    "SELECT id, code, name, symbol, rate, is_base FROM currencies ORDER BY is_base DESC, code",
-  );
+  currencies.value = await invoke<Currency[]>("list_currencies");
 }
 
 function openCurrencyModal(c?: Currency) {
@@ -1443,29 +1429,13 @@ async function saveCurrency() {
   }
   saving.value = true;
   try {
-    const code = currencyForm.code.trim().toUpperCase();
-    if (currencyEditingId.value) {
-      await execute(
-        "UPDATE currencies SET code = ?, name = ?, symbol = ?, rate = ? WHERE id = ?",
-        [
-          code,
-          currencyForm.name.trim(),
-          currencyForm.symbol.trim(),
-          currencyForm.rate,
-          currencyEditingId.value,
-        ],
-      );
-    } else {
-      await execute(
-        "INSERT INTO currencies (code, name, symbol, rate, is_base) VALUES (?, ?, ?, ?, 0)",
-        [
-          code,
-          currencyForm.name.trim(),
-          currencyForm.symbol.trim(),
-          currencyForm.rate,
-        ],
-      );
-    }
+    await invoke<number>("save_currency", {
+      id: currencyEditingId.value,
+      code: currencyForm.code.trim().toUpperCase(),
+      name: currencyForm.name.trim(),
+      symbol: currencyForm.symbol.trim(),
+      rate: currencyForm.rate,
+    });
     await loadCurrencies();
     await loadBaseCurrencySymbol();
     currencyGuard.markSaved();
@@ -1479,12 +1449,9 @@ async function saveCurrency() {
 }
 
 async function setBaseCurrency(c: Currency) {
-  await execute(
-    "UPDATE currencies SET is_base = CASE WHEN id = ? THEN 1 ELSE 0 END",
-    [c.id],
-  );
-  // Keep the display-currency setting in sync so fmt() uses the base code.
-  await settings.setValue("currency", c.code);
+  await invoke("set_base_currency", { id: c.id });
+  // Backend syncs settings.currency; refresh the local map so fmt() uses it.
+  await settings.load();
   await loadBaseCurrencySymbol();
   await loadCurrencies();
   flash(t("settings.saved"));
@@ -1495,7 +1462,7 @@ async function deleteCurrency(c: Currency) {
     fail(t("settings.deleteBaseBlocked"));
     return;
   }
-  await execute("DELETE FROM currencies WHERE id = ?", [c.id]);
+  await invoke("delete_currency", { id: c.id });
   await loadBaseCurrencySymbol();
   await loadCurrencies();
   flash(t("settings.saved"));
@@ -1698,8 +1665,6 @@ async function runRepair() {
   if (!(await confirmDialog({ message: t("settings.repairConfirm") }))) return;
   repairing.value = true;
   try {
-    // Release the webview's SQL connections so the file can be replaced.
-    await closeDb();
     await invoke<string>("repair_database");
     flash(t("settings.repairOk"));
     window.setTimeout(() => window.location.reload(), 1200);
@@ -1796,8 +1761,6 @@ function backupKindLabel(kind: string): string {
 async function restore(path: string) {
   if (!(await confirmDialog({ message: t("settings.restoreConfirm") }))) return;
   try {
-    // Release the webview's SQL connections so the file can be replaced.
-    await closeDb();
     await invoke("restore_database", { sourcePath: path });
     flash(t("settings.restoreDone"));
     window.setTimeout(() => window.location.reload(), 1200);
@@ -1807,7 +1770,7 @@ async function restore(path: string) {
 }
 
 /** Restores from any database file picked on disk (e.g. a downloaded or
- *  copied backup) — independent of the in-app backup list. */
+ *  copied backup) - independent of the in-app backup list. */
 async function restoreFromFile() {
   const picked = await openFileDialog({
     multiple: false,
@@ -1821,8 +1784,6 @@ async function restoreFromFile() {
   if (!(await confirmDialog({ message: t("settings.restoreConfirm") }))) return;
   restoringFile.value = true;
   try {
-    // Release the webview's SQL connections so the file can be replaced.
-    await closeDb();
     await invoke("restore_database", { sourcePath: picked });
     flash(t("settings.restoreDone"));
     window.setTimeout(() => window.location.reload(), 1200);

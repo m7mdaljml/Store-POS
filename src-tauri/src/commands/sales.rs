@@ -2,6 +2,7 @@
 use sqlx::Row;
 use tauri::{AppHandle, Runtime};
 
+use super::guard;
 use super::Page;
 use crate::db;
 
@@ -342,6 +343,9 @@ pub async fn create_sale<R: Runtime>(
     app: AppHandle<R>,
     input: CreateSaleInput,
 ) -> Result<SaleResult, String> {
+    let actor = guard::require(&app, Some("sales.checkout"))?;
+    let mut input = input;
+    input.user_id = Some(actor.user_id);
     let pool = db::pool(&app).await?;
     insert_sale(&pool, input).await
 }
@@ -829,6 +833,9 @@ pub async fn hold_sale<R: Runtime>(
     app: AppHandle<R>,
     input: HoldSaleInput,
 ) -> Result<HoldSaleResult, String> {
+    let actor = guard::require(&app, Some("sales.checkout"))?;
+    let mut input = input;
+    input.user_id = Some(actor.user_id);
     let pool = db::pool(&app).await?;
     insert_hold(&pool, input).await
 }
@@ -838,6 +845,9 @@ pub async fn resume_sale<R: Runtime>(
     app: AppHandle<R>,
     input: ResumeSaleInput,
 ) -> Result<ResumeSaleRecord, String> {
+    let actor = guard::require(&app, Some("sales.checkout"))?;
+    let mut input = input;
+    input.user_id = Some(actor.user_id);
     let pool = db::pool(&app).await?;
     load_held_sale(&pool, input).await
 }
@@ -847,6 +857,9 @@ pub async fn cancel_held_sale<R: Runtime>(
     app: AppHandle<R>,
     input: CancelHeldSaleInput,
 ) -> Result<(), String> {
+    let actor = guard::require(&app, Some("sales.checkout"))?;
+    let mut input = input;
+    input.user_id = Some(actor.user_id);
     let pool = db::pool(&app).await?;
     drop_held_sale(&pool, input).await
 }
@@ -981,6 +994,9 @@ pub async fn void_sale<R: Runtime>(
     app: AppHandle<R>,
     input: VoidSaleInput,
 ) -> Result<(), String> {
+    let actor = guard::require(&app, Some("sales.void"))?;
+    let mut input = input;
+    input.user_id = Some(actor.user_id);
     let pool = db::pool(&app).await?;
     reverse_sale(&pool, input).await
 }
@@ -990,6 +1006,7 @@ pub async fn list_sales<R: Runtime>(
     app: AppHandle<R>,
     input: Option<ListSalesInput>,
 ) -> Result<Page<SaleRecord>, String> {
+    guard::require(&app, Some("sales.void"))?;
     let pool = db::pool(&app).await?;
     query_sales(
         &pool,
@@ -1150,6 +1167,7 @@ pub async fn get_sale_for_refund<R: Runtime>(
     app: AppHandle<R>,
     sale_id: i64,
 ) -> Result<RefundableSale, String> {
+    guard::require(&app, Some("sales.void"))?;
     let pool = db::pool(&app).await?;
     load_refundable(&pool, sale_id).await
 }
@@ -1378,7 +1396,7 @@ pub async fn refund_sale_impl(
         if reason_text.is_empty() {
             String::new()
         } else {
-            format!(" — {reason_text}")
+            format!(" - {reason_text}")
         }
     ))
     .execute(&mut *tx)
@@ -1399,6 +1417,9 @@ pub async fn refund_sale<R: Runtime>(
     app: AppHandle<R>,
     input: RefundSaleInput,
 ) -> Result<RefundSaleResult, String> {
+    let actor = guard::require(&app, Some("sales.void"))?;
+    let mut input = input;
+    input.user_id = Some(actor.user_id);
     let pool = db::pool(&app).await?;
     refund_sale_impl(&pool, input).await
 }
@@ -1575,6 +1596,7 @@ pub async fn get_sale_receipt<R: Runtime>(
     app: AppHandle<R>,
     input: SaleReceiptInput,
 ) -> Result<SaleReceipt, String> {
+    guard::require(&app, None)?;
     let pool = db::pool(&app).await?;
     fetch_receipt(&pool, input).await
 }

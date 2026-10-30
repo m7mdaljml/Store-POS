@@ -1,6 +1,6 @@
 # Store POS
 
-Offline-first point-of-sale desktop app for small stores. Built with **Tauri 2**, **Vue 3 + TypeScript**, and a local **SQLite** database — no server required, your data never leaves the machine.
+Offline-first point-of-sale desktop app for small stores. Built with **Tauri 2**, **Vue 3 + TypeScript**, and a local **SQLite** database - no server required, your data never leaves the machine.
 
 ## Highlights
 
@@ -29,11 +29,11 @@ npm run tauri dev     # launches the desktop app with hot reload
 
 The SQLite database lives at:
 
-| OS      | Path                                              |
-| ------- | ------------------------------------------------- |
-| Windows | `%APPDATA%\com.mohammad.storeapp\store.db`        |
+| OS      | Path                                                  |
+| ------- | ----------------------------------------------------- |
+| Windows | `%APPDATA%\com.mohammad.storeapp\store.db`            |
 | macOS   | `~/Library/Application Support/com.mohammad.storeapp` |
-| Linux   | `~/.config/com.mohammad.storeapp`                 |
+| Linux   | `~/.config/com.mohammad.storeapp`                     |
 
 Default login on a fresh database is created by the seeder (see first-run screen).
 

@@ -1,6 +1,6 @@
 import { ref } from "vue";
+import { invoke } from "@tauri-apps/api/core";
 import { i18n } from "../i18n";
-import { select, selectOne } from "./db";
 
 /**
  * Base-currency display helpers. Money amounts are always rendered with the
@@ -15,25 +15,16 @@ export const baseCurrencyCode = ref("");
 export const baseCurrencySymbol = ref("");
 
 /**
- * Loads the base currency code/symbol from the currencies table, falling
- * back to the ISO code stored under the "currency" settings key.
+ * Loads the base currency code/symbol from the backend, which falls back to
+ * the ISO code stored under the "currency" settings key.
  */
 export async function loadBaseCurrencySymbol(): Promise<void> {
   try {
-    const rows = await select<{ code?: string | null; symbol?: string | null }>(
-      "SELECT code, symbol FROM currencies WHERE is_base = 1 LIMIT 1",
+    const info = await invoke<{ code: string; symbol: string }>(
+      "get_base_currency",
     );
-    const row = rows[0];
-    baseCurrencyCode.value = (row?.code ?? "").trim();
-    baseCurrencySymbol.value =
-      (row?.symbol ?? "").trim() || baseCurrencyCode.value;
-    if (!baseCurrencySymbol.value) {
-      const s = await selectOne<{ value?: string }>(
-        "SELECT value FROM settings WHERE key = 'currency' LIMIT 1",
-      );
-      baseCurrencySymbol.value = (s?.value ?? "").trim();
-      baseCurrencyCode.value = baseCurrencySymbol.value;
-    }
+    baseCurrencyCode.value = (info.code ?? "").trim();
+    baseCurrencySymbol.value = (info.symbol ?? "").trim() || baseCurrencyCode.value;
   } catch {
     // Leave empty: formatting degrades gracefully to plain numbers.
   }
@@ -41,11 +32,17 @@ export async function loadBaseCurrencySymbol(): Promise<void> {
 
 let loadStarted = false;
 
-/** Kicks off a one-time background load of the base currency info. */
+/**
+ * Kicks off a one-time background load of the base currency info. If the load
+ * produced nothing (e.g. it ran before sign-in), it is allowed to retry so the
+ * symbol appears once a session exists.
+ */
 export function ensureBaseCurrencySymbol(): void {
   if (loadStarted) return;
   loadStarted = true;
-  void loadBaseCurrencySymbol();
+  void loadBaseCurrencySymbol().then(() => {
+    if (!baseCurrencySymbol.value) loadStarted = false;
+  });
 }
 
 const formatters = new Map<string, Intl.NumberFormat>();

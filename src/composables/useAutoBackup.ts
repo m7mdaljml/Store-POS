@@ -1,5 +1,4 @@
 import { invoke } from "@tauri-apps/api/core";
-import { selectOne } from "../lib/db";
 import { useSettingsStore } from "../stores/settings";
 import { useAuthStore } from "../stores/auth";
 
@@ -24,15 +23,15 @@ async function checkAndBackup(): Promise<void> {
   const auth = useAuthStore();
   const settings = useSettingsStore();
   if (!auth.isAuthenticated || !settings.loaded) return;
+  // Backups are an admin/settings operation; skip for users without the right.
+  if (auth.role !== "Admin" && !auth.can("settings.manage")) return;
   if (settings.values["backup_auto"] !== "1") return;
 
   const freq = settings.values["backup_freq"] === "weekly" ? "weekly" : "daily";
   let lastMs = 0;
   try {
-    const row = await selectOne<{ t: string | null }>(
-      "SELECT MAX(created_at) AS t FROM backups",
-    );
-    lastMs = parseDbTime(row?.t);
+    const last = await invoke<string | null>("last_backup_time");
+    lastMs = parseDbTime(last);
   } catch {
     lastMs = 0; // no backups table yet → definitely due
   }

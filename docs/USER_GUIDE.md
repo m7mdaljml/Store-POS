@@ -1,4 +1,4 @@
-# Store POS — User Guide
+# Store POS - User Guide
 
 A practical walkthrough of every area of the app. Keyboard shortcuts and tips are noted where they apply.
 
@@ -10,7 +10,7 @@ A practical walkthrough of every area of the app. Keyboard shortcuts and tips ar
 
 ## Checkout (point of sale)
 
-- Search by name, or scan a barcode — suggestions appear as you type.
+- Search by name, or scan a barcode - suggestions appear as you type.
 - Click products to add them to the ticket. Adjust quantities/discounts inline.
 - Attach a customer for tab (credit) sales; use **Charge to tab** when there is a shortfall.
 - Pay with cash/card/split lines; change is computed automatically.
@@ -47,7 +47,7 @@ A practical walkthrough of every area of the app. Keyboard shortcuts and tips ar
 ## Sales & sessions
 
 - **Sales**: browse history, filter by date/cashier/customer/status, void with reason (permission-gated).
-- **Sessions**: open a session with opening cash at shift start; close with counted cash — variance is calculated.
+- **Sessions**: open a session with opening cash at shift start; close with counted cash - variance is calculated.
 
 ## Expenses
 
@@ -55,7 +55,7 @@ A practical walkthrough of every area of the app. Keyboard shortcuts and tips ar
 
 ## Reports
 
-- **Overview**: revenue, orders, average ticket, gross profit, expenses, net position — today / this week / this month / custom range.
+- **Overview**: revenue, orders, average ticket, gross profit, expenses, net position - today / this week / this month / custom range.
 - **Sales**: filterable detail table with totals.
 - **Products**: best sellers by revenue/profit.
 - **Inventory**: stock value, low-stock alerts, movements viewer.
@@ -68,12 +68,12 @@ A practical walkthrough of every area of the app. Keyboard shortcuts and tips ar
   - _Run check now_: verifies database health.
   - _Back up now_: snapshots the database into your chosen folder (default: app data folder). Each backup is logged below.
   - _Automatic backups_: enable daily/weekly auto-backups; old backups beyond "keep last N" are pruned automatically.
-  - _Restore_: pick any backup row (or file) to replace the current database. A safety copy of the current data is taken first — you can always go back.
+  - _Restore_: pick any backup row (or file) to replace the current database. A safety copy of the current data is taken first - you can always go back.
 - **Export all data (Excel)**: one workbook with a sheet per table for accounting handoff.
 
 ## Settings
 
-- **Store profile**: name, phone, address, tax ID and logo — used across the UI and receipts.
+- **Store profile**: name, phone, address, tax ID and logo - used across the UI and receipts.
 - **Tax profiles**: define VAT rates, mark one default; assign per product.
 - **Currencies**: manage currencies and rates relative to the base currency; checkout shows a converted total for reference (sales are always recorded in base).
 - **Receipt**: header/footer text, logo position, thermal 80mm vs A4 paper.

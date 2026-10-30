@@ -54,7 +54,15 @@
           </tbody>
           <tbody v-for="inv in invoices" :key="inv.id">
             <tr>
-              <td class="fw-semibold">{{ inv.invoice_no }}</td>
+              <td class="fw-semibold">
+                <button
+                  type="button"
+                  class="btn btn-link p-0 fw-semibold text-decoration-none"
+                  @click="openDetails(inv)"
+                >
+                  {{ inv.invoice_no }}
+                </button>
+              </td>
               <td>{{ inv.supplier_name }}</td>
               <td class="text-muted">{{ inv.date }}</td>
               <td class="text-start">{{ fmt(inv.total) }}</td>
@@ -63,7 +71,7 @@
                 <span v-if="inv.due_amount > 0" class="text-danger fw-semibold">
                   {{ fmt(inv.due_amount) }}
                 </span>
-                <span v-else class="text-muted">—</span>
+                <span v-else class="text-muted">-</span>
               </td>
               <td>
                 <span class="badge" :class="statusBadge(inv.status)">
@@ -216,7 +224,7 @@
                     v-model.number="line.costPrice"
                     class="form-control form-control-sm text-end"
                     type="number"
-                    step="1"
+                    step="0.01"
                     min="0"
                     :placeholder="t('products.cost')"
                   />
@@ -419,8 +427,10 @@
                       <td class="text-capitalize">
                         {{ paymentMethodLabel(p.method) }}
                       </td>
-                      <td class="text-muted">{{ p.notes ?? "—" }}</td>
-                      <td class="text-start fw-semibold">{{ fmt(p.amount) }}</td>
+                      <td class="text-muted">{{ p.notes ?? "-" }}</td>
+                      <td class="text-start fw-semibold">
+                        {{ fmt(p.amount) }}
+                      </td>
                     </tr>
                   </tbody>
                 </table>
@@ -449,6 +459,177 @@
         </div>
       </div>
     </div>
+
+    <div v-if="detailOpen" class="modal-backdrop show"></div>
+    <div v-if="detailOpen" class="modal d-block" tabindex="-1">
+      <div
+        class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable"
+      >
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">
+              {{
+                detailTarget
+                  ? t("purchases.detailsTitle", {
+                      invoiceNo: detailTarget.invoice_no,
+                    })
+                  : t("common.loading")
+              }}
+            </h5>
+            <button
+              type="button"
+              class="btn-close"
+              @click="closeDetails"
+            ></button>
+          </div>
+          <div class="modal-body">
+            <div
+              v-if="detailError"
+              class="alert alert-danger py-2 small"
+              role="alert"
+            >
+              <i class="bi bi-exclamation-triangle mx-1"></i>{{ detailError }}
+            </div>
+            <div v-else-if="detailLoading" class="text-center text-muted py-4">
+              {{ t("common.loading") }}
+            </div>
+            <template v-else-if="detailTarget">
+              <div class="row g-3 mb-3">
+                <div class="col-md-6">
+                  <div class="text-muted small text-uppercase">
+                    {{ t("purchases.supplier") }}
+                  </div>
+                  <div class="fw-semibold">
+                    {{ detailTarget.supplier_name }}
+                  </div>
+                </div>
+                <div class="col-md-3">
+                  <div class="text-muted small text-uppercase">
+                    {{ t("common.date") }}
+                  </div>
+                  <div>{{ detailTarget.date }}</div>
+                </div>
+                <div class="col-md-3">
+                  <div class="text-muted small text-uppercase">
+                    {{ t("common.status") }}
+                  </div>
+                  <span class="badge" :class="statusBadge(detailTarget.status)">
+                    {{ statusLabel(detailTarget.status) }}
+                  </span>
+                </div>
+              </div>
+
+              <div class="d-flex gap-3 mb-3">
+                <div class="flex-grow-1 card text-center p-2">
+                  <div class="text-muted small text-uppercase">
+                    {{ t("common.total") }}
+                  </div>
+                  <div class="fw-semibold">{{ fmt(detailTarget.total) }}</div>
+                </div>
+                <div class="flex-grow-1 card text-center p-2">
+                  <div class="text-muted small text-uppercase">
+                    {{ t("common.paid") }}
+                  </div>
+                  <div class="fw-semibold">
+                    {{ fmt(detailTarget.paid_amount) }}
+                  </div>
+                </div>
+                <div class="flex-grow-1 card text-center p-2">
+                  <div class="text-muted small text-uppercase">
+                    {{ t("purchases.outstanding") }}
+                  </div>
+                  <div class="fw-semibold text-danger">
+                    {{ fmt(detailTarget.due_amount) }}
+                  </div>
+                </div>
+              </div>
+
+              <div class="fw-semibold small text-muted text-uppercase mb-2">
+                {{ t("purchases.products") }}
+              </div>
+              <table class="table table-sm align-middle">
+                <thead>
+                  <tr>
+                    <th>{{ t("purchases.colProduct") }}</th>
+                    <th class="text-end">{{ t("purchases.colQty") }}</th>
+                    <th class="text-end">{{ t("purchases.colCost") }}</th>
+                    <th class="text-end">{{ t("purchases.colTotal") }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="item in detailTarget.items" :key="item.id">
+                    <td>
+                      <div class="fw-semibold">{{ item.product_name }}</div>
+                      <div v-if="item.sku" class="text-muted small">
+                        {{ item.sku }}
+                      </div>
+                    </td>
+                    <td class="text-end">{{ item.qty }} {{ item.unit }}</td>
+                    <td class="text-end">{{ fmt(item.cost_price) }}</td>
+                    <td class="text-end fw-semibold">
+                      {{ fmt(item.subtotal) }}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+
+              <div v-if="detailTarget.notes" class="mt-3">
+                <div class="text-muted small text-uppercase">
+                  {{ t("common.notes") }}
+                </div>
+                <div>{{ detailTarget.notes }}</div>
+              </div>
+
+              <div v-if="detailTarget.payments.length" class="mt-4">
+                <div class="fw-semibold small text-muted text-uppercase mb-2">
+                  {{ t("purchases.paymentHistory") }}
+                </div>
+                <table class="table table-sm align-middle mb-0">
+                  <thead>
+                    <tr>
+                      <th>{{ t("common.date") }}</th>
+                      <th>{{ t("common.method") }}</th>
+                      <th>{{ t("common.user") }}</th>
+                      <th>{{ t("common.notes") }}</th>
+                      <th class="text-end">{{ t("common.amount") }}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="p in detailTarget.payments" :key="p.id">
+                      <td class="text-muted">{{ p.date }}</td>
+                      <td class="text-capitalize">
+                        {{ paymentMethodLabel(p.method) }}
+                      </td>
+                      <td class="text-muted">{{ p.user_name ?? "-" }}</td>
+                      <td class="text-muted">{{ p.notes ?? "-" }}</td>
+                      <td class="text-end fw-semibold">{{ fmt(p.amount) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </template>
+          </div>
+          <div class="modal-footer">
+            <button
+              type="button"
+              class="btn btn-outline-secondary"
+              @click="closeDetails"
+            >
+              {{ t("common.close") }}
+            </button>
+            <button
+              v-if="detailTarget && detailTarget.due_amount > 0"
+              type="button"
+              class="btn btn-success"
+              @click="payFromDetails"
+            >
+              <i class="bi bi-cash-coin mx-1"></i
+              >{{ t("purchases.recordPaymentBtn") }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -469,6 +650,7 @@ import { useAuth } from "../../composables/useAuth";
 import type {
   Supplier,
   SupplierInvoice,
+  SupplierInvoiceDetail,
   InvoiceLine,
   SupplierPayment,
 } from "../../types";
@@ -747,6 +929,41 @@ async function savePayment() {
   } finally {
     paySaving.value = false;
   }
+}
+
+const detailOpen = ref(false);
+const detailLoading = ref(false);
+const detailError = ref("");
+const detailTarget = ref<SupplierInvoiceDetail | null>(null);
+
+async function openDetails(inv: SupplierInvoice) {
+  detailError.value = "";
+  detailTarget.value = null;
+  detailLoading.value = true;
+  detailOpen.value = true;
+  try {
+    detailTarget.value = await invoke<SupplierInvoiceDetail>(
+      "get_supplier_invoice",
+      { invoiceId: inv.id },
+    );
+  } catch (e) {
+    detailError.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    detailLoading.value = false;
+  }
+}
+
+function closeDetails() {
+  detailOpen.value = false;
+  detailTarget.value = null;
+  detailError.value = "";
+}
+
+function payFromDetails() {
+  const detail = detailTarget.value;
+  if (!detail) return;
+  closeDetails();
+  openPay(detail);
 }
 
 onMounted(async () => {

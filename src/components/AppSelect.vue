@@ -85,12 +85,12 @@ import { useI18n } from "vue-i18n";
 import { useSettingsStore } from "../stores/settings";
 
 /**
- * Searchable, paginated dropdown with a fixed-height option panel — replaces
+ * Searchable, paginated dropdown with a fixed-height option panel - replaces
  * native <select> elements fed from database lists that may hold thousands of
  * rows. Two data modes:
- *  - Local: pass `items` (e.g. the shared catalog store) — searching and
+ *  - Local: pass `items` (e.g. the shared catalog store) - searching and
  *    paging happen client-side.
- *  - Async: pass `fetchPage(limit, offset, search)` — options are paged and
+ *  - Async: pass `fetchPage(limit, offset, search)` - options are paged and
  *    searched server-side; more pages load while scrolling.
  */
 const props = withDefaults(
@@ -123,7 +123,7 @@ const emit = defineEmits<{
 const { t } = useI18n();
 const settings = useSettingsStore();
 
-/** Options per panel page — defaults to the user's "rows per page" preference
+/** Options per panel page - defaults to the user's "rows per page" preference
  *  from Settings so the dropdown pages exactly like the list screens. */
 const pageSizeValue = computed(() => {
   const n = props.pageSize ?? settings.pageSize;
@@ -352,7 +352,7 @@ function onListScroll() {
   const el = listEl.value;
   if (!el || !hasMore.value || loadingMore.value || initialLoading.value)
     return;
-  // Local lists advance strictly one page per "Show more" click — otherwise
+  // Local lists advance strictly one page per "Show more" click - otherwise
   // pinned-at-bottom scrolling chains loads back-to-back and dumps every
   // remaining option at once. Server-paged lists keep smooth infinite scroll.
   if (!isAsync.value) return;
@@ -375,7 +375,7 @@ function onListScroll() {
   border-radius: 0.375rem;
 }
 
-/* Fixed height keeps long DB lists friendly — the panel never grows with data. */
+/* Fixed height keeps long DB lists friendly - the panel never grows with data. */
 .app-select-list {
   max-height: 264px;
   min-height: 36px;

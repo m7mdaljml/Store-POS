@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use tauri::{AppHandle, Runtime};
 
+use super::guard;
 use super::Page;
 use crate::db;
 
@@ -54,6 +55,7 @@ pub async fn list_suppliers<R: Runtime>(
     limit: Option<i64>,
     offset: Option<i64>,
 ) -> Result<Page<SupplierRecord>, String> {
+    guard::require(&app, Some("expenses.manage"))?;
     let pool = db::pool(&app).await?;
 
     let pattern = search
@@ -148,6 +150,7 @@ pub async fn get_supplier<R: Runtime>(
     app: AppHandle<R>,
     supplier_id: i64,
 ) -> Result<SupplierDetail, String> {
+    guard::require(&app, Some("expenses.manage"))?;
     let pool = db::pool(&app).await?;
     let row = sqlx::query(
         "SELECT s.id, s.name, s.contact, s.phone, s.email, s.address, s.tax_id, s.created_at,
@@ -208,6 +211,9 @@ pub async fn create_supplier<R: Runtime>(
     input: SupplierInput,
     user_id: Option<i64>,
 ) -> Result<i64, String> {
+    let actor = guard::require(&app, Some("expenses.manage"))?;
+    let _ = user_id;
+    let user_id = Some(actor.user_id);
     validate_supplier(&input)?;
     let pool = db::pool(&app).await?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
@@ -246,6 +252,9 @@ pub async fn update_supplier<R: Runtime>(
     input: SupplierInput,
     user_id: Option<i64>,
 ) -> Result<(), String> {
+    let actor = guard::require(&app, Some("expenses.manage"))?;
+    let _ = user_id;
+    let user_id = Some(actor.user_id);
     validate_supplier(&input)?;
     let pool = db::pool(&app).await?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
@@ -287,6 +296,9 @@ pub async fn delete_supplier<R: Runtime>(
     supplier_id: i64,
     user_id: Option<i64>,
 ) -> Result<(), String> {
+    let actor = guard::require(&app, Some("expenses.manage"))?;
+    let _ = user_id;
+    let user_id = Some(actor.user_id);
     let pool = db::pool(&app).await?;
     let invoices: (i64,) =
         sqlx::query_as("SELECT COUNT(*) FROM supplier_invoices WHERE supplier_id = ?")

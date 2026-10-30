@@ -54,7 +54,7 @@
           </button>
         </div>
         <div
-          v-if="searchOpen && suggestions.length"
+          v-if="searchOpen && search.trim()"
           class="checkout-search-dropdown card"
         >
           <button
@@ -79,17 +79,17 @@
               </span>
             </span>
           </button>
+          <div
+            v-if="!suggestions.length"
+            class="text-muted small text-center py-3"
+          >
+            {{ t("checkout.noProducts") }}
+          </div>
         </div>
       </div>
 
       <section class="checkout-left">
         <div class="product-grid">
-          <p
-            v-if="!filteredProducts.length && search.trim()"
-            class="text-muted py-4 text-center w-100"
-          >
-            {{ t("checkout.noProducts") }}
-          </p>
           <button
             v-for="p in filteredProducts"
             :key="p.id"
@@ -270,15 +270,17 @@
                 class="form-control form-control-sm line-disc"
                 type="number"
                 min="0"
-                step="1"
+                step="0.01"
                 placeholder="0.00"
                 :max="item.price"
                 :value="item.discount"
-                :aria-label="`${t('checkout.discountPerUnit')} — ${item.name}`"
+                :aria-label="`${t('checkout.discountPerUnit')} - ${item.name}`"
                 @input="onItemDiscount(item.productId, $event)"
                 @click.stop
               />
-              <span class="line-total">{{ fmt(cart.lineTotalWithTax(item)) }}</span>
+              <span class="line-total">{{
+                fmt(cart.lineTotalWithTax(item))
+              }}</span>
             </div>
           </div>
         </div>
@@ -299,7 +301,7 @@
                 placeholder="0.00"
                 :min="0"
                 :max="discountMax()"
-                step="1"
+                step="0.01"
                 :value="cart.orderDiscountValue"
                 :aria-label="
                   cart.orderDiscountType === 'percent'
@@ -396,7 +398,7 @@
             </span>
           </div>
 
-          <div class="ticket-pay">
+          <!-- <div class="ticket-pay">
             <div class="mb-2">
               <label
                 class="form-label mb-1 small text-muted"
@@ -409,7 +411,7 @@
                   class="form-control text-end fs-5 fw-semibold"
                   type="number"
                   min="0"
-                  step="1"
+                  step="0.01"
                   :value="cart.cashReceived"
                   :aria-label="t('checkout.cashReceived')"
                   @input="onCashReceived"
@@ -458,7 +460,7 @@
               {{ t("checkout.chargeToTab", { amount: fmt(cart.shortfall) }) }}
             </button>
 
-            <details
+             <details
               class="split-details mb-2"
               :open="cart.splitLines.length > 0"
             >
@@ -529,7 +531,7 @@
                       class="form-control text-end"
                       type="number"
                       min="0"
-                      step="1"
+                      step="0.01"
                       :value="line.amount"
                       :aria-label="`${t('common.amount')} ${i + 1}`"
                       @input="onSplitAmount(i, $event)"
@@ -564,7 +566,7 @@
                   <span class="fw-semibold">{{ fmt(cart.splitTotal) }}</span>
                 </div>
               </div>
-            </details>
+            </details> 
 
             <div v-if="cart.cashReceived > 0" class="t-row">
               <span>{{ t("checkout.cashTendered") }}</span>
@@ -586,7 +588,7 @@
               <span>{{ t("checkout.change") }}</span>
               <strong class="ms-auto">{{ fmt(cart.change) }}</strong>
             </div>
-          </div>
+          </div> -->
 
           <div class="ticket-actions">
             <div class="d-flex align-items-center gap-2 mb-2">
@@ -717,7 +719,7 @@
             <div class="modal-header">
               <h5 class="modal-title">
                 <i class="bi bi-plus-minus mx-2"></i
-                >{{ t("checkout.changeQty") }} — {{ qtyTargetItem.name }}
+                >{{ t("checkout.changeQty") }} - {{ qtyTargetItem.name }}
               </h5>
               <button
                 type="button"
@@ -773,8 +775,8 @@
           <div class="modal-content">
             <div class="modal-header">
               <h5 class="modal-title">
-                <i class="bi bi-tag mx-2"></i
-                >{{ t("checkout.changePrice") }} — {{ priceTargetItem.name }}
+                <i class="bi bi-tag mx-2"></i>{{ t("checkout.changePrice") }} -
+                {{ priceTargetItem.name }}
               </h5>
               <button
                 type="button"
@@ -790,7 +792,7 @@
                   class="form-control text-center"
                   type="number"
                   min="0"
-                  step="1"
+                  step="0.01"
                   :aria-label="t('checkout.changePrice')"
                   @keydown.enter="confirmPrice"
                 />
@@ -801,7 +803,9 @@
                 }}</span>
               </div>
               <div class="form-text text-center">
-                {{ t("checkout.priceIncludesTax", { total: fmt(priceWithTax) }) }}
+                {{
+                  t("checkout.priceIncludesTax", { total: fmt(priceWithTax) })
+                }}
               </div>
             </div>
             <div class="modal-footer">
@@ -901,6 +905,50 @@
           </div>
         </div>
       </div>
+
+      <!-- Scanned barcode not found: prominent popup + error beep -->
+      <div
+        v-if="scanNotFound"
+        class="modal fade show d-block"
+        tabindex="-1"
+        role="alertdialog"
+        aria-modal="true"
+        :aria-label="t('checkout.scanNotFoundTitle')"
+        @click.self="closeScanNotFound"
+      >
+        <div class="modal-dialog modal-dialog-centered" role="document">
+          <div class="modal-content border border-danger border-2">
+            <div class="modal-header bg-danger text-white">
+              <h5 class="modal-title">
+                <i class="bi bi-exclamation-octagon-fill mx-2"></i
+                >{{ t("checkout.scanNotFoundTitle") }}
+              </h5>
+              <button
+                type="button"
+                class="btn-close btn-close-white"
+                :aria-label="t('common.close')"
+                @click="closeScanNotFound"
+              ></button>
+            </div>
+            <div class="modal-body text-center py-4">
+              <i class="bi bi-upc-scan display-4 text-danger"></i>
+              <p class="fs-5 mt-3 mb-2">{{ t("checkout.scanNotFound") }}</p>
+              <span class="badge text-bg-secondary fs-6 font-monospace">{{
+                scanNotFound
+              }}</span>
+            </div>
+            <div class="modal-footer">
+              <button
+                type="button"
+                class="btn btn-primary w-100"
+                @click="closeScanNotFound"
+              >
+                {{ t("common.ok") }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -926,7 +974,6 @@ import type { Paged } from "../../composables/usePagedList";
 import { useConfirm } from "../../composables/useConfirm";
 import { useScanner } from "../../composables/useScanner";
 import { useToast } from "../../composables/useToast";
-import { select } from "../../lib/db";
 import { playBeep } from "../../lib/sound";
 import { buildReceiptHtml, printReceipt } from "../../lib/receipt";
 import { baseCurrencySymbol, formatMoney } from "../../lib/currency";
@@ -984,6 +1031,25 @@ const activeCategory = ref<number | null>(null);
 
 const searchOpen = ref(false);
 const activeSuggestion = ref(0);
+
+/** Barcode of the last scan that matched no product (drives the alert popup). */
+const scanNotFound = ref<string | null>(null);
+let scanNotFoundTimer: number | undefined;
+
+function showScanNotFound(code: string) {
+  scanNotFound.value = code;
+  playBeep("error");
+  window.clearTimeout(scanNotFoundTimer);
+  scanNotFoundTimer = window.setTimeout(() => {
+    scanNotFound.value = null;
+  }, 4000);
+}
+
+function closeScanNotFound() {
+  window.clearTimeout(scanNotFoundTimer);
+  scanNotFound.value = null;
+  focusSearch(false);
+}
 
 /** Cart line selected for removal (F5). Defaults to the latest added. */
 const selectedId = ref<number | null>(null);
@@ -1134,38 +1200,32 @@ const suggestions = computed(() => {
     .slice(0, 8);
 });
 const filteredProducts = computed(() => {
-  const q = search.value.trim().toLowerCase();
-  return catalog.products.filter((p) => {
-    if (p.is_active !== 1) return false;
-    if (!q) {
-      // Idle grid: only quick items, scoped by the selected category tab.
-      return (
-        p.is_quick === 1 &&
-        (activeCategory.value == null || p.category_id === activeCategory.value)
-      );
-    }
-    // Searching: any item in the system can appear.
-    return (
-      p.name.toLowerCase().includes(q) ||
-      (p.barcode?.toLowerCase().includes(q) ?? false)
-    );
-  });
+  // The product grid always shows Quick Items, scoped by the selected category.
+  // It is never filtered by the search text - search results live in the
+  // suggestions dropdown above the grid.
+  return catalog.products.filter(
+    (p) =>
+      p.is_active === 1 &&
+      p.is_quick === 1 &&
+      (activeCategory.value == null || p.category_id === activeCategory.value),
+  );
 });
 
 /**
- * Nothing quick to browse while idle: collapse the product panel and let the
- * cart span the full width. The scan/search bar always stays visible.
+ * Nothing quick to browse: collapse the product panel and let the cart span
+ * the full width. The scan/search bar always stays visible.
  */
-const cartOnly = computed(
-  () => !search.value.trim() && filteredProducts.value.length === 0,
-);
+const cartOnly = computed(() => filteredProducts.value.length === 0);
 
 function fmt(n: number): string {
   return formatMoney(n);
 }
 
 /** Product sell price including tax. */
-function sellWithTax(p: { sell_price: number; tax_rate: number | null }): number {
+function sellWithTax(p: {
+  sell_price: number;
+  tax_rate: number | null;
+}): number {
   return p.sell_price * (1 + (p.tax_rate ?? 0) / 100);
 }
 
@@ -1219,8 +1279,7 @@ function addSuggestion(p: Product) {
 
 function onSearchInput() {
   activeSuggestion.value = 0;
-  searchOpen.value =
-    search.value.trim().length > 0 && suggestions.value.length > 0;
+  searchOpen.value = search.value.trim().length > 0;
 }
 
 function onSearchKeydown(e: KeyboardEvent) {
@@ -1557,9 +1616,7 @@ onMounted(async () => {
 });
 
 function loadCurrencies(): Promise<void> {
-  return select<Currency>(
-    "SELECT id, code, name, symbol, rate, is_base FROM currencies ORDER BY is_base DESC, code",
-  )
+  return invoke<Currency[]>("list_currencies")
     .then((rows) => {
       currencies.value = rows;
       if (displayCurrencyId.value === null) {
@@ -1571,9 +1628,7 @@ function loadCurrencies(): Promise<void> {
 }
 
 function loadCustomers(): Promise<void> {
-  return select<CustomerLite>(
-    "SELECT id, name, phone, balance FROM customers ORDER BY name",
-  )
+  return invoke<CustomerLite[]>("list_customers_lite")
     .then((rows) => (customers.value = rows))
     .then(() => undefined);
 }
@@ -1582,6 +1637,7 @@ onBeforeUnmount(() => {
   document.removeEventListener("click", onDocClick);
   document.removeEventListener("pointerdown", onDocPointerDown);
   window.removeEventListener("keydown", onGlobalKeydown);
+  window.clearTimeout(scanNotFoundTimer);
 });
 
 /**
@@ -1639,7 +1695,9 @@ function onGlobalKeydown(e: KeyboardEvent) {
       break;
     }
     case "Escape": {
-      if (saleConfirmOpen.value) {
+      if (scanNotFound.value) {
+        closeScanNotFound();
+      } else if (saleConfirmOpen.value) {
         saleConfirmOpen.value = false;
       } else if (heldSalesOpen.value) {
         heldSalesOpen.value = false;
@@ -1766,11 +1824,15 @@ function applyOrderDiscount(type: "fixed" | "percent", value: number) {
 useScanner({
   burstMs: 100,
   onScan: (code) => {
+    window.clearTimeout(scanNotFoundTimer);
+    scanNotFound.value = null;
     const product = catalog.products.find(
       (p) => p.is_active === 1 && p.barcode === code,
     );
     if (!product) {
-      toast.error(t("checkout.noProductBarcode", { code }));
+      search.value = "";
+      searchOpen.value = false;
+      showScanNotFound(code);
       return;
     }
     addToCart(product);

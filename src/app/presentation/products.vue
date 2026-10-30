@@ -135,11 +135,7 @@
             :aria-label="t('products.filterCategory')"
           >
             <option :value="null">{{ t("products.allCategories") }}</option>
-            <option
-              v-for="c in categories"
-              :key="c.id"
-              :value="c.id"
-            >
+            <option v-for="c in categories" :key="c.id" :value="c.id">
               {{ c.name }}
             </option>
           </select>
@@ -220,7 +216,7 @@
                 <td class="text-muted">{{ categoryName(p.category_id) }}</td>
                 <td class="text-muted small">
                   <div v-if="p.barcode">{{ p.barcode }}</div>
-                  <span v-if="!p.barcode">—</span>
+                  <span v-if="!p.barcode">-</span>
                 </td>
                 <td class="text-start">{{ fmt(p.cost_price) }}</td>
                 <td class="text-start">{{ fmt(p.sell_price) }}</td>
@@ -432,7 +428,7 @@
                     class="form-control"
                     :class="{ 'is-invalid': errors.costPrice || productError }"
                     type="number"
-                    step="1"
+                    step="0.01"
                     min="0"
                     @input="clearFieldError(errors, 'costPrice')"
                   />
@@ -448,7 +444,7 @@
                     class="form-control"
                     :class="{ 'is-invalid': errors.sellPrice }"
                     type="number"
-                    step="1"
+                    step="0.01"
                     min="0"
                     @input="clearFieldError(errors, 'sellPrice')"
                   />
@@ -727,7 +723,6 @@ import { useConfirm } from "../../composables/useConfirm";
 import { useCatalogStore } from "../../stores/catalog";
 import { useSettingsStore } from "../../stores/settings";
 import { useAuth } from "../../composables/useAuth";
-import { select } from "../../lib/db";
 import { formatMoney } from "../../lib/currency";
 import type { Category, Product, TaxProfile } from "../../types";
 import emptyProducts from "../../assets/empty/products.svg";
@@ -919,7 +914,7 @@ watch([search, statusFilter, selected, () => settings.pageSize], () => {
 });
 
 const categoryName = (id: number | null) =>
-  categories.value.find((c) => c.id === id)?.name ?? "—";
+  categories.value.find((c) => c.id === id)?.name ?? "-";
 
 async function loadCategories() {
   loading.value = true;
@@ -998,7 +993,10 @@ async function removeCategory(c: Category) {
   )
     return;
   try {
-    await invoke("delete_category", { categoryId: c.id, userId: auth.user?.id ?? null });
+    await invoke("delete_category", {
+      categoryId: c.id,
+      userId: auth.user?.id ?? null,
+    });
     toast.success(t("products.categoryDeleted", { name: c.name }));
     if (selected.value === c.id) selected.value = null;
     await Promise.all([loadCategories(), catalog.load()]);
@@ -1021,7 +1019,7 @@ function openAddProduct() {
     costPrice: 0,
     sellPrice: 0,
     taxProfileId:
-      defaultTaxProfile.value?.id ?? (taxProfiles.value[0]?.id ?? null),
+      defaultTaxProfile.value?.id ?? taxProfiles.value[0]?.id ?? null,
     unit: "store item",
     reorderLevel: 0,
     stock: 0,
@@ -1121,11 +1119,7 @@ function validateProduct(): boolean {
       t("products.sellPrice"),
     ],
     ["unit", !!form.value.unit.trim(), t("products.unit")],
-    [
-      "taxProfile",
-      form.value.taxProfileId != null,
-      t("products.taxProfile"),
-    ],
+    ["taxProfile", form.value.taxProfileId != null, t("products.taxProfile")],
     [
       "reorderLevel",
       typeof reorder === "number" && !isNaN(reorder) && reorder >= 0,
@@ -1171,7 +1165,10 @@ async function saveProduct() {
   try {
     let id = editingId.value;
     if (id == null) {
-      id = await invoke<number>("create_product", { input: productPayload(), userId: auth.user?.id ?? null });
+      id = await invoke<number>("create_product", {
+        input: productPayload(),
+        userId: auth.user?.id ?? null,
+      });
       toast.success(t("products.productAdded"));
     } else {
       await invoke("update_product", {
@@ -1207,7 +1204,10 @@ async function removeProduct(p: Product) {
   )
     return;
   try {
-    await invoke("delete_product", { productId: p.id, userId: auth.user?.id ?? null });
+    await invoke("delete_product", {
+      productId: p.id,
+      userId: auth.user?.id ?? null,
+    });
     toast.success(t("products.productDeleted", { name: p.name }));
     await Promise.all([loadCategories(), catalog.load()]);
   } catch (e) {
@@ -1258,9 +1258,9 @@ async function saveAdjust() {
 }
 
 onMounted(async () => {
-  taxProfiles.value = await select<TaxProfile>(
-    "SELECT id, name, rate, is_default FROM tax_profiles ORDER BY is_default DESC, name",
-  ).catch(() => []);
+  taxProfiles.value = await invoke<TaxProfile[]>("list_tax_profiles").catch(
+    () => [],
+  );
   await Promise.allSettled([loadCategories(), catalog.load(), settings.load()]);
 });
 </script>

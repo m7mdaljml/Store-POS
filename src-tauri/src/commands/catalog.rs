@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use tauri::{AppHandle, Manager, Runtime};
 
+use super::guard;
 use super::Page;
 use crate::db;
 use crate::export::ImageRow;
@@ -20,6 +21,7 @@ pub struct CategoryRecord {
 pub async fn list_categories<R: Runtime>(
     app: AppHandle<R>,
 ) -> Result<Vec<CategoryRecord>, String> {
+    guard::require(&app, None)?;
     let pool = db::pool(&app).await?;
     let rows = sqlx::query(
         "SELECT c.id, c.name, c.parent_id, COUNT(p.id) AS product_count
@@ -50,6 +52,9 @@ pub async fn create_category<R: Runtime>(
     parent_id: Option<i64>,
     user_id: Option<i64>,
 ) -> Result<i64, String> {
+    let actor = guard::require(&app, Some("inventory.view"))?;
+    let _ = user_id;
+    let user_id = Some(actor.user_id);
     let pool = db::pool(&app).await?;
     let name = name.trim().to_string();
     if name.is_empty() {
@@ -93,6 +98,9 @@ pub async fn update_category<R: Runtime>(
     parent_id: Option<i64>,
     user_id: Option<i64>,
 ) -> Result<(), String> {
+    let actor = guard::require(&app, Some("inventory.view"))?;
+    let _ = user_id;
+    let user_id = Some(actor.user_id);
     let pool = db::pool(&app).await?;
     let name = name.trim().to_string();
     if name.is_empty() {
@@ -142,6 +150,9 @@ pub async fn delete_category<R: Runtime>(
     category_id: i64,
     user_id: Option<i64>,
 ) -> Result<(), String> {
+    let actor = guard::require(&app, Some("inventory.view"))?;
+    let _ = user_id;
+    let user_id = Some(actor.user_id);
     let pool = db::pool(&app).await?;
     let products: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM products WHERE category_id = ?")
         .bind(category_id)
@@ -297,6 +308,9 @@ pub async fn create_product<R: Runtime>(
     input: ProductInput,
     user_id: Option<i64>,
 ) -> Result<i64, String> {
+    let actor = guard::require(&app, Some("inventory.view"))?;
+    let _ = user_id;
+    let user_id = Some(actor.user_id);
     let pool = db::pool(&app).await?;
     validate_product(&input)?;
     ensure_sku_unique(&pool, &input.sku, None).await?;
@@ -358,6 +372,9 @@ pub async fn update_product<R: Runtime>(
     input: ProductInput,
     user_id: Option<i64>,
 ) -> Result<(), String> {
+    let actor = guard::require(&app, Some("inventory.view"))?;
+    let _ = user_id;
+    let user_id = Some(actor.user_id);
     let pool = db::pool(&app).await?;
     validate_product(&input)?;
     ensure_sku_unique(&pool, &input.sku, Some(product_id)).await?;
@@ -411,6 +428,9 @@ pub async fn set_product_active<R: Runtime>(
     is_active: bool,
     user_id: Option<i64>,
 ) -> Result<(), String> {
+    let actor = guard::require(&app, Some("inventory.view"))?;
+    let _ = user_id;
+    let user_id = Some(actor.user_id);
     let pool = db::pool(&app).await?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
     let result = sqlx::query("UPDATE products SET is_active = ? WHERE id = ?")
@@ -445,6 +465,9 @@ pub async fn set_product_active<R: Runtime>(
 
 #[tauri::command]
 pub async fn delete_product<R: Runtime>(app: AppHandle<R>, product_id: i64, user_id: Option<i64>) -> Result<(), String> {
+    let actor = guard::require(&app, Some("inventory.view"))?;
+    let _ = user_id;
+    let user_id = Some(actor.user_id);
     let pool = db::pool(&app).await?;
     let sold: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM sale_items WHERE product_id = ?")
         .bind(product_id)
@@ -492,6 +515,7 @@ pub async fn import_product_image<R: Runtime>(
     product_id: i64,
     source_path: String,
 ) -> Result<String, String> {
+    guard::require(&app, Some("inventory.view"))?;
     let source = std::path::Path::new(&source_path);
     if !source.is_file() {
         return Err("Selected file does not exist".into());
@@ -537,6 +561,9 @@ pub async fn adjust_stock<R: Runtime>(
     notes: Option<String>,
     user_id: Option<i64>,
 ) -> Result<(), String> {
+    let actor = guard::require(&app, Some("inventory.view"))?;
+    let _ = user_id;
+    let user_id = Some(actor.user_id);
     let pool = db::pool(&app).await?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
@@ -610,6 +637,7 @@ pub async fn list_stock_movements<R: Runtime>(
     limit: Option<i64>,
     offset: Option<i64>,
 ) -> Result<Page<StockMovement>, String> {
+    guard::require(&app, Some("inventory.view"))?;
     let pool = db::pool(&app).await?;
 
     let pattern = search
@@ -775,6 +803,9 @@ pub async fn import_products_csv<R: Runtime>(
     source_path: String,
     user_id: Option<i64>,
 ) -> Result<CsvImportResult, String> {
+    let actor = guard::require(&app, Some("inventory.view"))?;
+    let _ = user_id;
+    let user_id = Some(actor.user_id);
     let pool = db::pool(&app).await?;
     let mut reader = csv::ReaderBuilder::new()
         .has_headers(true)
@@ -1015,6 +1046,7 @@ pub async fn export_products_xlsx<R: Runtime>(
     app: AppHandle<R>,
     path: String,
 ) -> Result<(), String> {
+    guard::require(&app, Some("export.excel"))?;
     let pool = db::pool(&app).await?;
     let rows: Vec<ProductExportRow> = sqlx::query_as(
         "SELECT p.sku, p.barcode, p.name, p.description, c.name AS category,
@@ -1117,6 +1149,9 @@ pub async fn import_products_xlsx<R: Runtime>(
     source_path: String,
     user_id: Option<i64>,
 ) -> Result<CsvImportResult, String> {
+    let actor = guard::require(&app, Some("inventory.view"))?;
+    let _ = user_id;
+    let user_id = Some(actor.user_id);
     let pool = db::pool(&app).await?;
 
     let mut wb: Xlsx<std::io::BufReader<std::fs::File>> =

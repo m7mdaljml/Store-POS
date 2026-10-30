@@ -153,11 +153,11 @@ import { useAuth } from "./composables/useAuth";
 import { useSettingsStore } from "./stores/settings";
 import { useCatalogStore } from "./stores/catalog";
 import { useThemeStore } from "./stores/theme";
-import { seedIfNeeded } from "./lib/seed";
 import { startAutoBackup } from "./composables/useAutoBackup";
 import ToastHost from "./components/ToastHost.vue";
 import ConfirmHost from "./components/ConfirmHost.vue";
 import { toggleLocale } from "./i18n";
+import { loadBaseCurrencySymbol } from "./lib/currency";
 
 const route = useRoute();
 const router = useRouter();
@@ -226,18 +226,6 @@ const navItems = computed(() => {
       adminOnly: true,
     },
     {
-      to: "/reports",
-      label: t("nav.reports"),
-      icon: "bi-graph-up-arrow",
-      permission: "reports.view",
-    },
-    {
-      to: "/sessions",
-      label: t("nav.sessions"),
-      icon: "bi-cash-stack",
-      permission: "reports.view",
-    },
-    {
       to: "/expenses",
       label: t("nav.expenses"),
       icon: "bi-cash-coin",
@@ -260,6 +248,18 @@ const navItems = computed(() => {
       label: t("nav.logs"),
       icon: "bi-journal-text",
       adminOnly: true,
+    },
+    {
+      to: "/sessions",
+      label: t("nav.sessions"),
+      icon: "bi-cash-stack",
+      permission: "reports.view",
+    },
+    {
+      to: "/reports",
+      label: t("nav.reports"),
+      icon: "bi-graph-up-arrow",
+      permission: "reports.view",
     },
     {
       to: "/settings",
@@ -286,20 +286,36 @@ onMounted(async () => {
   tick();
   timer = window.setInterval(tick, 1000);
   await auth.verifySession();
-  try {
-    await seedIfNeeded();
-  } catch (e) {
-    console.error("Seeding failed:", e);
+  if (auth.isAuthenticated && !auth.mustChangePassword) {
+    await Promise.allSettled([
+      settings.load(),
+      catalog.load(),
+      loadBaseCurrencySymbol(),
+    ]);
   }
-  await Promise.allSettled([settings.load(), catalog.load()]);
   startAutoBackup();
 });
 
 watch(
   () => auth.isAuthenticated,
   (authenticated) => {
-    if (!authenticated && route.name !== "login") {
+    if (authenticated && !auth.mustChangePassword) {
+      void settings.load().catch(() => {});
+      void catalog.load().catch(() => {});
+      void loadBaseCurrencySymbol();
+    } else if (!authenticated && route.name !== "login") {
       router.push({ name: "login" });
+    }
+  },
+);
+
+watch(
+  () => auth.mustChangePassword,
+  (mustChange) => {
+    if (!mustChange && auth.isAuthenticated) {
+      void settings.load().catch(() => {});
+      void catalog.load().catch(() => {});
+      void loadBaseCurrencySymbol();
     }
   },
 );

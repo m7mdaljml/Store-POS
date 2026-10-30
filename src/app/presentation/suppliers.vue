@@ -54,16 +54,16 @@
           <tbody v-for="s in suppliers" :key="s.id">
             <tr>
               <td class="fw-semibold">{{ s.name }}</td>
-              <td class="text-muted">{{ s.contact ?? "—" }}</td>
-              <td class="text-muted">{{ s.phone ?? "—" }}</td>
-              <td class="text-muted">{{ s.tax_id ?? "—" }}</td>
+              <td class="text-muted">{{ s.contact ?? "-" }}</td>
+              <td class="text-muted">{{ s.phone ?? "-" }}</td>
+              <td class="text-muted">{{ s.tax_id ?? "-" }}</td>
               <td class="text-start">{{ s.invoice_count }}</td>
               <td class="text-start">{{ fmt(s.total_purchased) }}</td>
               <td class="text-start">
                 <span v-if="s.total_due > 0" class="text-danger fw-semibold">
                   {{ fmt(s.total_due) }}
                 </span>
-                <span v-else class="text-muted">—</span>
+                <span v-else class="text-muted">-</span>
               </td>
               <td class="text-start text-nowrap">
                 <button
@@ -268,15 +268,15 @@
                     <span class="detail-label">{{
                       t("suppliers.contact")
                     }}</span>
-                    <span>{{ detail.supplier.contact ?? "—" }}</span>
+                    <span>{{ detail.supplier.contact ?? "-" }}</span>
                   </div>
                   <div class="detail-item">
                     <span class="detail-label">{{ t("suppliers.phone") }}</span>
-                    <span>{{ detail.supplier.phone ?? "—" }}</span>
+                    <span>{{ detail.supplier.phone ?? "-" }}</span>
                   </div>
                   <div class="detail-item">
                     <span class="detail-label">{{ t("suppliers.email") }}</span>
-                    <span>{{ detail.supplier.email ?? "—" }}</span>
+                    <span>{{ detail.supplier.email ?? "-" }}</span>
                   </div>
                 </div>
                 <div class="col-md-6">
@@ -284,11 +284,11 @@
                     <span class="detail-label">{{
                       t("suppliers.address")
                     }}</span>
-                    <span>{{ detail.supplier.address ?? "—" }}</span>
+                    <span>{{ detail.supplier.address ?? "-" }}</span>
                   </div>
                   <div class="detail-item">
                     <span class="detail-label">{{ t("suppliers.taxId") }}</span>
-                    <span>{{ detail.supplier.tax_id ?? "—" }}</span>
+                    <span>{{ detail.supplier.tax_id ?? "-" }}</span>
                   </div>
                   <div class="detail-item">
                     <span class="detail-label">{{
@@ -524,7 +524,10 @@ async function save() {
   saving.value = true;
   try {
     if (editingId.value == null) {
-      await invoke<number>("create_supplier", { input: payload(), userId: auth.user?.id ?? null });
+      await invoke<number>("create_supplier", {
+        input: payload(),
+        userId: auth.user?.id ?? null,
+      });
       toast.success(t("suppliers.supplierAdded"));
     } else {
       await invoke("update_supplier", {
@@ -567,7 +570,10 @@ async function remove(s: Supplier) {
   )
     return;
   try {
-    await invoke("delete_supplier", { supplierId: s.id, userId: auth.user?.id ?? null });
+    await invoke("delete_supplier", {
+      supplierId: s.id,
+      userId: auth.user?.id ?? null,
+    });
     toast.success(t("suppliers.supplierDeleted", { name: s.name }));
     await load();
   } catch (e) {

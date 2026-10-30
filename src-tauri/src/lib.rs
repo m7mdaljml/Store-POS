@@ -68,6 +68,15 @@ pub fn initial_migrations() -> Vec<Migration> {
       description: "users_password_state",
       sql: "ALTER TABLE users ADD COLUMN password_state TEXT NOT NULL DEFAULT 'set';",
       kind: MigrationKind::Up,
+    },
+    // v9: per-user permission overrides. When a user has rows here their
+    // effective permissions are exactly this set; otherwise they inherit from
+    // their role (see commands::auth::effective_permissions).
+    Migration {
+      version: 9,
+      description: "user_permissions",
+      sql: "CREATE TABLE IF NOT EXISTS user_permissions (\n  user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,\n  permission_id INTEGER NOT NULL REFERENCES permissions(id) ON DELETE CASCADE,\n  PRIMARY KEY (user_id, permission_id)\n);",
+      kind: MigrationKind::Up,
     }
   ]
 }
@@ -83,6 +92,8 @@ pub fn run() {
     .setup(|app| {
       // Single shared SQLite pool for every Rust command (see db::Db).
       app.manage(db::Db::default());
+      // Authoritative signed-in identity for permission checks.
+      app.manage(commands::guard::SessionState::default());
       if cfg!(debug_assertions) {
         app.handle().plugin(
           tauri_plugin_log::Builder::default()
@@ -117,8 +128,6 @@ pub fn run() {
       Ok(())
     })
     .invoke_handler(tauri::generate_handler![
-      commands::auth::hash_password,
-      commands::auth::verify_password,
       commands::auth::login,
       commands::auth::logout,
       commands::auth::verify_session,
@@ -135,6 +144,7 @@ pub fn run() {
       commands::auth::list_roles,
       commands::auth::list_permissions,
       commands::auth::list_users,
+      commands::auth::list_user_options,
       commands::catalog::list_categories,
       commands::catalog::create_category,
       commands::catalog::update_category,
@@ -155,6 +165,14 @@ pub fn run() {
       commands::suppliers::update_supplier,
       commands::suppliers::delete_supplier,
       commands::customers::record_customer_payment,
+      commands::customers::list_customers,
+      commands::customers::customer_stats,
+      commands::customers::list_debtors,
+      commands::customers::get_customer_history,
+      commands::customers::customer_delete_check,
+      commands::customers::create_customer,
+      commands::customers::update_customer,
+      commands::customers::delete_customer,
       commands::reports::sales_summary,
       commands::reports::revenue_trend,
       commands::reports::top_products,
@@ -175,12 +193,12 @@ pub fn run() {
       commands::backup::export_full_workbook,
       commands::purchasing::create_supplier_invoice,
       commands::purchasing::list_supplier_invoices,
+      commands::purchasing::get_supplier_invoice,
       commands::purchasing::add_supplier_payment,
       commands::purchasing::list_supplier_payments,
       commands::expenses::list_expense_categories,
       commands::expenses::create_expense_category,
       commands::expenses::delete_expense_category,
-      commands::expenses::list_expenses_out,
       commands::expenses::add_expense_out,
       commands::expenses::list_expenses,
       commands::expenses::expense_summary,
@@ -202,7 +220,22 @@ pub fn run() {
       commands::withdrawals::add_cash_withdrawal,
       commands::withdrawals::list_cash_withdrawals,
       commands::withdrawals::export_cash_withdrawals,
-      commands::withdrawals::delete_cash_withdrawal
+      commands::withdrawals::delete_cash_withdrawal,
+      commands::settings::list_settings,
+      commands::settings::set_setting,
+      commands::settings::list_tax_profiles,
+      commands::settings::save_tax_profile,
+      commands::settings::set_default_tax_profile,
+      commands::settings::delete_tax_profile,
+      commands::settings::list_currencies,
+      commands::settings::save_currency,
+      commands::settings::set_base_currency,
+      commands::settings::delete_currency,
+      commands::settings::list_customers_lite,
+      commands::queries::list_products,
+      commands::queries::get_base_currency,
+      commands::queries::last_backup_time,
+      commands::queries::dashboard_kpis
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

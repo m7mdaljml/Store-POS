@@ -179,6 +179,7 @@ pub(crate) mod tests {
             "CREATE TABLE tax_profiles (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, rate REAL NOT NULL DEFAULT 0, is_default INTEGER NOT NULL DEFAULT 0)",
             "CREATE TABLE role_permissions (role_id INTEGER NOT NULL REFERENCES roles(id) ON DELETE CASCADE, permission_id INTEGER NOT NULL REFERENCES permissions(id) ON DELETE CASCADE, PRIMARY KEY (role_id, permission_id))",
             "CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, full_name TEXT NOT NULL, role_id INTEGER NOT NULL REFERENCES roles(id), is_active INTEGER NOT NULL DEFAULT 1, password_state TEXT NOT NULL DEFAULT 'set')",
+            "CREATE TABLE user_permissions (user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, permission_id INTEGER NOT NULL REFERENCES permissions(id) ON DELETE CASCADE, PRIMARY KEY (user_id, permission_id))",
         ] {
             sqlx::query(sql).execute(&pool).await.unwrap();
         }

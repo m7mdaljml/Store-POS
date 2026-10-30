@@ -76,7 +76,7 @@
             <tr>
               <td class="text-muted">{{ entry.id }}</td>
               <td class="text-muted">{{ dateLabel(entry.createdAt) }}</td>
-              <td>{{ entry.userName || "—" }}</td>
+              <td>{{ entry.userName || "-" }}</td>
               <td>
                 <span class="badge" :class="actionBadgeClass(entry.action)">
                   {{ t("logs.actions." + actionKey(entry.action)) }}
@@ -87,7 +87,7 @@
                   {{ t("logs.entities." + entry.entityType) }}
                   <span v-if="entry.entityId"> #{{ entry.entityId }}</span>
                 </span>
-                <span v-else>—</span>
+                <span v-else>-</span>
               </td>
               <td class="text-muted" style="max-width: 400px">
                 {{ translateDetails(entry.action, entry.details) }}
@@ -199,8 +199,10 @@ function actionKey(action: string): string {
 function actionBadgeClass(action: string): string {
   if (action.includes("create")) return "text-bg-success";
   if (action.includes("delete")) return "text-bg-danger";
-  if (action.includes("update") || action.includes("edit")) return "text-bg-primary";
-  if (action.includes("void") || action.includes("cancel")) return "text-bg-warning";
+  if (action.includes("update") || action.includes("edit"))
+    return "text-bg-primary";
+  if (action.includes("void") || action.includes("cancel"))
+    return "text-bg-warning";
   if (action.includes("activate")) return "text-bg-success";
   if (action.includes("deactivate")) return "text-bg-secondary";
   if (action.includes("payment")) return "text-bg-info";
@@ -416,7 +418,8 @@ const detailPatterns: Array<{
   },
   {
     action: "session.close",
-    regex: /^Closed register: expected ([\d.,]+), actual ([\d.,]+), variance ([\d.,+-]+)/,
+    regex:
+      /^Closed register: expected ([\d.,]+), actual ([\d.,]+), variance ([\d.,+-]+)/,
     i18nKey: "logs.detail.closedRegister",
     map: (m) => ({
       expected: cleanMoney(m[1]),
@@ -457,7 +460,7 @@ const detailPatterns: Array<{
 ];
 
 function translateDetails(action: string, details: string | null): string {
-  if (!details) return "—";
+  if (!details) return "-";
   const pattern = detailPatterns.find((p) => p.action === action);
   if (!pattern) return details;
   const match = details.match(pattern.regex);

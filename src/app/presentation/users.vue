@@ -12,8 +12,6 @@
       </button>
     </div>
 
-
-
     <div class="card">
       <div class="p-2 border-bottom">
         <input
@@ -73,9 +71,7 @@
                     :class="u.isActive ? 'text-bg-success' : 'text-bg-danger'"
                   >
                     {{
-                      u.isActive
-                        ? t("common.active")
-                        : t("users.deactivated")
+                      u.isActive ? t("common.active") : t("users.deactivated")
                     }}
                   </span>
                   <span
@@ -105,7 +101,7 @@
                     {{ permissionLabel(p) }}
                   </span>
                   <span v-if="!u.permissions.length" class="text-muted small"
-                    >—</span
+                    >-</span
                   >
                 </div>
               </td>
@@ -375,9 +371,8 @@
           </div>
           <div class="modal-body">
             <div class="alert alert-warning py-2 small">
-              <i class="bi bi-exclamation-triangle mx-1"></i>{{
-                t("users.tempPasswordNote")
-              }}
+              <i class="bi bi-exclamation-triangle mx-1"></i
+              >{{ t("users.tempPasswordNote") }}
             </div>
             <div
               class="text-center border rounded-3 py-3 mb-3 font-monospace fw-bold"
@@ -464,7 +459,6 @@ const {
   [search],
   (e) => toast.error(e instanceof Error ? e.message : String(e)),
 );
-
 
 const showAdd = ref(false);
 const adding = ref(false);
@@ -629,7 +623,10 @@ async function deactivate(u: UserRecord) {
   )
     return;
   try {
-    await invoke("delete_user", { userId: u.id, deletedBy: auth.user?.id ?? null });
+    await invoke("delete_user", {
+      userId: u.id,
+      deletedBy: auth.user?.id ?? null,
+    });
     toast.success(t("users.deactivated2", { name: u.fullName }));
     await reloadUsers();
   } catch (e) {
@@ -639,7 +636,11 @@ async function deactivate(u: UserRecord) {
 
 async function activate(u: UserRecord) {
   try {
-    await invoke("set_user_active", { userId: u.id, active: true, toggledBy: auth.user?.id ?? null });
+    await invoke("set_user_active", {
+      userId: u.id,
+      active: true,
+      toggledBy: auth.user?.id ?? null,
+    });
     toast.success(t("users.reactivated", { name: u.fullName }));
     await reloadUsers();
   } catch (e) {

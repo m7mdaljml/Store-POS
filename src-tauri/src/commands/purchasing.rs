@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use tauri::{AppHandle, Runtime};
 
+use super::guard;
 use super::Page;
 use crate::db;
 
@@ -37,6 +38,36 @@ pub struct SupplierInvoiceRecord {
     pub notes: Option<String>,
 }
 
+#[derive(Debug, Serialize)]
+pub struct SupplierInvoiceItemRecord {
+    pub id: i64,
+    pub product_id: i64,
+    pub product_name: String,
+    pub sku: Option<String>,
+    pub unit: String,
+    pub qty: f64,
+    pub cost_price: f64,
+    pub subtotal: f64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SupplierInvoiceDetail {
+    pub id: i64,
+    pub invoice_no: String,
+    pub supplier_id: i64,
+    pub supplier_name: String,
+    pub date: String,
+    pub total: f64,
+    pub paid_amount: f64,
+    pub due_amount: f64,
+    pub status: String,
+    pub notes: Option<String>,
+    pub user_name: Option<String>,
+    pub created_at: String,
+    pub items: Vec<SupplierInvoiceItemRecord>,
+    pub payments: Vec<SupplierPaymentRecord>,
+}
+
 fn optional_field(value: &Option<String>) -> Option<String> {
     value.as_ref().map(|v| v.trim()).filter(|v| !v.is_empty()).map(String::from)
 }
@@ -46,6 +77,9 @@ pub async fn create_supplier_invoice<R: Runtime>(
     app: AppHandle<R>,
     input: SupplierInvoiceInput,
 ) -> Result<i64, String> {
+    let actor = guard::require(&app, Some("inventory.view"))?;
+    let mut input = input;
+    input.user_id = Some(actor.user_id);
     let pool = db::pool(&app).await?;
     create_invoice(&pool, input).await
 }
@@ -94,7 +128,7 @@ pub async fn create_invoice(
     let date = match optional_field(&input.date) {
         Some(d) => d,
         None => {
-            let d: (String,) = sqlx::query_as("SELECT date('now')")
+            let d: (String,) = sqlx::query_as("SELECT date('now','localtime')")
                 .fetch_one(&mut *tx)
                 .await
                 .map_err(|e| e.to_string())?;
@@ -184,6 +218,7 @@ pub async fn list_supplier_invoices<R: Runtime>(
     limit: Option<i64>,
     offset: Option<i64>,
 ) -> Result<Page<SupplierInvoiceRecord>, String> {
+    guard::require(&app, Some("inventory.view"))?;
     let pool = db::pool(&app).await?;
 
     let pattern = search
@@ -316,7 +351,7 @@ pub async fn record_supplier_payment(
     let date = match optional_field(&input.date) {
         Some(d) => d,
         None => {
-            let d: (String,) = sqlx::query_as("SELECT date('now')")
+            let d: (String,) = sqlx::query_as("SELECT date('now','localtime')")
                 .fetch_one(&mut *tx)
                 .await
                 .map_err(|e| e.to_string())?;
@@ -383,8 +418,24 @@ pub async fn add_supplier_payment<R: Runtime>(
     app: AppHandle<R>,
     input: SupplierPaymentInput,
 ) -> Result<PaymentResult, String> {
+    let actor = guard::require(&app, Some("inventory.view"))?;
+    let mut input = input;
+    input.user_id = Some(actor.user_id);
     let pool = db::pool(&app).await?;
     record_supplier_payment(&pool, input).await
+}
+
+fn payment_from_row(row: &sqlx::sqlite::SqliteRow) -> Result<SupplierPaymentRecord, String> {
+    Ok(SupplierPaymentRecord {
+        id: row.try_get("id").map_err(|e| e.to_string())?,
+        invoice_id: row.try_get("invoice_id").map_err(|e| e.to_string())?,
+        invoice_no: row.try_get("invoice_no").map_err(|e| e.to_string())?,
+        amount: row.try_get("amount").map_err(|e| e.to_string())?,
+        method: row.try_get("method").map_err(|e| e.to_string())?,
+        date: row.try_get("date").map_err(|e| e.to_string())?,
+        notes: row.try_get("notes").map_err(|e| e.to_string())?,
+        user_name: row.try_get("user_name").map_err(|e| e.to_string())?,
+    })
 }
 
 #[tauri::command]
@@ -392,6 +443,7 @@ pub async fn list_supplier_payments<R: Runtime>(
     app: AppHandle<R>,
     invoice_id: i64,
 ) -> Result<Vec<SupplierPaymentRecord>, String> {
+    guard::require(&app, Some("inventory.view"))?;
     let pool = db::pool(&app).await?;
     let rows = sqlx::query(
         "SELECT sp.id, sp.invoice_id, si.invoice_no, sp.amount, sp.method, sp.date, sp.notes, u.full_name AS user_name
@@ -406,20 +458,97 @@ pub async fn list_supplier_payments<R: Runtime>(
     .await
     .map_err(|e| e.to_string())?;
 
-    rows.into_iter()
-        .map(|row| {
-            Ok(SupplierPaymentRecord {
+    rows.iter().map(payment_from_row).collect()
+}
+
+#[tauri::command]
+pub async fn get_supplier_invoice<R: Runtime>(
+    app: AppHandle<R>,
+    invoice_id: i64,
+) -> Result<SupplierInvoiceDetail, String> {
+    guard::require(&app, Some("inventory.view"))?;
+    let pool = db::pool(&app).await?;
+    invoice_detail(&pool, invoice_id).await
+}
+
+pub(crate) async fn invoice_detail(
+    pool: &sqlx::SqlitePool,
+    invoice_id: i64,
+) -> Result<SupplierInvoiceDetail, String> {
+    let header = sqlx::query(
+        "SELECT si.id, si.invoice_no, si.supplier_id, s.name AS supplier_name, si.date,
+                si.total, si.paid_amount, si.due_amount, si.status, si.notes, si.created_at,
+                u.full_name AS user_name
+         FROM supplier_invoices si
+         JOIN suppliers s ON s.id = si.supplier_id
+         LEFT JOIN users u ON u.id = si.user_id
+         WHERE si.id = ?",
+    )
+    .bind(invoice_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| e.to_string())?
+    .ok_or_else(|| "Invoice not found".to_string())?;
+
+    let item_rows = sqlx::query(
+        "SELECT sii.id, sii.product_id, p.name AS product_name, p.sku, p.unit,
+                sii.qty, sii.cost_price, sii.subtotal
+         FROM supplier_invoice_items sii
+         JOIN products p ON p.id = sii.product_id
+         WHERE sii.invoice_id = ?
+         ORDER BY sii.id",
+    )
+    .bind(invoice_id)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let items = item_rows
+        .into_iter()
+        .map(|row| -> Result<SupplierInvoiceItemRecord, String> {
+            Ok(SupplierInvoiceItemRecord {
                 id: row.try_get("id").map_err(|e| e.to_string())?,
-                invoice_id: row.try_get("invoice_id").map_err(|e| e.to_string())?,
-                invoice_no: row.try_get("invoice_no").map_err(|e| e.to_string())?,
-                amount: row.try_get("amount").map_err(|e| e.to_string())?,
-                method: row.try_get("method").map_err(|e| e.to_string())?,
-                date: row.try_get("date").map_err(|e| e.to_string())?,
-                notes: row.try_get("notes").map_err(|e| e.to_string())?,
-                user_name: row.try_get("user_name").map_err(|e| e.to_string())?,
+                product_id: row.try_get("product_id").map_err(|e| e.to_string())?,
+                product_name: row.try_get("product_name").map_err(|e| e.to_string())?,
+                sku: row.try_get("sku").map_err(|e| e.to_string())?,
+                unit: row.try_get("unit").map_err(|e| e.to_string())?,
+                qty: row.try_get("qty").map_err(|e| e.to_string())?,
+                cost_price: row.try_get("cost_price").map_err(|e| e.to_string())?,
+                subtotal: row.try_get("subtotal").map_err(|e| e.to_string())?,
             })
         })
-        .collect()
+        .collect::<Result<Vec<_>, String>>()?;
+
+    let payment_rows = sqlx::query(
+        "SELECT sp.id, sp.invoice_id, si.invoice_no, sp.amount, sp.method, sp.date, sp.notes, u.full_name AS user_name
+         FROM supplier_payments sp
+         JOIN supplier_invoices si ON si.id = sp.invoice_id
+         LEFT JOIN users u ON u.id = sp.user_id
+         WHERE sp.invoice_id = ?
+         ORDER BY sp.date DESC, sp.id DESC",
+    )
+    .bind(invoice_id)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+    let payments = payment_rows.iter().map(payment_from_row).collect::<Result<Vec<_>, String>>()?;
+
+    Ok(SupplierInvoiceDetail {
+        id: header.try_get("id").map_err(|e| e.to_string())?,
+        invoice_no: header.try_get("invoice_no").map_err(|e| e.to_string())?,
+        supplier_id: header.try_get("supplier_id").map_err(|e| e.to_string())?,
+        supplier_name: header.try_get("supplier_name").map_err(|e| e.to_string())?,
+        date: header.try_get("date").map_err(|e| e.to_string())?,
+        total: header.try_get("total").map_err(|e| e.to_string())?,
+        paid_amount: header.try_get("paid_amount").map_err(|e| e.to_string())?,
+        due_amount: header.try_get("due_amount").map_err(|e| e.to_string())?,
+        status: header.try_get("status").map_err(|e| e.to_string())?,
+        notes: header.try_get("notes").map_err(|e| e.to_string())?,
+        user_name: header.try_get("user_name").map_err(|e| e.to_string())?,
+        created_at: header.try_get("created_at").map_err(|e| e.to_string())?,
+        items,
+        payments,
+    })
 }
 
 #[cfg(test)]
@@ -437,6 +566,7 @@ pub(crate) mod tests {
             "CREATE TABLE stock_movements (id INTEGER PRIMARY KEY AUTOINCREMENT, product_id INTEGER NOT NULL, type TEXT NOT NULL, qty REAL NOT NULL, ref_id INTEGER, notes TEXT, user_id INTEGER, created_at TEXT NOT NULL DEFAULT (datetime('now')))",
             "CREATE TABLE supplier_payments (id INTEGER PRIMARY KEY AUTOINCREMENT, invoice_id INTEGER NOT NULL, amount REAL NOT NULL, method TEXT NOT NULL DEFAULT 'cash', date TEXT NOT NULL DEFAULT (datetime('now')), notes TEXT, user_id INTEGER)",
             "CREATE TABLE audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, action TEXT NOT NULL, entity_type TEXT, entity_id INTEGER, details TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')))",
+            "CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL DEFAULT '', full_name TEXT NOT NULL, role_id INTEGER, is_active INTEGER NOT NULL DEFAULT 1, password_state TEXT NOT NULL DEFAULT 'set')",
         ] {
             sqlx::query(sql).execute(&pool).await.unwrap();
         }
@@ -766,6 +896,81 @@ pub(crate) mod tests {
         assert_eq!(paid, 0.0);
         assert_eq!(due, 100.0);
         assert_eq!(status, "unpaid", "unchanged after all failed payments");
+
+        pool.close().await;
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[tokio::test]
+    async fn invoice_detail_returns_header_items_and_payments() {
+        let path = temp_db("invoice-detail");
+        create_schema(&path).await;
+        let pool = db::connect(&path).await.unwrap();
+
+        let user_id = sqlx::query(
+            "INSERT INTO users (username, full_name) VALUES ('clerk', 'Store Clerk')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap()
+        .last_insert_rowid();
+        let supplier_id = sqlx::query("INSERT INTO suppliers (name) VALUES ('Acme Supply')")
+            .execute(&pool)
+            .await
+            .unwrap()
+            .last_insert_rowid();
+        let product_id = sqlx::query(
+            "INSERT INTO products (name, sku, unit, stock_qty) VALUES ('Widget', 'SKU-1', 'pc', 0)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap()
+        .last_insert_rowid();
+
+        let mut input = sample_input(
+            supplier_id,
+            vec![
+                InvoiceItemInput { product_id, qty: 3.0, cost_price: 4.5 },
+                InvoiceItemInput { product_id, qty: 2.0, cost_price: 5.25 },
+            ],
+        );
+        input.user_id = Some(user_id);
+        let invoice_id = create_invoice(&pool, input).await.unwrap();
+
+        let detail = invoice_detail(&pool, invoice_id).await.unwrap();
+        assert_eq!(detail.invoice_no, format!("PI-{:06}", invoice_id));
+        assert_eq!(detail.supplier_name, "Acme Supply");
+        assert_eq!(detail.user_name.as_deref(), Some("Store Clerk"));
+        assert_eq!(detail.total, 24.0);
+        assert_eq!(detail.due_amount, 24.0);
+        assert_eq!(detail.items.len(), 2);
+        assert_eq!(detail.items[0].product_name, "Widget");
+        assert_eq!(detail.items[0].sku.as_deref(), Some("SKU-1"));
+        assert_eq!(detail.items[0].subtotal, 13.5);
+        assert!(detail.payments.is_empty());
+
+        record_supplier_payment(
+            &pool,
+            SupplierPaymentInput {
+                invoice_id,
+                amount: 10.0,
+                method: Some("cash".into()),
+                date: None,
+                notes: None,
+                user_id: Some(user_id),
+            },
+        )
+        .await
+        .unwrap();
+
+        let detail = invoice_detail(&pool, invoice_id).await.unwrap();
+        assert_eq!(detail.paid_amount, 10.0);
+        assert_eq!(detail.due_amount, 14.0);
+        assert_eq!(detail.status, "partial");
+        assert_eq!(detail.payments.len(), 1);
+        assert_eq!(detail.payments[0].user_name.as_deref(), Some("Store Clerk"));
+
+        assert!(invoice_detail(&pool, 9999).await.is_err());
 
         pool.close().await;
         std::fs::remove_file(&path).ok();

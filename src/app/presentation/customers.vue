@@ -60,7 +60,7 @@
             <tr v-for="c in debtors" :key="c.id">
               <td class="fw-semibold">{{ c.name }}</td>
               <td class="text-muted" style="direction: ltr">
-                {{ c.phone ?? "—" }}
+                {{ c.phone ?? "-" }}
               </td>
               <td class="text-start">
                 <span class="badge text-bg-danger rounded-pill">{{
@@ -148,10 +148,10 @@
                 </div>
               </td>
               <td class="text-muted" style="direction: ltr">
-                {{ c.phone ?? "—" }}
+                {{ c.phone ?? "-" }}
               </td>
-              <td class="text-muted">{{ c.email ?? "—" }}</td>
-              <td class="text-muted">{{ c.address ?? "—" }}</td>
+              <td class="text-muted">{{ c.email ?? "-" }}</td>
+              <td class="text-muted">{{ c.address ?? "-" }}</td>
               <td class="text-start">
                 <span
                   v-if="c.balance > 0.005"
@@ -159,9 +159,11 @@
                 >
                   {{ fmt(c.balance) }}
                 </span>
-                <span v-else class="text-muted">—</span>
+                <span v-else class="text-muted">-</span>
               </td>
-              <td class="text-start text-muted">{{ dateLabel(c.created_at) }}</td>
+              <td class="text-start text-muted">
+                {{ dateLabel(c.created_at) }}
+              </td>
               <td class="text-start text-nowrap">
                 <button
                   class="btn btn-sm btn-outline-secondary mx-1"
@@ -351,12 +353,12 @@
                   <div class="detail-item">
                     <span class="detail-label">{{ t("customers.phone") }}</span>
                     <span style="direction: ltr">{{
-                      detail.phone ?? "—"
+                      detail.phone ?? "-"
                     }}</span>
                   </div>
                   <div class="detail-item">
                     <span class="detail-label">{{ t("suppliers.email") }}</span>
-                    <span>{{ detail.email ?? "—" }}</span>
+                    <span>{{ detail.email ?? "-" }}</span>
                   </div>
                 </div>
                 <div class="col-md-6">
@@ -364,7 +366,7 @@
                     <span class="detail-label">{{
                       t("suppliers.address")
                     }}</span>
-                    <span>{{ detail.address ?? "—" }}</span>
+                    <span>{{ detail.address ?? "-" }}</span>
                   </div>
                   <div class="detail-item">
                     <span class="detail-label">{{
@@ -484,7 +486,7 @@
                       <td class="text-start fw-semibold">
                         {{ fmt(e.balance_after) }}
                       </td>
-                      <td class="text-muted">{{ e.notes ?? "—" }}</td>
+                      <td class="text-muted">{{ e.notes ?? "-" }}</td>
                     </tr>
                   </tbody>
                 </table>
@@ -553,7 +555,7 @@
                       :class="{ 'is-invalid': !!payError }"
                       type="number"
                       min="0"
-                      step="1"
+                      step="0.01"
                       @input="payError = ''"
                     />
                     <button
@@ -622,7 +624,6 @@ import { useToast } from "../../composables/useToast";
 import { useConfirm } from "../../composables/useConfirm";
 import { useAuthStore } from "../../stores/auth";
 import { useSettingsStore } from "../../stores/settings";
-import { execute, insert, select, selectOne } from "../../lib/db";
 import { formatMoney } from "../../lib/currency";
 import type { Customer, CustomerLedgerRow, CustomerSaleRow } from "../../types";
 import emptyCustomers from "../../assets/empty/customers.svg";
@@ -642,19 +643,16 @@ const totalDebt = ref(0);
 const debtors = ref<Customer[]>([]);
 
 async function fetchStats() {
-  const agg = await selectOne<{
-    total: number;
-    debtors_count: number | null;
-    total_debt: number | null;
-  }>(
-    "SELECT COUNT(*) AS total, SUM(CASE WHEN balance > 0.005 THEN 1 ELSE 0 END) AS debtors_count, SUM(MAX(balance, 0)) AS total_debt FROM customers",
-  );
-  totalCustomers.value = agg?.total ?? 0;
-  debtorsCount.value = agg?.debtors_count ?? 0;
-  totalDebt.value = agg?.total_debt ?? 0;
-  debtors.value = await select<Customer>(
-    "SELECT id, name, phone, email, address, balance, notes, created_at FROM customers WHERE balance > 0.005 ORDER BY balance DESC LIMIT 50",
-  );
+  const [stats, debtorRows] = await Promise.all([
+    invoke<{ total: number; debtors_count: number; total_debt: number }>(
+      "customer_stats",
+    ),
+    invoke<Customer[]>("list_debtors", { limit: 50 }),
+  ]);
+  totalCustomers.value = stats.total;
+  debtorsCount.value = stats.debtors_count;
+  totalDebt.value = stats.total_debt;
+  debtors.value = debtorRows;
 }
 
 const {
@@ -667,21 +665,15 @@ const {
   reload: load,
 } = usePagedList<Customer>(
   async (limit, offset) => {
-    const p = `%${search.value.trim()}%`;
-    const where =
-      "WHERE name LIKE ? OR IFNULL(phone,'') LIKE ? OR IFNULL(email,'') LIKE ? OR IFNULL(address,'') LIKE ? OR IFNULL(notes,'') LIKE ?";
-    const [rows, countRows] = await Promise.all([
-      select<Customer>(
-        `SELECT id, name, phone, email, address, balance, notes, created_at FROM customers ${where} ORDER BY name COLLATE NOCASE LIMIT ? OFFSET ?`,
-        [p, p, p, p, p, limit, offset],
-      ),
-      select<{ total: number }>(
-        `SELECT COUNT(*) AS total FROM customers ${where}`,
-        [p, p, p, p, p],
-      ),
+    const [result] = await Promise.all([
+      invoke<{ items: Customer[]; total: number }>("list_customers", {
+        search: search.value.trim() || null,
+        limit,
+        offset,
+      }),
       fetchStats(),
     ]);
-    return { items: rows, total: Number(countRows[0]?.total ?? 0) };
+    return { items: result.items, total: Number(result.total ?? 0) };
   },
   [search],
   (e) => toast.error(e instanceof Error ? e.message : String(e)),
@@ -793,17 +785,11 @@ async function openDetail(c: Customer) {
   detail.value = null;
   detailLoading.value = true;
   try {
-    const [sales, ledger] = await Promise.all([
-      select<CustomerSaleRow>(
-        "SELECT id, sale_no, created_at, total - COALESCE((SELECT SUM(amount) FROM refunds WHERE sale_id = sales.id), 0) AS net_total, paid_amount, status FROM sales WHERE customer_id = ? ORDER BY id DESC LIMIT 50",
-        [c.id],
-      ),
-      select<CustomerLedgerRow>(
-        "SELECT id, type, amount, balance_after, notes, created_at FROM customer_ledger WHERE customer_id = ? ORDER BY id DESC LIMIT 100",
-        [c.id],
-      ),
-    ]);
-    detail.value = { ...c, sales, ledger };
+    const history = await invoke<{
+      sales: CustomerSaleRow[];
+      ledger: CustomerLedgerRow[];
+    }>("get_customer_history", { customerId: c.id });
+    detail.value = { ...c, sales: history.sales, ledger: history.ledger };
   } catch (e) {
     toast.error(e instanceof Error ? e.message : String(e));
   } finally {
@@ -870,16 +856,24 @@ async function remove(c: Customer) {
     return;
   }
   try {
-    const sold = await selectOne<{ n: number }>(
-      "SELECT COUNT(*) AS n FROM sales WHERE customer_id = ?",
-      [c.id],
+    const check = await invoke<{ balance: number; sale_count: number }>(
+      "customer_delete_check",
+      { customerId: c.id },
     );
-    if (sold && sold.n > 0) {
-      toast.error(t("customers.deleteBlockedSales", { count: sold.n }));
+    if (check.balance > 0.005) {
+      toast.error(
+        t("customers.deleteBlockedBalance", { balance: fmt(check.balance) }),
+      );
+      return;
+    }
+    if (check.sale_count > 0) {
+      toast.error(
+        t("customers.deleteBlockedSales", { count: check.sale_count }),
+      );
       return;
     }
     // Ledger rows cascade automatically; nothing else can reference the row.
-    await execute("DELETE FROM customers WHERE id = ?", [c.id]);
+    await invoke("delete_customer", { customerId: c.id });
     toast.success(t("customers.deleted", { name: c.name }));
     await load();
   } catch (e: unknown) {
@@ -912,33 +906,27 @@ async function save() {
   saving.value = true;
   try {
     if (editingId.value == null) {
-      await insert(
-        "INSERT INTO customers (name, phone, email, address, notes) VALUES (?, ?, ?, ?, ?)",
-        [
-          form.value.name.trim(),
-          form.value.phone.trim() || null,
-          form.value.email.trim() || null,
-          form.value.address.trim() || null,
-          form.value.notes.trim() || null,
-        ],
-      );
+      await invoke<number>("create_customer", {
+        name: form.value.name.trim(),
+        phone: form.value.phone.trim(),
+        email: form.value.email.trim(),
+        address: form.value.address.trim(),
+        notes: form.value.notes.trim(),
+      });
       toast.success(
         t("customers.customerAdded", {
           name: form.value.name.trim(),
         }),
       );
     } else {
-      await execute(
-        "UPDATE customers SET name = ?, phone = ?, email = ?, address = ?, notes = ? WHERE id = ?",
-        [
-          form.value.name.trim(),
-          form.value.phone.trim() || null,
-          form.value.email.trim() || null,
-          form.value.address.trim() || null,
-          form.value.notes.trim() || null,
-          editingId.value,
-        ],
-      );
+      await invoke("update_customer", {
+        customerId: editingId.value,
+        name: form.value.name.trim(),
+        phone: form.value.phone.trim(),
+        email: form.value.email.trim(),
+        address: form.value.address.trim(),
+        notes: form.value.notes.trim(),
+      });
       toast.success(
         t("customers.customerUpdated", {
           name: form.value.name.trim(),

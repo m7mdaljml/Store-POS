@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use tauri::{AppHandle, Runtime};
 
+use super::guard;
 use super::Page;
 use crate::db;
 
@@ -44,6 +45,7 @@ fn optional_field(value: &Option<String>) -> Option<String> {
 pub async fn list_expense_categories<R: Runtime>(
     app: AppHandle<R>,
 ) -> Result<Vec<ExpenseCategoryRecord>, String> {
+    guard::require(&app, Some("expenses.manage"))?;
     let pool = db::pool(&app).await?;
     let rows = sqlx::query(
         "SELECT c.id, c.name, COUNT(e.id) AS expense_count
@@ -72,6 +74,7 @@ pub async fn create_expense_category<R: Runtime>(
     app: AppHandle<R>,
     name: String,
 ) -> Result<i64, String> {
+    guard::require(&app, Some("expenses.manage"))?;
     let pool = db::pool(&app).await?;
     let name = name.trim().to_string();
     if name.is_empty() {
@@ -98,6 +101,7 @@ pub async fn delete_expense_category<R: Runtime>(
     app: AppHandle<R>,
     category_id: i64,
 ) -> Result<(), String> {
+    guard::require(&app, Some("expenses.manage"))?;
     let pool = db::pool(&app).await?;
     let used: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM expense_out WHERE category_id = ?")
         .bind(category_id)
@@ -122,6 +126,7 @@ pub async fn delete_expense_category<R: Runtime>(
 pub async fn list_expenses_out<R: Runtime>(
     app: AppHandle<R>,
 ) -> Result<Vec<OutgoingExpenseRecord>, String> {
+    guard::require(&app, Some("expenses.manage"))?;
     let pool = db::pool(&app).await?;
     let rows = sqlx::query(
         "SELECT e.id, e.category_id, c.name AS category_name, e.amount, e.date, e.description, e.reference_no, u.full_name AS user_name
@@ -367,6 +372,7 @@ pub async fn list_expenses<R: Runtime>(
     limit: Option<i64>,
     offset: Option<i64>,
 ) -> Result<Page<ExpenseRecord>, String> {
+    guard::require(&app, Some("expenses.manage"))?;
     let kind = kind.map(|k| k.to_lowercase());
     if let Some(k) = &kind {
         if k != "in" && k != "out" {
@@ -386,6 +392,7 @@ pub async fn expense_summary<R: Runtime>(
     from: Option<String>,
     to: Option<String>,
 ) -> Result<ExpenseSummary, String> {
+    guard::require(&app, Some("expenses.manage"))?;
     let pool = db::pool(&app).await?;
     compute_expense_summary(&pool, &from, &to).await
 }
@@ -463,7 +470,7 @@ pub async fn create_outgoing_expense(
     let date = match optional_field(&input.date) {
         Some(d) => d,
         None => {
-            let d: (String,) = sqlx::query_as("SELECT date('now')")
+            let d: (String,) = sqlx::query_as("SELECT date('now','localtime')")
                 .fetch_one(&mut *tx)
                 .await
                 .map_err(|e| e.to_string())?;
@@ -509,6 +516,9 @@ pub async fn add_expense_out<R: Runtime>(
     app: AppHandle<R>,
     input: OutgoingExpenseInput,
 ) -> Result<i64, String> {
+    let actor = guard::require(&app, Some("expenses.manage"))?;
+    let mut input = input;
+    input.user_id = Some(actor.user_id);
     let pool = db::pool(&app).await?;
     create_outgoing_expense(&pool, input).await
 }
@@ -559,6 +569,7 @@ pub async fn export_expenses<R: Runtime>(
     from: Option<String>,
     to: Option<String>,
 ) -> Result<(), String> {
+    guard::require(&app, Some("export.excel"))?;
     let kind = kind.map(|k| k.to_lowercase());
     if let Some(k) = &kind {
         if k != "in" && k != "out" {

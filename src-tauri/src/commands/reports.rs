@@ -1,6 +1,7 @@
 use serde::Serialize;
 use tauri::{AppHandle, Runtime};
 
+use super::guard;
 use crate::db;
 
 /// Shared period filter fragment: completed sales within [from, to] dates.
@@ -18,7 +19,7 @@ const NET_SALE_TOTAL: &str =
 /// Requires the sale_items table to be aliased as `si`.
 const NET_ITEM_QTY: &str = "(si.qty - si.refunded_qty)";
 
-// TOTAL() (unlike SUM) always returns REAL — even on empty sets — so sqlx can
+// TOTAL() (unlike SUM) always returns REAL - even on empty sets - so sqlx can
 // decode the value into f64 without an INTEGER/REAL mismatch.
 
 fn validate_range(from: &str, to: &str) -> Result<(), String> {
@@ -97,7 +98,7 @@ pub async fn compute_summary(
     .map_err(|e| e.to_string())?;
 
     let withdrawals: (f64,) = sqlx::query_as(
-        "SELECT TOTAL(amount) FROM cash_withdrawals WHERE date(date, 'localtime') BETWEEN ?1 AND ?2",
+        "SELECT TOTAL(amount) FROM cash_withdrawals WHERE date(date) BETWEEN ?1 AND ?2",
     )
     .bind(from)
     .bind(to)
@@ -127,6 +128,7 @@ pub async fn sales_summary<R: Runtime>(
     from: String,
     to: String,
 ) -> Result<SalesSummary, String> {
+    guard::require(&app, Some("reports.view"))?;
     validate_range(&from, &to)?;
     let pool = db::pool(&app).await?;
     compute_summary(&pool, &from, &to).await
@@ -186,6 +188,7 @@ pub async fn revenue_trend<R: Runtime>(
     to: String,
     granularity: Option<String>,
 ) -> Result<Vec<TrendPoint>, String> {
+    guard::require(&app, Some("reports.view"))?;
     validate_range(&from, &to)?;
     let pool = db::pool(&app).await?;
     compute_trend(&pool, &from, &to, granularity.as_deref().unwrap_or("day")).await
@@ -260,6 +263,7 @@ pub async fn top_products<R: Runtime>(
     to: String,
     limit: Option<i64>,
 ) -> Result<Vec<TopProductRow>, String> {
+    guard::require(&app, Some("reports.view"))?;
     validate_range(&from, &to)?;
     let pool = db::pool(&app).await?;
     compute_top_products(&pool, &from, &to, limit.or(Some(10))).await
@@ -280,7 +284,7 @@ pub(crate) async fn compute_category_breakdown(
     to: &str,
 ) -> Result<Vec<CategorySalesRow>, String> {
     let rows: Vec<(Option<String>, f64, f64, f64)> = sqlx::query_as(&format!(
-        "SELECT COALESCE(c.name, '—') AS category,
+        "SELECT COALESCE(c.name, '-') AS category,
                 SUM(si.qty - si.refunded_qty) AS qty,
                 TOTAL((si.price - si.discount) * {NET_ITEM_QTY}) AS revenue,
                 TOTAL((si.price - si.discount - si.cost_price) * {NET_ITEM_QTY}) AS profit
@@ -300,7 +304,7 @@ pub(crate) async fn compute_category_breakdown(
     Ok(rows
         .into_iter()
         .map(|(category, qty, revenue, profit)| CategorySalesRow {
-            category: category.unwrap_or_else(|| "—".into()),
+            category: category.unwrap_or_else(|| "-".into()),
             qty,
             revenue,
             profit,
@@ -314,6 +318,7 @@ pub async fn category_breakdown<R: Runtime>(
     from: String,
     to: String,
 ) -> Result<Vec<CategorySalesRow>, String> {
+    guard::require(&app, Some("reports.view"))?;
     validate_range(&from, &to)?;
     let pool = db::pool(&app).await?;
     compute_category_breakdown(&pool, &from, &to).await
@@ -456,6 +461,7 @@ pub async fn sales_report<R: Runtime>(
     customer_id: Option<i64>,
     include_voided: Option<bool>,
 ) -> Result<SalesReportOutput, String> {
+    guard::require(&app, Some("reports.view"))?;
     validate_range(&from, &to)?;
     let pool = db::pool(&app).await?;
     compute_sales_report(
@@ -529,6 +535,7 @@ pub(crate) async fn compute_inventory(pool: &sqlx::SqlitePool) -> Result<Vec<Inv
 
 #[tauri::command]
 pub async fn inventory_report<R: Runtime>(app: AppHandle<R>) -> Result<Vec<InventoryRow>, String> {
+    guard::require(&app, Some("inventory.view"))?;
     let pool = db::pool(&app).await?;
     compute_inventory(&pool).await
 }
@@ -592,7 +599,7 @@ pub(crate) async fn compute_margins(
     .map_err(|e| e.to_string())?;
 
     let category_rows: Vec<(String, f64, f64, f64, f64)> = sqlx::query_as(&format!(
-        "SELECT COALESCE(c.name, '—') AS name, SUM(si.qty - si.refunded_qty) AS qty_sold, {MARGIN_EXPR}
+        "SELECT COALESCE(c.name, '-') AS name, SUM(si.qty - si.refunded_qty) AS qty_sold, {MARGIN_EXPR}
          FROM sale_items si
          JOIN sales s ON s.id = si.sale_id
          JOIN products p ON p.id = si.product_id
@@ -655,6 +662,7 @@ pub async fn margin_report<R: Runtime>(
     from: String,
     to: String,
 ) -> Result<MarginReport, String> {
+    guard::require(&app, Some("reports.view"))?;
     validate_range(&from, &to)?;
     let pool = db::pool(&app).await?;
     compute_margins(&pool, &from, &to).await
@@ -686,6 +694,7 @@ pub async fn export_sales_report<R: Runtime>(
     customer_id: Option<i64>,
     include_voided: Option<bool>,
 ) -> Result<(), String> {
+    guard::require(&app, Some("export.excel"))?;
     validate_range(&from, &to)?;
     let pool = db::pool(&app).await?;
     let report = compute_sales_report(
@@ -724,6 +733,7 @@ pub async fn export_sales_report<R: Runtime>(
 
 #[tauri::command]
 pub async fn export_inventory<R: Runtime>(app: AppHandle<R>, path: String) -> Result<(), String> {
+    guard::require(&app, Some("export.excel"))?;
     let pool = db::pool(&app).await?;
     let items = compute_inventory(&pool).await?;
     let headers = [
@@ -765,6 +775,7 @@ pub async fn export_top_products<R: Runtime>(
     from: String,
     to: String,
 ) -> Result<(), String> {
+    guard::require(&app, Some("export.excel"))?;
     validate_range(&from, &to)?;
     let pool = db::pool(&app).await?;
     let items = compute_top_products(&pool, &from, &to, None).await?;
@@ -794,6 +805,7 @@ pub async fn export_overview<R: Runtime>(
     to: String,
     granularity: Option<String>,
 ) -> Result<(), String> {
+    guard::require(&app, Some("export.excel"))?;
     validate_range(&from, &to)?;
     let pool = db::pool(&app).await?;
 
@@ -942,7 +954,6 @@ mod tests {
           amount REAL NOT NULL,
           date TEXT NOT NULL DEFAULT (datetime('now'))
         );
-        );
         CREATE TABLE cash_withdrawals (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           session_id INTEGER,
@@ -952,9 +963,7 @@ mod tests {
           notes TEXT,
           created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
-        );
-    }
-        );"#
+        "#
     }
     async fn mem_pool() -> sqlx::SqlitePool {
         let pool = sqlx::sqlite::SqlitePoolOptions::new()
@@ -1363,7 +1372,7 @@ mod tests {
         assert!((by_local.revenue - 20.0).abs() < 0.001);
 
         // When the store's local date differs from the UTC date, the raw UTC
-        // date must NOT match — this is the bug the fix addresses.
+        // date must NOT match - this is the bug the fix addresses.
         if utc_day != local_day {
             let by_utc = compute_summary(&pool, &utc_day, &utc_day).await.unwrap();
             assert_eq!(by_utc.orders, 0);

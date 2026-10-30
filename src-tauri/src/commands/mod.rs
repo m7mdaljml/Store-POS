@@ -5,11 +5,14 @@ pub mod backup;
 pub mod catalog;
 pub mod customers;
 pub mod expenses;
+pub mod guard;
 pub mod logs;
 pub mod purchasing;
+pub mod queries;
 pub mod reports;
 pub mod sales;
 pub mod sessions;
+pub mod settings;
 pub mod suppliers;
 
 /// Paginated list result: `items` is the requested page window and `total`

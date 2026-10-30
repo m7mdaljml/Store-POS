@@ -422,6 +422,34 @@ export interface SupplierInvoice {
   notes: string | null;
 }
 
+export interface SupplierInvoiceItem {
+  id: number;
+  product_id: number;
+  product_name: string;
+  sku: string | null;
+  unit: string;
+  qty: number;
+  cost_price: number;
+  subtotal: number;
+}
+
+export interface SupplierInvoiceDetail {
+  id: number;
+  invoice_no: string;
+  supplier_id: number;
+  supplier_name: string;
+  date: string;
+  total: number;
+  paid_amount: number;
+  due_amount: number;
+  status: string;
+  notes: string | null;
+  user_name: string | null;
+  created_at: string;
+  items: SupplierInvoiceItem[];
+  payments: SupplierPayment[];
+}
+
 export interface InvoiceLine {
   productId: number | null;
   qty: number;

@@ -2,6 +2,7 @@ use serde::Serialize;
 use sqlx::Row;
 use tauri::{AppHandle, Runtime};
 
+use super::guard;
 use super::Page;
 use crate::db;
 
@@ -27,6 +28,7 @@ pub async fn list_audit_logs<R: Runtime>(
     limit: Option<i64>,
     offset: Option<i64>,
 ) -> Result<Page<AuditLogEntry>, String> {
+    guard::require_admin(&app)?;
     let pool = db::pool(&app).await?;
     let limit = limit.unwrap_or(100).max(1).min(500);
     let offset = offset.unwrap_or(0).max(0);

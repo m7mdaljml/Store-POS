@@ -221,10 +221,10 @@
                   {{ e.kind === "in" ? t("expenses.in") : t("expenses.out") }}
                 </span>
               </td>
-              <td class="fw-semibold">{{ e.ref_no ?? "—" }}</td>
-              <td>{{ e.supplier_name ?? "—" }}</td>
+              <td class="fw-semibold">{{ e.ref_no ?? "-" }}</td>
+              <td>{{ e.supplier_name ?? "-" }}</td>
               <td class="text-muted">{{ e.date }}</td>
-              <td class="text-muted">{{ e.notes ?? "—" }}</td>
+              <td class="text-muted">{{ e.notes ?? "-" }}</td>
               <td
                 class="text-start fw-semibold"
                 :class="e.kind === 'out' ? 'text-danger' : ''"
@@ -232,7 +232,7 @@
                 {{ fmt(e.amount) }}
               </td>
               <td class="text-start">
-                {{ e.kind === "in" ? fmt(e.paid_amount) : "—" }}
+                {{ e.kind === "in" ? fmt(e.paid_amount) : "-" }}
               </td>
               <td class="text-start">
                 <span
@@ -241,7 +241,7 @@
                 >
                   {{ fmt(e.due_amount) }}
                 </span>
-                <span v-else>—</span>
+                <span v-else>-</span>
               </td>
               <td>
                 <span class="badge" :class="statusBadge(e.status)">

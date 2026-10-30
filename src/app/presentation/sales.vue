@@ -43,8 +43,6 @@
       </div>
     </div>
 
-
-
     <div class="card">
       <div class="p-2 border-bottom">
         <input
@@ -97,8 +95,8 @@
               <td class="text-muted">{{ sale.id }}</td>
               <td class="fw-semibold">{{ sale.saleNo }}</td>
               <td class="text-muted">{{ dateLabel(sale.createdAt) }}</td>
-              <td>{{ sale.userName || "—" }}</td>
-              <td>{{ sale.customerName || "—" }}</td>
+              <td>{{ sale.userName || "-" }}</td>
+              <td>{{ sale.customerName || "-" }}</td>
               <td class="text-start">{{ sale.itemCount }}</td>
               <td
                 class="text-start fw-semibold"
@@ -323,7 +321,12 @@
                     <tr v-for="item in refundData.items" :key="item.saleItemId">
                       <td>{{ item.name }}</td>
                       <td class="text-start">
-                        {{ fmt((item.price - item.discount) * (1 + (item.taxRate ?? 0) / 100)) }}
+                        {{
+                          fmt(
+                            (item.price - item.discount) *
+                              (1 + (item.taxRate ?? 0) / 100),
+                          )
+                        }}
                       </td>
                       <td class="text-start text-muted">
                         {{ item.qty }}
@@ -444,7 +447,12 @@ import { useToast } from "../../composables/useToast";
 import { useAuth } from "../../composables/useAuth";
 import { buildReceiptHtml, printReceipt } from "../../lib/receipt";
 import { formatMoney } from "../../lib/currency";
-import type { RefundableItem, RefundableSale, SaleReceipt, SaleRecord } from "../../types";
+import type {
+  RefundableItem,
+  RefundableSale,
+  SaleReceipt,
+  SaleRecord,
+} from "../../types";
 import emptySales from "../../assets/empty/sales.svg";
 
 const auth = useAuth();
@@ -542,7 +550,10 @@ const refundEstimate = computed(() => {
   let net = 0;
   for (const item of data.items) {
     const rem = remaining(item);
-    const q = Math.min(Math.max(refundQtys.value[item.saleItemId] ?? 0, 0), rem);
+    const q = Math.min(
+      Math.max(refundQtys.value[item.saleItemId] ?? 0, 0),
+      rem,
+    );
     if (rem - q > 0.005) allRemaining = false;
     net += (item.price - item.discount) * q;
   }

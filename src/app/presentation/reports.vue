@@ -59,7 +59,10 @@
 
     <!-- ============ F6.2 Overview ============ -->
     <template v-if="activeTab === 'overview'">
-      <div class="d-flex align-items-center justify-content-end mb-3" v-can="'export.excel'">
+      <div
+        class="d-flex align-items-center justify-content-end mb-3"
+        v-can="'export.excel'"
+      >
         <AsyncButton
           variant="outline-primary"
           :loading="exporting"
@@ -251,7 +254,7 @@
               <tr>
                 <td class="fw-semibold">{{ i + 1 }}</td>
                 <td class="fw-semibold">{{ p.name }}</td>
-                <td class="text-muted">{{ p.category ?? "—" }}</td>
+                <td class="text-muted">{{ p.category ?? "-" }}</td>
                 <td class="text-start">{{ num(p.qty) }}</td>
                 <td class="text-start">{{ fmt(p.revenue) }}</td>
                 <td
@@ -382,10 +385,10 @@
                 <td class="fw-semibold">{{ r.saleNo }}</td>
                 <td class="text-muted">{{ dateLabel(r.createdAt) }}</td>
                 <td>{{ r.cashier }}</td>
-                <td>{{ r.customer ?? "—" }}</td>
+                <td>{{ r.customer ?? "-" }}</td>
                 <td class="text-start">{{ fmt(r.subtotal) }}</td>
                 <td class="text-start text-danger">
-                  {{ r.discount ? `−${fmt(r.discount)}` : "—" }}
+                  {{ r.discount ? `−${fmt(r.discount)}` : "-" }}
                 </td>
                 <td
                   class="text-start fw-semibold"
@@ -466,7 +469,7 @@
               <tr>
                 <td class="fw-semibold">{{ i + 1 }}</td>
                 <td class="fw-semibold">{{ p.name }}</td>
-                <td class="text-muted">{{ p.category ?? "—" }}</td>
+                <td class="text-muted">{{ p.category ?? "-" }}</td>
                 <td class="text-start">{{ num(p.qty) }}</td>
                 <td class="text-start">{{ fmt(p.revenue) }}</td>
                 <td
@@ -612,7 +615,7 @@
                     t("reports.low")
                   }}</span>
                 </td>
-                <td class="text-muted">{{ i.category ?? "—" }}</td>
+                <td class="text-muted">{{ i.category ?? "-" }}</td>
                 <td
                   class="text-start fw-semibold"
                   :class="{ 'text-warning': i.lowStock }"
@@ -621,7 +624,9 @@
                 </td>
                 <td class="text-start text-muted">{{ num(i.reorderLevel) }}</td>
                 <td class="text-start">{{ fmt(i.costPrice) }}</td>
-                <td class="text-start">{{ fmt(i.sellPrice * (1 + (i.taxRate ?? 0) / 100)) }}</td>
+                <td class="text-start">
+                  {{ fmt(i.sellPrice * (1 + (i.taxRate ?? 0) / 100)) }}
+                </td>
                 <td class="text-start fw-semibold">{{ fmt(i.stockValue) }}</td>
               </tr>
             </tbody>
@@ -729,7 +734,7 @@
             <tbody v-for="p in marginData?.products ?? []" :key="p.id">
               <tr>
                 <td class="fw-semibold">{{ p.name }}</td>
-                <td class="text-muted">{{ p.category ?? "—" }}</td>
+                <td class="text-muted">{{ p.category ?? "-" }}</td>
                 <td class="text-start">{{ num(p.qtySold) }}</td>
                 <td class="text-start">{{ fmt(p.revenue) }}</td>
                 <td class="text-start text-muted">{{ fmt(p.cogs) }}</td>
@@ -810,8 +815,8 @@
                   >
                     {{ m.qty >= 0 ? "+" : "" }}{{ num(m.qty) }}
                   </td>
-                  <td class="text-muted">{{ m.userName ?? "—" }}</td>
-                  <td class="text-muted">{{ m.notes ?? "—" }}</td>
+                  <td class="text-muted">{{ m.userName ?? "-" }}</td>
+                  <td class="text-muted">{{ m.notes ?? "-" }}</td>
                 </tr>
               </tbody>
             </table>
@@ -842,7 +847,6 @@ import AppSelect from "../../components/AppSelect.vue";
 import { useSettingsStore } from "../../stores/settings";
 import { useToast } from "../../composables/useToast";
 import type { Paged } from "../../composables/usePagedList";
-import { select } from "../../lib/db";
 import { formatMoney } from "../../lib/currency";
 import emptySales from "../../assets/empty/sales.svg";
 import emptyProducts from "../../assets/empty/products.svg";
@@ -858,7 +862,6 @@ import type {
   StockMovement,
   TopProductRow,
   TrendPoint,
-  UserRecord,
 } from "../../types";
 
 const settings = useSettingsStore();
@@ -909,7 +912,7 @@ const salesFilters = ref({
   customerId: null as number | null,
   includeVoided: false,
 });
-const cashiers = ref<UserRecord[]>([]);
+const cashiers = ref<Array<{ id: number; fullName: string }>>([]);
 const customerOptions = ref<CustomerLite[]>([]);
 
 const inventory = ref<InventoryRow[]>([]);
@@ -1167,7 +1170,12 @@ function renderCharts() {
             data: revenue,
             backgroundColor: gradient ?? accent,
             hoverBackgroundColor: accent,
-            borderRadius: { topLeft: 8, topRight: 8, bottomLeft: 0, bottomRight: 0 },
+            borderRadius: {
+              topLeft: 8,
+              topRight: 8,
+              bottomLeft: 0,
+              bottomRight: 0,
+            },
             borderSkipped: false,
             maxBarThickness: 46,
           },
@@ -1238,7 +1246,7 @@ function renderCharts() {
       type: "doughnut",
       data: {
         labels: categories.value.map((c) =>
-          c.category === "—" ? t("reports.uncategorized") : c.category,
+          c.category === "-" ? t("reports.uncategorized") : c.category,
         ),
         datasets: [
           {
@@ -1383,11 +1391,11 @@ onMounted(async () => {
   applyPreset("today");
   await Promise.allSettled([settings.load()]);
   loadActiveTab();
-  select<CustomerLite>(
-    "SELECT id, name, phone FROM customers ORDER BY name",
-  ).then((rows) => (customerOptions.value = rows));
-  invoke<Paged<UserRecord>>("list_users")
-    .then((page) => (cashiers.value = page.items.filter((u) => u.isActive)))
+  invoke<CustomerLite[]>("list_customers_lite")
+    .then((rows) => (customerOptions.value = rows))
+    .catch(() => undefined);
+  invoke<Array<{ id: number; fullName: string }>>("list_user_options")
+    .then((options) => (cashiers.value = options))
     .catch(() => undefined);
 });
 
