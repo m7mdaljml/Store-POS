@@ -138,7 +138,7 @@
 
       <footer class="app-footer">
         &copy; {{ new Date().getFullYear() }} Mohammad Aljamal &dash; All Rights
-        Reserved
+        Reserved &dash; v{{ appVersion }}
       </footer>
     </div>
   </div>
@@ -167,6 +167,7 @@ const settings = useSettingsStore();
 const catalog = useCatalogStore();
 const theme = useThemeStore();
 
+const appVersion = __APP_VERSION__;
 const collapsed = ref(false);
 const clock = ref("");
 let timer: number | undefined;
