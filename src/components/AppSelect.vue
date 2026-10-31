@@ -100,6 +100,7 @@ const props = withDefaults(
     fetchPage?: (limit: number, offset: number, search: string) => Promise<T[]>;
     optionLabel: (item: T) => string;
     optionValue: (item: T) => string | number | null;
+    optionSearch?: (item: T) => string;
     placeholder?: string;
     disabled?: boolean;
     sm?: boolean;
@@ -108,6 +109,7 @@ const props = withDefaults(
   {
     items: null,
     fetchPage: undefined,
+    optionSearch: undefined,
     placeholder: "",
     disabled: false,
     sm: false,
@@ -157,9 +159,12 @@ const filteredLocal = computed(() => {
   if (!props.items) return [] as T[];
   const q = search.value.trim().toLowerCase();
   if (!q) return props.items;
-  return props.items.filter((item) =>
-    props.optionLabel(item).toLowerCase().includes(q),
-  );
+  return props.items.filter((item) => {
+    const text = props.optionSearch
+      ? props.optionSearch(item)
+      : props.optionLabel(item);
+    return text.toLowerCase().includes(q);
+  });
 });
 
 const visibleLocal = computed(() =>

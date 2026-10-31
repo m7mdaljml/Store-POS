@@ -197,6 +197,9 @@
                     :items="activeProducts"
                     :option-label="(p) => p.name"
                     :option-value="(p) => p.id"
+                    :option-search="
+                      (p) => `${p.name} ${p.barcode ?? ''}`
+                    "
                     :placeholder="t('purchases.selectProduct')"
                     @update:model-value="
                       (v) => {
